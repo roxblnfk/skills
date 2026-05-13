@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     env:
-      PHAR_PATH: ".build/phar/ai.phar"
+      PHAR_PATH: ".build/phar/skills.phar"
     steps:
       - name: 📦 Check out the codebase
         uses: actions/checkout@v6
@@ -62,25 +62,27 @@ jobs:
           php-version: '8.2'
           ini-values: 'memory_limit=-1, phar.readonly=0'
           coverage: none
-          tools: phive
+          tools: composer, box
 
-      - name: 📥 Install Composer dependencies
-        uses: ramsey/composer-install@v3
+      # Mirror the release workflow: promote composer/composer to require so
+      # the bundled `bin/skills` can actually bootstrap a Composer instance
+      # at runtime. See build-phar-release.yml for the rationale.
+      - name: 🔁 Promote composer/composer into require for the PHAR
+        run: |
+          composer config --unset require-dev.composer/composer
+          composer require composer/composer:^2.9.0 --no-update --no-interaction --ansi
 
-      - name: 📥 Install dependencies with phive
-        uses: wayofdev/gh-actions/actions/phive/install@v3.1.0
-        with:
-          phive-home: '.phive'
-          trust-gpg-keys: '0xC00543248C87FB13,0x033E5F8D801A2F8D,0x2DF45277AEF09A2F'
+      - name: 📥 Install production dependencies
+        run: composer update --no-dev --no-interaction --ansi --prefer-dist
 
       - name: 🔍 Validate box.json
-        run: .phive/box validate box.json --ansi
+        run: box validate box.json --ansi
 
       - name: 🤖 Compile PHAR
-        run: .phive/box compile --ansi
+        run: box compile --ansi
 
       - name: 💥 Show PHAR info
-        run: .phive/box info ${{ env.PHAR_PATH }} --ansi
+        run: box info ${{ env.PHAR_PATH }} --ansi
 
       - name: 🤔 Run PHAR help
         run: ${{ env.PHAR_PATH }} --help

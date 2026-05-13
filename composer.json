@@ -42,6 +42,7 @@
     ],
     "minimum-stability": "dev",
     "prefer-stable": true,
+    "bin": ["bin/skills"],
     "autoload": {
         "psr-4": {
             "LLM\\Skills\\": "src/"

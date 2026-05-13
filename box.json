@@ -19,5 +19,5 @@
         "composer.json",
         "composer.lock"
     ],
-    "output": ".build/phar/ai.phar"
+    "output": ".build/phar/skills.phar"
 }
