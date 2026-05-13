@@ -44,7 +44,7 @@ final class ProjectConfigMapperTest
             'skills' => [
                 'target' => 'custom/skills',
                 'trusted' => ['acme/*', 'foo/bar'],
-                'trustedReplace' => true,
+                'trusted-replace' => true,
             ],
         ]);
 
@@ -132,8 +132,8 @@ final class ProjectConfigMapperTest
     public function trustedReplaceNonBoolThrows(): void
     {
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('extra.skills.trustedReplace');
+            ->withMessageContaining('extra.skills.trusted-replace');
 
-        (new ProjectConfigMapper())->fromExtra(['skills' => ['trustedReplace' => 'yes']]);
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['trusted-replace' => 'yes']]);
     }
 }

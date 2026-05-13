@@ -33,7 +33,7 @@ use Testo\Test;
 #[Test]
 final class SkillsSyncTest
 {
-    private const TARGET_DIR = Info::PROJECT_DIR . '/.claude/skills';
+    private const TARGET_DIR = Info::PROJECT_DIR . '/.agents/skills';
 
     /**
      * Wipe the synced skills directory before each test so assertions reflect

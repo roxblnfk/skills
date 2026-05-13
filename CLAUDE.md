@@ -1,7 +1,7 @@
 # `llm/skills` — Project Guide for AI Agents
 
 `llm/skills` is a **Composer plugin** that discovers AI Skills bundled in vendor packages and
-installs them into the consumer project (e.g. into `.claude/skills/`).
+installs them into the consumer project (default `.agents/skills/`, configurable per project).
 
 - Package type: `composer-plugin`
 - Minimum PHP: **8.2**

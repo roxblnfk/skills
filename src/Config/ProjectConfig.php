@@ -15,7 +15,14 @@ namespace LLM\Skills\Config;
  */
 final readonly class ProjectConfig
 {
-    public const DEFAULT_TARGET = '.claude/skills';
+    /**
+     * Default destination directory, relative to the project root.
+     *
+     * `.agents/` is tool-agnostic — Claude Code, Cursor, and other coding
+     * agents can point at the same place. Projects targeting a single
+     * agent can redirect via `extra.skills.target` (e.g. `.claude/skills`).
+     */
+    public const DEFAULT_TARGET = '.agents/skills';
 
     /**
      * @param non-empty-string $target       destination relative to project root

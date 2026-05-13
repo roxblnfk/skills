@@ -10,38 +10,51 @@ use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
 use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 
+/**
+ * Composer plugin entrypoint for `llm/skills`.
+ *
+ * Wires our {@see CommandProvider} into Composer so that
+ * `composer skills:sync` becomes available. We intentionally subscribe to
+ * **no** Composer events — `llm/skills` follows a pull model: nothing
+ * touches the user's filesystem until they explicitly invoke
+ * `skills:sync`. Projects that want post-update auto-sync wire it up in
+ * their own `scripts.post-update-cmd` (see README).
+ *
+ * `activate()` / `deactivate()` / `uninstall()` are required by
+ * {@see PluginInterface}; the plugin is stateless, so they are no-ops.
+ * Notably `uninstall()` does NOT wipe the synced directory: files in there
+ * came from other vendor packages that are still installed, and the user
+ * may have edited some of them locally. We refuse to silently delete
+ * artefacts the user might still want.
+ *
+ * @internal
+ */
 final class SkillsPlugin implements PluginInterface, Capable
 {
-    private const LOG_PREFIX = '<info>[llm/skills]</info>';
-
+    /**
+     * @psalm-mutation-free
+     */
     #[\Override]
-    public function activate(Composer $composer, IOInterface $io): void
-    {
-        // No event subscriptions: the plugin exposes a CLI command that the
-        // consumer wires into their own `post-update-cmd` script if they want
-        // automatic sync after `composer update`.
-        $io->write(self::LOG_PREFIX . ' activate() called — plugin loaded');
-    }
+    public function activate(Composer $composer, IOInterface $io): void {}
 
+    /**
+     * @psalm-mutation-free
+     */
     #[\Override]
-    public function deactivate(Composer $composer, IOInterface $io): void
-    {
-        $io->write(self::LOG_PREFIX . ' deactivate() called');
-    }
+    public function deactivate(Composer $composer, IOInterface $io): void {}
 
+    /**
+     * @psalm-mutation-free
+     */
     #[\Override]
-    public function uninstall(Composer $composer, IOInterface $io): void
-    {
-        $io->write(self::LOG_PREFIX . ' uninstall() called');
-    }
+    public function uninstall(Composer $composer, IOInterface $io): void {}
 
+    /**
+     * @psalm-pure
+     */
     #[\Override]
     public function getCapabilities(): array
     {
-        // Cannot use $io here (Capable::getCapabilities has no IO argument),
-        // so emit via error_log so it shows up even in non-verbose mode.
-        \error_log('[llm/skills] getCapabilities() called — registering CommandProvider');
-
         return [
             CommandProviderCapability::class => CommandProvider::class,
         ];

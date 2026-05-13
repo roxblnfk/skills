@@ -55,9 +55,9 @@ final readonly class ProjectConfigMapper
 
         $trusted = $this->mapTrusted($skills['trusted'] ?? []);
 
-        $replace = $skills['trustedReplace'] ?? false;
+        $replace = $skills['trusted-replace'] ?? false;
         if (!\is_bool($replace)) {
-            throw new MalformedProjectConfig('extra.skills.trustedReplace must be a boolean');
+            throw new MalformedProjectConfig('extra.skills.trusted-replace must be a boolean');
         }
 
         return new ProjectConfig(

@@ -21,7 +21,7 @@ declare(strict_types=1);
  *   "extra": {
  *     "skills": {
  *       "trusted": ["my-org/*", "acme/skills-pro"],
- *       "trustedReplace": true
+ *       "trusted-replace": true
  *     }
  *   }
  *

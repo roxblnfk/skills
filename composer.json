@@ -13,6 +13,12 @@
             "email": "roxblnfk@gmail.com"
         }
     ],
+    "funding": [
+        {
+            "type": "boosty",
+            "url": "https://boosty.to/roxblnfk"
+        }
+    ],
     "require": {
         "php": ">=8.2",
         "composer-plugin-api": "^2.0",
@@ -63,12 +69,12 @@
         "psalm:ci": "psalm --output-format=github --shepherd --show-info=false --stats --threads=4",
         "test": [
             "@putenv XDEBUG_MODE=coverage",
-            "testo --color=always"
+            "testo"
         ],
         "test:ci": [
             "@putenv TESTO_CI=1",
             "@putenv XDEBUG_MODE=coverage",
-            "testo --color=always"
+            "testo"
         ],
         "infect": [
             "@putenv XDEBUG_MODE=coverage",

@@ -174,7 +174,7 @@ final class SyncPlannerTest
 
         Assert::same(
             $this->normalizePath((string) $plan->target),
-            $this->normalizePath('/some/project/.claude/skills'),
+            $this->normalizePath('/some/project/.agents/skills'),
         );
     }
 

@@ -9,7 +9,7 @@ namespace LLM\Skills;
  */
 final class Info
 {
-    public const NAME = 'SKILLS';
+    public const NAME = 'LLM skills';
     public const LOGO_CLI_COLOR = '';
     public const ROOT_DIR = __DIR__ . '/..';
     private const VERSION = 'experimental';

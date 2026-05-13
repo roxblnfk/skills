@@ -31,7 +31,7 @@ final readonly class RunSyncCommandInterceptor implements TestRunInterceptor
     public function runTest(TestInfo $info, callable $next): TestResult
     {
         if ($this->options->cleanBefore) {
-            Filesystem::removeRecursive(Info::PROJECT_DIR . '/.claude/skills');
+            Filesystem::removeRecursive(Info::PROJECT_DIR . '/.agents/skills');
         }
 
         ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:sync');
