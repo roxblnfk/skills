@@ -1,0 +1,86 @@
+name: 🧪 Tests
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+jobs:
+  testing:
+    name: Tests PHP${{ matrix.php-version }} (${{ matrix.dependencies }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: [ '8.2', '8.3', '8.4' ]
+        dependencies: [ lowest, highest ]
+    steps:
+      - name: 📦 Check out the codebase
+        uses: actions/checkout@v6
+
+      - name: 🛠️ Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+
+      - name: 📥 Install Composer dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          dependency-versions: ${{ matrix.dependencies }}
+
+      - name: 🧪 Run tests
+        run: composer test:ci
+
+      - name: 📤 Upload coverage to Codecov
+        if: matrix.php-version == '8.2' && matrix.dependencies == 'highest'
+        uses: codecov/codecov-action@v4
+        with:
+          files: runtime/clover.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+
+  compile-phar:
+    name: Compile PHAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      PHAR_PATH: ".build/phar/ai.phar"
+    steps:
+      - name: 📦 Check out the codebase
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 🛠️ Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          ini-values: 'memory_limit=-1, phar.readonly=0'
+          coverage: none
+          tools: phive
+
+      - name: 📥 Install Composer dependencies
+        uses: ramsey/composer-install@v3
+
+      - name: 📥 Install dependencies with phive
+        uses: wayofdev/gh-actions/actions/phive/install@v3.1.0
+        with:
+          phive-home: '.phive'
+          trust-gpg-keys: '0xC00543248C87FB13,0x033E5F8D801A2F8D,0x2DF45277AEF09A2F'
+
+      - name: 🔍 Validate box.json
+        run: .phive/box validate box.json --ansi
+
+      - name: 🤖 Compile PHAR
+        run: .phive/box compile --ansi
+
+      - name: 💥 Show PHAR info
+        run: .phive/box info ${{ env.PHAR_PATH }} --ansi
+
+      - name: 🤔 Run PHAR help
+        run: ${{ env.PHAR_PATH }} --help

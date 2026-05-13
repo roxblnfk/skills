@@ -1,0 +1,22 @@
+{
+    "$schema": "https://raw.githubusercontent.com/box-project/box/main/res/schema.json",
+    "main": "bin/skills",
+    "compactors": [
+        "KevinGH\\Box\\Compactor\\Json",
+        "KevinGH\\Box\\Compactor\\Php"
+    ],
+    "compression": "GZ",
+    "git": "git",
+    "directories": [
+        "src",
+        "vendor"
+    ],
+    "files": [
+        "resources/version.json",
+        "bin/skills",
+        "LICENSE.md",
+        "composer.json",
+        "composer.lock"
+    ],
+    "output": ".build/phar/ai.phar"
+}

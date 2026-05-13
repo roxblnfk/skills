@@ -1,0 +1,9 @@
+/.*/
+!/.phive/
+!/.github/
+!/.phar/
+/runtime/
+/vendor/
+/.env
+*.log
+*.exe
