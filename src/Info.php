@@ -7,7 +7,7 @@ namespace LLM\Skills;
 /**
  * @internal
  */
-class Info
+final class Info
 {
     public const NAME = 'SKILLS';
     public const LOGO_CLI_COLOR = '';

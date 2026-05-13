@@ -21,13 +21,19 @@
     "require-dev": {
         "buggregator/trap": "^1.10",
         "composer/composer": "^2.9.0",
-        "infection/infection": "^0.32",
+        "infection/infection": "dev-testo-bridge-82 as 0.32.6",
         "roxblnfk/unpoly": "^1.8",
         "spiral/code-style": "^2.3",
         "testo/bridge-infection": "0.1 - 1",
         "testo/testo": "0.1 - 1",
         "vimeo/psalm": "^7"
     },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/roxblnfk/infection"
+        }
+    ],
     "minimum-stability": "dev",
     "prefer-stable": true,
     "autoload": {
@@ -41,7 +47,7 @@
         }
     },
     "extra": {
-        "class": "LLM\\Skills\\SkillsPlugin"
+        "class": "LLM\\Skills\\Composer\\SkillsPlugin"
     },
     "config": {
         "sort-packages": true,
@@ -63,6 +69,15 @@
             "@putenv TESTO_CI=1",
             "@putenv XDEBUG_MODE=coverage",
             "testo --color=always"
+        ],
+        "infect": [
+            "@putenv XDEBUG_MODE=coverage",
+            "infection --configuration=infection.json  --threads=max"
+        ],
+        "infect:ci": [
+            "@putenv TESTO_CI=1",
+            "@putenv XDEBUG_MODE=coverage",
+            "infection --ansi --configuration=infection.json --logger-github  --threads=max --show-mutations=0"
         ]
     }
 }
