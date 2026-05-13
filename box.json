@@ -6,7 +6,6 @@
         "KevinGH\\Box\\Compactor\\Php"
     ],
     "compression": "GZ",
-    "git": "git",
     "directories": [
         "src",
         "vendor"
