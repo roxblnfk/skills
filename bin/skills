@@ -44,10 +44,10 @@ if ('cli' !== PHP_SAPI) {
     $application = new Application();
     $application->setCommandLoader(
         new FactoryCommandLoader([
-            'sync' => static fn() => new \LLM\Skills\Composer\Command\Sync(),
+            'sync' => static fn() => new \LLM\Skills\Console\Command\Sync(),
         ]),
     );
-    // $application->setDefaultCommand('sync', false);
+    $application->setDefaultCommand('sync', false);
     $application->setVersion(Info::version());
     $application->setName(Info::NAME);
     $application->run();
