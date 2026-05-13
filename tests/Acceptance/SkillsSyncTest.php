@@ -6,6 +6,7 @@ namespace LLM\Skills\Tests\Acceptance;
 
 use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
+use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
@@ -27,8 +28,12 @@ use Testo\Test;
  *                            with `acme/skills-basic` once trusted. Different vendor
  *                            namespace so it is *not* matched by `acme/*` filters.
  * - `evil/payload`         — untrusted. One `tutorial` skill; used for trust-policy tests.
+ * - `spiral/skills-demo`   — vendor (`spiral/*`) is in the **built-in** trusted list.
+ *                            Used to verify built-in trust and `trusted-replace: true`
+ *                            behaviour. One `demo` skill.
  *
- * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro"]`.
+ * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro"]`
+ * with the default `trusted-replace: false` — so built-in patterns still apply.
  */
 #[Test]
 final class SkillsSyncTest
@@ -44,6 +49,7 @@ final class SkillsSyncTest
     {
         Filesystem::removeRecursive(self::TARGET_DIR);
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/custom-skills-target');
+        Filesystem::removeRecursive(Info::PROJECT_DIR . '/config-target');
     }
 
     // ── basic happy path ────────────────────────────────────────────────────
@@ -105,16 +111,17 @@ final class SkillsSyncTest
         Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
-    public function autoDiscoverySyncsOnlyTheFourTrustedSkills(): void
+    public function autoDiscoverySyncsProjectTrustedAndBuiltinTrustedSkills(): void
     {
-        // internal/path declares no extra.skills; acme/skills-broken has
-        // malformed extra; clash/skills-conflict and evil/payload are untrusted.
-        // Default sync should yield exactly the four trusted skills.
+        // internal/path declares no extra.skills; acme/skills-broken has malformed
+        // extra; clash/skills-conflict and evil/payload are untrusted. The default
+        // sync yields: the four skills from acme/* (project trust) plus the one
+        // skill from spiral/skills-demo (built-in `spiral/*` trust).
         $this->runSync();
 
         $entries = $this->listTargetEntries();
 
-        Assert::same($entries, ['code-review', 'greeting', 'migrate', 'refactor']);
+        Assert::same($entries, ['code-review', 'demo', 'greeting', 'migrate', 'refactor']);
     }
 
     // ── trust policy ────────────────────────────────────────────────────────
@@ -206,7 +213,122 @@ final class SkillsSyncTest
         Assert::same($this->listTargetEntries(), ['code-review', 'greeting', 'migrate', 'refactor']);
     }
 
+    public function positionalArgMatchingNoInstalledPackageExitsWithInvalid(): void
+    {
+        // A typo in the package name should be loud, not silently succeed
+        // with zero copies. Exit code 2 (`Command::INVALID`) signals "you
+        // asked for something we couldn't find".
+        $process = $this->runSync('ghost/package');
+
+        Assert::same($process->getExitCode(), 2);
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'ghost/package'),
+            'error message should name the offending pattern. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(\is_dir(self::TARGET_DIR), 'nothing must be written when the filter is invalid');
+    }
+
     // ── --target override ───────────────────────────────────────────────────
+
+    #[WithSandboxExtras([
+        'target' => 'config-target/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function customTargetFromProjectConfigWritesToConfiguredLocation(): void
+    {
+        $configured = Info::PROJECT_DIR . '/config-target/skills';
+
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::true(
+            \is_file($configured . '/greeting/SKILL.md'),
+            'extra.skills.target from composer.json must redirect output. stderr: '
+            . $process->getErrorOutput(),
+        );
+        // Default target left untouched.
+        Assert::false(\is_dir(self::TARGET_DIR));
+    }
+
+    #[WithSandboxExtras([
+        'target' => 'config-target/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function cliTargetOverrideBeatsProjectConfigTarget(): void
+    {
+        // Project says config-target/skills; CLI says custom-skills-target.
+        // CLI wins.
+        $custom = Info::PROJECT_DIR . '/custom-skills-target';
+
+        $process = $this->runSync('--target=custom-skills-target');
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::true(\is_file($custom . '/greeting/SKILL.md'));
+        Assert::false(\is_dir(Info::PROJECT_DIR . '/config-target'), 'project config target must be ignored');
+    }
+
+    #[WithSandboxExtras(['trusted' => ['evil/*']])]
+    public function wildcardPatternInProjectTrustedAllowsThatVendor(): void
+    {
+        // `extra.skills.trusted: ["evil/*"]` is the project's only trust
+        // statement; the built-in list is still active (default
+        // `trusted-replace: false`). Expected result: evil/payload from the
+        // project's wildcard plus spiral/skills-demo from the built-in
+        // `spiral/*` pattern. acme/* — which lost its entry when we
+        // replaced the `extra.skills` block — must not appear.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::same(
+            $this->listTargetEntries(),
+            ['demo', 'tutorial'],
+            'evil/payload (project wildcard) + spiral/skills-demo (built-in). stderr: '
+            . $process->getErrorOutput(),
+        );
+    }
+
+    // ── trusted-replace ─────────────────────────────────────────────────────
+
+    #[WithSandboxExtras(['trusted' => []])]
+    public function builtinTrustedListIsActiveWhenReplaceIsFalse(): void
+    {
+        // Project trust is explicitly empty. With the default
+        // `trusted-replace: false`, the built-in list still applies, so
+        // spiral/skills-demo (matched by built-in `spiral/*`) is approved.
+        // acme/* and evil/* — not in built-in — are skipped.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::same($this->listTargetEntries(), ['demo']);
+    }
+
+    #[WithSandboxExtras(['trusted' => [], 'trusted-replace' => true])]
+    public function trustedReplaceTrueDisablesBuiltinList(): void
+    {
+        // With both `trusted: []` and `trusted-replace: true` the effective
+        // trust list is empty: even built-in-matched donors must be
+        // dropped. Target is left empty (or never created).
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::same($this->listTargetEntries(), []);
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic'],
+        'trusted-replace' => true,
+    ])]
+    public function trustedReplaceTrueLimitsTrustToProjectListExactly(): void
+    {
+        // `trusted-replace: true` + project trusts only `acme/skills-basic`.
+        // spiral/skills-demo must NOT appear (built-in bypassed); other
+        // acme/* must NOT appear (not in project list); only basic's two
+        // skills end up in the target.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::same($this->listTargetEntries(), ['code-review', 'greeting']);
+    }
 
     public function customTargetFlagWritesToOverridePath(): void
     {
@@ -219,6 +341,46 @@ final class SkillsSyncTest
         Assert::true(\is_file($custom . '/refactor/SKILL.md'));
         // Default target left untouched because we redirected.
         Assert::false(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+    }
+
+    // ── --dry-run ───────────────────────────────────────────────────────────
+
+    public function dryRunFlagPreventsAnyFilesystemWrites(): void
+    {
+        $process = $this->runSync('--dry-run');
+
+        Assert::same($process->getExitCode(), 0);
+        // Target dir must not exist (BeforeTest wipes it; dry-run must not recreate).
+        Assert::false(\is_dir(self::TARGET_DIR));
+    }
+
+    public function dryRunOutputAdvertisesItselfAndUsesWouldCopyVerb(): void
+    {
+        $process = $this->runSync('--dry-run');
+        $stdout = $process->getOutput();
+
+        Assert::true(
+            \str_contains($stdout, 'dry-run'),
+            'dry-run banner must appear in output. Got: ' . $stdout,
+        );
+        Assert::true(
+            \str_contains($stdout, '[would copy]'),
+            'per-skill line should use the "would copy" verb. Got: ' . $stdout,
+        );
+        Assert::true(
+            \str_contains($stdout, 'would sync'),
+            'summary line should use the "would sync" verb. Got: ' . $stdout,
+        );
+    }
+
+    public function dryRunReportsConflictsWithoutWritingAnything(): void
+    {
+        // Same setup as the regular conflict test, plus --dry-run. Outcome
+        // must be identical: non-zero exit + nothing on disk.
+        $process = $this->runSync('--trust=clash/skills-conflict', '--dry-run');
+
+        Assert::notSame($process->getExitCode(), 0);
+        Assert::false(\is_dir(self::TARGET_DIR));
     }
 
     // ── conflicts ───────────────────────────────────────────────────────────

@@ -25,8 +25,12 @@ final readonly class SyncEngine
     /**
      * @param list<VendorConfig> $donors curated donor packages (trust + filters already applied)
      * @param Path               $target absolute destination directory; created if missing
+     * @param bool               $dryRun when `true`, do everything **except** writing files —
+     *                                   discovery and conflict detection still run, and the
+     *                                   returned report's `copied` list still names the skills
+     *                                   that *would* have been written.
      */
-    public function sync(array $donors, Path $target): SyncReport
+    public function sync(array $donors, Path $target, bool $dryRun = false): SyncReport
     {
         $warnings = [];
         $skills = $this->discover($donors, $warnings);
@@ -36,11 +40,13 @@ final readonly class SyncEngine
             return new SyncReport(copied: [], conflicts: $conflicts, warnings: $warnings);
         }
 
-        foreach ($skills as $skill) {
-            $this->copyTree(
-                (string) $skill->sourceDir,
-                (string) $target->join($skill->name),
-            );
+        if (!$dryRun) {
+            foreach ($skills as $skill) {
+                $this->copyTree(
+                    (string) $skill->sourceDir,
+                    (string) $target->join($skill->name),
+                );
+            }
         }
 
         return new SyncReport(copied: $skills, conflicts: [], warnings: $warnings);

@@ -26,9 +26,9 @@ use Symfony\Component\Console\Command\Command;
  * - {@see \LLM\Skills\Composer\Command\Sync} — wired into Composer via the
  *   plugin's {@see \LLM\Skills\Composer\CommandProvider}; the Composer
  *   instance is provided by `BaseCommand::requireComposer()`.
- * - {@see \LLM\Skills\Console\Command\Sync} — the standalone `bin/skills`
- *   binary; the Composer instance is bootstrapped manually via
- *   {@see \Composer\Factory::create()}.
+ * - {@see \LLM\Skills\Console\Command\Sync} — the PHAR/binary entrypoint
+ *   shipped as `bin/skills`; the Composer instance is bootstrapped manually
+ *   via {@see \Composer\Factory::create()}.
  *
  * Whatever the source, the runner takes a ready-made {@see Composer}
  * instance plus an {@see IOInterface}, and goes through:
@@ -71,6 +71,21 @@ final readonly class SyncRunner
         $projectRoot = Path::create(\getcwd() ?: '.');
         $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
 
+        if ($options->hasPackageFilters()
+            && $plan->approvedDonors === []
+            && $plan->untrustedNamedDonors === []
+        ) {
+            $patterns = \implode(
+                ', ',
+                \array_map(static fn($p): string => $p->raw, $options->packageFilters),
+            );
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] no installed donor package matches: %s</error>',
+                $patterns,
+            ));
+            return Command::INVALID;
+        }
+
         foreach ($plan->skippedUntrustedNames as $name) {
             $io->writeError(\sprintf(
                 '<comment>[skip] %s is not in the trusted vendors list. '
@@ -82,7 +97,11 @@ final readonly class SyncRunner
 
         $approved = $this->resolveUntrustedNamed($plan->approvedDonors, $plan->untrustedNamedDonors, $io, $options);
 
-        $report = $this->engine->sync($approved, $plan->target);
+        if ($options->dryRun) {
+            $io->write('<comment>[dry-run] no files will be written</comment>');
+        }
+
+        $report = $this->engine->sync($approved, $plan->target, dryRun: $options->dryRun);
 
         foreach ($report->warnings as $warning) {
             $io->writeError('<comment>[warn] ' . $warning . '</comment>', verbosity: IOInterface::VERBOSE);
@@ -100,16 +119,20 @@ final readonly class SyncRunner
             return Command::FAILURE;
         }
 
+        $action = $options->dryRun ? '[would copy]' : '[copy]';
         foreach ($report->copied as $skill) {
             $io->write(\sprintf(
-                '<info>[copy]</info> %s ← %s',
+                '<info>%s</info> %s ← %s',
+                $action,
                 $skill->name,
                 $skill->packageName,
             ));
         }
 
+        $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
-            '<info>[llm/skills] synced %d skill(s) into %s</info>',
+            '<info>[llm/skills] %s %d skill(s) into %s</info>',
+            $verb,
             \count($report->copied),
             (string) $plan->target,
         ));

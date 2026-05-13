@@ -1,0 +1,11 @@
+{
+    "name": "spiral/skills-demo",
+    "description": "Stub donor under a vendor (`spiral/*`) listed in the built-in trusted list. Used to verify that `trusted-replace: true` actually disables the built-in defaults.",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}

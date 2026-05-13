@@ -54,6 +54,12 @@ final class SyncCliDefinition
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
                 'Trust an additional package or vendor for this run only (repeatable).',
+            )
+            ->addOption(
+                'dry-run',
+                null,
+                InputOption::VALUE_NONE,
+                'Print what would happen without touching the filesystem.',
             );
     }
 
@@ -74,6 +80,7 @@ final class SyncCliDefinition
             extraTrusted: self::parsePatterns($rawTrust, '--trust option'),
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
+            dryRun: (bool) $input->getOption('dry-run'),
         );
     }
 

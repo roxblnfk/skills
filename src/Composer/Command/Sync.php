@@ -16,11 +16,11 @@ use Symfony\Component\Console\Output\OutputInterface;
  *
  * Composer hands us a fully-bootstrapped {@see \Composer\Composer} via
  * {@see BaseCommand::requireComposer()} and an {@see \Composer\IO\IOInterface}
- * via {@see BaseCommand::getIO()}. Everything else (CLI parsing, business
- * logic) lives in shared classes — this file is intentionally just glue.
+ * via {@see BaseCommand::getIO()}. Everything else (CLI parsing, the sync
+ * pipeline) lives in shared classes — this file is intentionally just glue.
  *
- * For the standalone-binary entrypoint that does not run inside Composer,
- * see {@see \LLM\Skills\Console\Command\Sync}.
+ * For the PHAR/binary entrypoint that bootstraps Composer manually, see
+ * {@see \LLM\Skills\Console\Command\Sync}.
  *
  * @internal
  */

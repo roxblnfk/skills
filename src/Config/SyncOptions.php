@@ -20,6 +20,7 @@ final readonly class SyncOptions
      * @param list<VendorPattern>    $extraTrusted   `--trust=` entries, added on top of project + builtin trust lists
      * @param non-empty-string|null  $targetOverride `--target=` override (raw, resolved against `getcwd()` later)
      * @param bool                   $interactive    propagated from {@see \Symfony\Component\Console\Input\InputInterface::isInteractive()}
+     * @param bool                   $dryRun         when `true`, the runner prints what would happen but does not write any files
      *
      * @psalm-mutation-free
      */
@@ -28,6 +29,7 @@ final readonly class SyncOptions
         public array $extraTrusted,
         public ?string $targetOverride,
         public bool $interactive,
+        public bool $dryRun = false,
     ) {}
 
     /**
@@ -40,6 +42,7 @@ final readonly class SyncOptions
             extraTrusted: [],
             targetOverride: null,
             interactive: false,
+            dryRun: false,
         );
     }
 

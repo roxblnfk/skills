@@ -14,7 +14,8 @@
         "acme/skills-pro": "@dev",
         "acme/skills-broken": "@dev",
         "clash/skills-conflict": "@dev",
-        "evil/payload": "@dev"
+        "evil/payload": "@dev",
+        "spiral/skills-demo": "@dev"
     },
     "config": {
         "allow-plugins": {

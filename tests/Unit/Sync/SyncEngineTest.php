@@ -247,6 +247,50 @@ final class SyncEngineTest
         Assert::true(\is_file($this->tmp . '/fresh-target/greeting/SKILL.md'));
     }
 
+    public function dryRunReportsSkillsThatWouldBeCopiedWithoutWritingThem(): void
+    {
+        $donor = $this->makeDonor('acme/basic', 'src', [
+            'greeting/SKILL.md' => '# Greeting',
+            'code-review/SKILL.md' => '# Review',
+        ]);
+
+        $report = (new SyncEngine())->sync([$donor], $this->target(), dryRun: true);
+
+        Assert::true($report->isSuccess());
+        Assert::same(\count($report->copied), 2, 'report lists what would have been copied');
+        // Target directory is not created and no files written.
+        Assert::false(\is_dir($this->tmp . '/target'));
+        Assert::false(\is_file($this->targetPath('greeting/SKILL.md')));
+        Assert::false(\is_file($this->targetPath('code-review/SKILL.md')));
+    }
+
+    public function dryRunStillDetectsConflictsAndDoesNotCreateTarget(): void
+    {
+        // Two donors claim the same `greeting` skill name — must be reported
+        // even in dry-run, and no filesystem state must change.
+        $a = $this->makeDonor('acme/basic', 'src', ['greeting/SKILL.md' => '# A']);
+        $b = $this->makeDonor('acme/pro', 'src', ['greeting/SKILL.md' => '# B']);
+
+        $report = (new SyncEngine())->sync([$a, $b], $this->target(), dryRun: true);
+
+        Assert::true($report->hasConflicts());
+        Assert::same(\count($report->conflicts), 1);
+        Assert::false(\is_dir($this->tmp . '/target'));
+    }
+
+    public function dryRunLeavesExistingTargetFilesUntouched(): void
+    {
+        // Pre-existing file in target must NOT be overwritten by dry-run even
+        // when the donor ships a different version.
+        $donor = $this->makeDonor('acme/basic', 'src', ['greeting/SKILL.md' => 'donor version']);
+        \mkdir($this->targetPath('greeting'), 0o777, true);
+        \file_put_contents($this->targetPath('greeting/SKILL.md'), 'pre-existing content');
+
+        (new SyncEngine())->sync([$donor], $this->target(), dryRun: true);
+
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'pre-existing content');
+    }
+
     /**
      * @param non-empty-string                $packageName
      * @param non-empty-string                $sourceDir   directory inside the fake package (e.g. "src", ".claude/skills")

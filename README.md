@@ -220,6 +220,7 @@ composer skills:sync [<package>...] [options]
 |-----------------------|---------------------------------------------------------------------------------------|
 | `--target=PATH`, `-t` | Destination directory, relative to the project root. Overrides `extra.skills.target`. |
 | `--trust=PATTERN`     | Trust an additional pattern for this run (repeatable).                                |
+| `--dry-run`           | Print what would happen without touching the filesystem.                              |
 | `-v` / `-vv` / `-vvv` | Show diagnostics — malformed donor configs, etc.                                      |
 
 ### Exit codes
