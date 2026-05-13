@@ -1,0 +1,11 @@
+{
+    "name": "acme/skills-basic",
+    "description": "Stub package with two skills under the standard .claude/skills/ directory",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "source": ".claude/skills"
+        }
+    }
+}

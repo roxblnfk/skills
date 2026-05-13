@@ -59,6 +59,13 @@ Always follow these guidelines before generating or editing code.
 
 ### Testing (Testo)
 **Path:** [`docs/guidelines/how-to-write-tests.md`](docs/guidelines/how-to-write-tests.md)
+**Required reading before writing or modifying tests:**
+[https://php-testo.github.io/llms.txt](https://php-testo.github.io/llms.txt) — the official
+machine-friendly API reference for Testo. It describes attributes, assertions, lifecycle and
+configuration entry points faithfully and is the source of truth. Escalate to
+[`llms-full.txt`](https://php-testo.github.io/llms-full.txt) for middleware, plugin authoring,
+DI and extension topics. Testo is **not** PHPUnit — do not rely on PHPUnit semantics or guess
+from class names.
 **Value:** Ensures consistent, isolated tests that work with the testo framework.
 **Key Areas:**
 - Test structure: `tests/Unit` mirrors `src/`; `final` test classes
@@ -84,7 +91,7 @@ Always follow these guidelines before generating or editing code.
 
 - Do **not** introduce PHPUnit-style tests — this project uses testo. If you see
   `self::assertX()` it is wrong code, not a pattern to copy.
-- The `LLM\Assistant\…` namespace appearing in some files is legacy from an earlier project
+- The `LLM\Skills\…` namespace appearing in some files is legacy from an earlier project
   name and should be migrated to `LLM\Skills\…`; do not propagate it in new code.
 - File paths in commands and services should flow through the `Internal\Path` value object
   (provided by the `internal/path` dependency).

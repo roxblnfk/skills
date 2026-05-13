@@ -15,14 +15,17 @@
     ],
     "require": {
         "php": ">=8.2",
+        "composer-plugin-api": "^2.0",
         "internal/path": "^1.2"
     },
     "require-dev": {
         "buggregator/trap": "^1.10",
+        "composer/composer": "^2.9.0",
         "infection/infection": "^0.32",
-        "testo/testo": "0.1 - 1",
-        "testo/bridge-infection": "0.1 - 1",
+        "roxblnfk/unpoly": "^1.8",
         "spiral/code-style": "^2.3",
+        "testo/bridge-infection": "0.1 - 1",
+        "testo/testo": "0.1 - 1",
         "vimeo/psalm": "^7"
     },
     "minimum-stability": "dev",
@@ -36,6 +39,9 @@
         "psr-4": {
             "LLM\\Skills\\Tests\\": "tests/"
         }
+    },
+    "extra": {
+        "class": "LLM\\Skills\\SkillsPlugin"
     },
     "config": {
         "sort-packages": true,

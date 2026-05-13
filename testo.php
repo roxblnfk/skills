@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use LLM\Skills\Tests\Acceptance\Info;
+use LLM\Skills\Tests\Testo\Composer\ComposerInstallPlugin;
 use Testo\Application\Config\ApplicationConfig;
 use Testo\Application\Config\FinderConfig;
 use Testo\Application\Config\SuiteConfig;
@@ -20,6 +22,15 @@ return new ApplicationConfig(
             location: new FinderConfig(
                 include: [__DIR__ . '/tests/Unit'],
             ),
+        ),
+        new SuiteConfig(
+            name: 'Acceptance',
+            location: new FinderConfig(
+                include: [__DIR__ . '/tests/Acceptance'],
+            ),
+            plugins: [
+                new ComposerInstallPlugin(projectDir: Info::PROJECT_DIR, cleanup: true),
+            ],
         ),
     ],
     plugins: [

@@ -1,0 +1,21 @@
+<?php
+
+declare(strict_types=1);
+
+namespace LLM\Skills\Composer;
+
+use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
+use LLM\Skills\Composer\Command\Sync;
+
+final class CommandProvider implements CommandProviderCapability
+{
+    /**
+     * @return list<\Composer\Command\BaseCommand>
+     */
+    public function getCommands(): array
+    {
+        return [
+            new Sync(),
+        ];
+    }
+}

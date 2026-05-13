@@ -12,7 +12,7 @@ if ('cli' !== PHP_SAPI) {
     throw new Exception('This script must be run from the command line.');
 }
 
-(static function () {
+(static function (): void {
     $cwd = \getcwd();
 
     $possibleAutoloadPaths = [
@@ -43,6 +43,12 @@ if ('cli' !== PHP_SAPI) {
     require_once $autoloadPath;
 
     $application = new Application();
+    $application->setCommandLoader(
+        new FactoryCommandLoader([
+            'sync' => static fn() => new Command\Sync(),
+        ]),
+    );
+    // $application->setDefaultCommand('sync', false);
     $application->setVersion(Info::version());
     $application->setName(Info::NAME);
     $application->run();

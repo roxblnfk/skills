@@ -1,0 +1,21 @@
+{
+    "name": "llm/skills-sandbox",
+    "description": "Test consumer project for acceptance tests in tests/Acceptance",
+    "type": "project",
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "repositories": [
+        { "type": "path", "url": "../../..",        "options": { "symlink": true } },
+        { "type": "path", "url": "../packages/*/*", "options": { "symlink": true } }
+    ],
+    "require": {
+        "llm/skills": "@dev",
+        "acme/skills-basic": "@dev",
+        "acme/skills-pro": "@dev"
+    },
+    "config": {
+        "allow-plugins": {
+            "llm/skills": true
+        }
+    }
+}

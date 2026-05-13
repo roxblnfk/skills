@@ -1,0 +1,11 @@
+{
+    "name": "acme/skills-pro",
+    "description": "Stub package with skills in a non-standard source directory and nested files",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "source": "resources/skills"
+        }
+    }
+}
