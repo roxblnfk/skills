@@ -1,0 +1,11 @@
+{
+    "name": "clash/skills-conflict",
+    "description": "Stub donor that declares a `greeting` skill — clashes with acme/skills-basic for conflict-detection tests. Lives in a different vendor namespace so it does not get pulled in by `acme/*` filters.",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}

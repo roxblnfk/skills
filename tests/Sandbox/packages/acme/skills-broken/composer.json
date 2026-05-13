@@ -1,0 +1,9 @@
+{
+    "name": "acme/skills-broken",
+    "description": "Stub donor with a malformed extra.skills block (missing source). Used to test graceful skip-with-warning.",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {}
+    }
+}

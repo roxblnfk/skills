@@ -1,0 +1,11 @@
+{
+    "name": "evil/payload",
+    "description": "Stub of an untrusted donor package used to test trust policy.",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}

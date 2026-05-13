@@ -11,7 +11,10 @@
     "require": {
         "llm/skills": "@dev",
         "acme/skills-basic": "@dev",
-        "acme/skills-pro": "@dev"
+        "acme/skills-pro": "@dev",
+        "acme/skills-broken": "@dev",
+        "clash/skills-conflict": "@dev",
+        "evil/payload": "@dev"
     },
     "config": {
         "allow-plugins": {
@@ -20,7 +23,7 @@
     },
     "extra": {
         "skills": {
-            "trusted": ["acme/*"]
+            "trusted": ["acme/skills-basic", "acme/skills-pro"]
         }
     }
 }
