@@ -17,5 +17,10 @@
         "allow-plugins": {
             "llm/skills": true
         }
+    },
+    "extra": {
+        "skills": {
+            "trusted": ["acme/*"]
+        }
     }
 }

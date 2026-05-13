@@ -3,7 +3,6 @@
 
 declare(strict_types=1);
 
-use LLM\Skills\Command;
 use LLM\Skills\Info;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\CommandLoader\FactoryCommandLoader;
@@ -45,7 +44,7 @@ if ('cli' !== PHP_SAPI) {
     $application = new Application();
     $application->setCommandLoader(
         new FactoryCommandLoader([
-            'sync' => static fn() => new Command\Sync(),
+            'sync' => static fn() => new \LLM\Skills\Composer\Command\Sync(),
         ]),
     );
     // $application->setDefaultCommand('sync', false);
