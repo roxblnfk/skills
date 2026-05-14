@@ -14,10 +14,10 @@ use Composer\Plugin\PluginInterface;
  * Composer plugin entrypoint for `llm/skills`.
  *
  * Wires our {@see CommandProvider} into Composer so that
- * `composer skills:sync` becomes available. We intentionally subscribe to
+ * `composer skills:update` becomes available. We intentionally subscribe to
  * **no** Composer events — `llm/skills` follows a pull model: nothing
  * touches the user's filesystem until they explicitly invoke
- * `skills:sync`. Projects that want post-update auto-sync wire it up in
+ * `skills:update`. Projects that want post-update auto-sync wire it up in
  * their own `scripts.post-update-cmd` (see README).
  *
  * `activate()` / `deactivate()` / `uninstall()` are required by

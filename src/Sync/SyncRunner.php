@@ -18,7 +18,7 @@ use LLM\Skills\Info;
 use Symfony\Component\Console\Command\Command;
 
 /**
- * Shared body of `skills:sync` — independent of which entrypoint invoked it.
+ * Shared body of `skills:update` — independent of which entrypoint invoked it.
  *
  * Two entrypoints share this runner:
  *

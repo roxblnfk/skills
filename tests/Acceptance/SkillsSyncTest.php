@@ -14,7 +14,7 @@ use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 /**
- * Acceptance tests for the `composer skills:sync` command.
+ * Acceptance tests for the `composer skills:update` command.
  *
  * The sandbox project (`tests/Sandbox/project`) installs the following stubs:
  *
@@ -61,7 +61,7 @@ final class SkillsSyncTest
         Assert::same(
             $process->getExitCode(),
             0,
-            'skills:sync must exit with status 0; stderr was: ' . $process->getErrorOutput(),
+            'skills:update must exit with status 0; stderr was: ' . $process->getErrorOutput(),
         );
     }
 
@@ -437,7 +437,7 @@ final class SkillsSyncTest
 
     private function runSync(string ...$args): Process
     {
-        $command = 'skills:sync';
+        $command = 'skills:update';
         if ($args !== []) {
             $command .= ' ' . \implode(' ', $args);
         }

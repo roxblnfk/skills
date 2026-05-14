@@ -44,10 +44,12 @@ if ('cli' !== PHP_SAPI) {
     $application = new Application();
     $application->setCommandLoader(
         new FactoryCommandLoader([
-            'sync' => static fn() => new \LLM\Skills\Console\Command\Sync(),
+            // Pipe syntax registers the alias with the lazy loader. Without
+            // it, `bin/skills u` would not resolve through `has('u')`.
+            'update' => static fn() => new \LLM\Skills\Console\Command\Sync(),
         ]),
     );
-    $application->setDefaultCommand('sync', false);
+    $application->setDefaultCommand('update', false);
     $application->setVersion(Info::version());
     $application->setName(Info::NAME);
     $application->run();

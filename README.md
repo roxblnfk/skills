@@ -50,15 +50,15 @@ You will need to allow the plugin to run:
 }
 ```
 
-The plugin exposes one CLI command — `composer skills:sync` — and ships **no** event
-subscriptions. Wire it into `post-update-cmd` / `post-install-cmd` yourself if you want it to
-run automatically:
+The plugin exposes one CLI command — `composer skills:update` (alias `skills:u`) — and ships
+**no** event subscriptions. Wire it into `post-update-cmd` / `post-install-cmd` yourself if you
+want it to run automatically:
 
 ```jsonc
 {
   "scripts": {
-    "post-update-cmd": ["@composer skills:sync"],
-    "post-install-cmd": ["@composer skills:sync"]
+    "post-update-cmd": ["@composer skills:update"],
+    "post-install-cmd": ["@composer skills:update"]
   }
 }
 ```
@@ -90,7 +90,7 @@ acme/skills-pro/
         └── SKILL.md
 ```
 
-`composer skills:sync` then writes:
+`composer skills:update` then writes:
 
 ```
 <project>/.agents/skills/
@@ -197,7 +197,7 @@ doctrine/* · internal/* · laravel/* · llm/* · spiral/* · symfony/* · testo
 | Positional argument names the donor, **non-interactive** (CI) | sync          | warning, then sync          |
 | `--trust=<pattern>` matches the donor                         | sync          | sync (explicit allowance)   |
 
-Rationale: an explicit `composer skills:sync <package>` already counts as intent. The
+Rationale: an explicit `composer skills:update <package>` already counts as intent. The
 interactive prompt is a safety net for humans; CI gets a loud warning instead of a wall.
 
 ---
@@ -205,7 +205,8 @@ interactive prompt is a safety net for humans; CI gets a loud warning instead of
 ## Command synopsis
 
 ```
-composer skills:sync [<package>...] [options]
+composer skills:update [<package>...] [options]
+composer skills:u      [<package>...] [options]   # short alias
 ```
 
 ### Arguments
@@ -238,7 +239,7 @@ composer skills:sync [<package>...] [options]
 - **Non-destructive merge.** Files inside the target that the donor *does not* ship are left
   alone (your local notes survive). Files the donor *does* ship are overwritten — the donor
   is the source of truth.
-- **Idempotent.** Running `skills:sync` twice in a row produces the same state with no errors.
+- **Idempotent.** Running `skills:update` twice in a row produces the same state with no errors.
 - **Transactional on conflicts.** If two trusted donors declare a skill with the same
   directory name, sync aborts with exit 1 *before* touching the filesystem. Nothing is
   written. The output lists every offending package.
@@ -252,7 +253,7 @@ Donor packages with a malformed `extra.skills` block (missing `source`, wrong ty
 text and identify which donor needs fixing:
 
 ```bash
-composer skills:sync -v
+composer skills:update -v
 ```
 
 ```text
@@ -271,31 +272,33 @@ composer skills:sync -v
 Sync everything that is allowed:
 
 ```bash
-composer skills:sync
+composer skills:update
+# or, short alias:
+composer skills:u
 ```
 
 Sync only one donor:
 
 ```bash
-composer skills:sync acme/skills-basic
+composer skills:update acme/skills-basic
 ```
 
 Sync the entire `acme` namespace:
 
 ```bash
-composer skills:sync 'acme/*'
+composer skills:update 'acme/*'
 ```
 
 Trust a one-off donor for a single run:
 
 ```bash
-composer skills:sync --trust=evil/payload
+composer skills:update --trust=evil/payload
 ```
 
 Redirect output to a different directory:
 
 ```bash
-composer skills:sync --target=docs/agent-skills
+composer skills:update --target=docs/agent-skills
 ```
 
 ---

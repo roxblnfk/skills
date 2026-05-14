@@ -12,7 +12,7 @@ use Testo\Core\Context\TestResult;
 use Testo\Pipeline\Middleware\TestRunInterceptor;
 
 /**
- * Runs `composer skills:sync` inside {@see Info::PROJECT_DIR} before delegating
+ * Runs `composer skills:update` inside {@see Info::PROJECT_DIR} before delegating
  * to the next interceptor. Triggered by the {@see RunSyncCommand} attribute on
  * a test method or class.
  *
@@ -34,7 +34,7 @@ final readonly class RunSyncCommandInterceptor implements TestRunInterceptor
             Filesystem::removeRecursive(Info::PROJECT_DIR . '/.agents/skills');
         }
 
-        ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:sync');
+        ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:update');
 
         return $next($info);
     }

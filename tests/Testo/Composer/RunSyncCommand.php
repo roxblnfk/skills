@@ -9,7 +9,7 @@ use Testo\Pipeline\Attribute\Interceptable;
 
 /**
  * Marks an acceptance test (or every test in a class) as requiring a fresh
- * `composer skills:sync` run inside the sandbox project before the test body
+ * `composer skills:update` run inside the sandbox project before the test body
  * executes.
  *
  * The attribute is linked to {@see RunSyncCommandInterceptor} via

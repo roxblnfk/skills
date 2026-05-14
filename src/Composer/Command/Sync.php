@@ -11,8 +11,8 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Composer plugin entrypoint for `skills:sync`. Registered by
- * {@see \LLM\Skills\Composer\CommandProvider}.
+ * Composer plugin entrypoint for `skills:update` (alias `skills:u`).
+ * Registered by {@see \LLM\Skills\Composer\CommandProvider}.
  *
  * Composer hands us a fully-bootstrapped {@see \Composer\Composer} via
  * {@see BaseCommand::requireComposer()} and an {@see \Composer\IO\IOInterface}
@@ -29,7 +29,7 @@ final class Sync extends BaseCommand
     #[\Override]
     protected function configure(): void
     {
-        SyncCliDefinition::apply($this, 'skills:sync');
+        SyncCliDefinition::apply($this, 'skills:update', ['skills:u']);
     }
 
     #[\Override]

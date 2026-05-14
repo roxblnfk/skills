@@ -14,7 +14,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Standalone `skills:sync` for the `bin/skills` binary.
+ * Standalone `update` (alias `u`) for the `bin/skills` binary.
  *
  * Unlike {@see \LLM\Skills\Composer\Command\Sync}, this entrypoint is *not*
  * invoked through `composer` and has no implicit Composer instance — we
@@ -35,7 +35,7 @@ final class Sync extends Command
     #[\Override]
     protected function configure(): void
     {
-        SyncCliDefinition::apply($this, 'sync');
+        SyncCliDefinition::apply($this, 'update', ['u']);
     }
 
     #[\Override]

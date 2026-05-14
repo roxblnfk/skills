@@ -19,7 +19,7 @@ final class ComposerRunner
 {
     /**
      * @param non-empty-string $command Subcommand and its arguments, e.g. `install --prefer-dist`
-     *        or `skills:sync`. `--no-interaction --no-ansi` are appended automatically.
+     *        or `skills:update`. `--no-interaction --no-ansi` are appended automatically.
      * @param int<1, max> $timeout Hard timeout in seconds.
      * @param bool $mustSucceed When `true` (default), a non-zero exit raises
      *        {@see \Symfony\Component\Process\Exception\ProcessFailedException}.

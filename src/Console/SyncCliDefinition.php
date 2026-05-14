@@ -12,7 +12,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
- * Shared CLI surface for `skills:sync` — used by both the Composer plugin
+ * Shared CLI surface for `skills:update` — used by both the Composer plugin
  * entrypoint ({@see \LLM\Skills\Composer\Command\Sync}) and the standalone
  * binary ({@see \LLM\Skills\Console\Command\Sync}).
  *
@@ -22,20 +22,23 @@ use Symfony\Component\Console\Input\InputOption;
  */
 final class SyncCliDefinition
 {
-    private const DESCRIPTION = 'Sync AI skills from vendor packages into the project';
+    private const DESCRIPTION = 'Update AI skills from vendor packages into the project';
 
     /**
-     * Decorate a Symfony Console command with `skills:sync` arguments and
+     * Decorate a Symfony Console command with `update` arguments and
      * options. The name is passed explicitly because each entrypoint
      * registers the command under its own identifier — the Composer plugin
-     * uses `skills:sync`, the standalone binary uses `sync`.
+     * uses `skills:update`, the standalone binary uses `update`.
      *
-     * @param non-empty-string $name
+     * @param non-empty-string  $name
+     * @param list<non-empty-string> $aliases extra names the same command answers to
+     *        (e.g. `u` for the standalone binary, `skills:u` for the Composer plugin)
      */
-    public static function apply(Command $command, string $name): void
+    public static function apply(Command $command, string $name, array $aliases = []): void
     {
         $command
             ->setName($name)
+            ->setAliases($aliases)
             ->setDescription(self::DESCRIPTION)
             ->addArgument(
                 'packages',
