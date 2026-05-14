@@ -1,7 +1,7 @@
 on:
   push:
-    branches:
-      - '*'
+    branches-ignore:
+      - 'release-please--**'
 
 name: Fix Code Style
 
