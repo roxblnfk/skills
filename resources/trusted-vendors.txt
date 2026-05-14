@@ -31,3 +31,4 @@ spiral/*
 symfony/*
 testo/*
 yiisoft/*
+moonshine/*
