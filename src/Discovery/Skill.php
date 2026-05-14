@@ -2,15 +2,20 @@
 
 declare(strict_types=1);
 
-namespace LLM\Skills\Sync;
+namespace LLM\Skills\Discovery;
 
 use Internal\Path;
 
 /**
- * A single skill discovered inside a donor package's source directory.
+ * A single skill found inside a donor package's source directory.
  *
- * Skills are identified by their directory name. The same skill name appearing
- * in two different donor packages produces a {@see SkillConflict}.
+ * Skills are identified by their directory name. Two skills with the same
+ * name coming from different donor packages are a conflict — see
+ * {@see \LLM\Skills\Sync\SkillConflict}.
+ *
+ * Produced by {@see SkillEnumerator}; consumed by
+ * {@see \LLM\Skills\Sync\SyncEngine} (writes them) and by the `show`
+ * command (lists them).
  *
  * @psalm-immutable
  */

@@ -6,15 +6,14 @@ namespace LLM\Skills\Sync;
 
 use Composer\Composer;
 use Composer\IO\IOInterface;
-use Composer\Package\PackageInterface;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
-use LLM\Skills\Config\Exception\MalformedVendorConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
-use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Discovery\DonorDiscovery;
+use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Info;
 use Symfony\Component\Console\Command\Command;
 
@@ -30,18 +29,18 @@ use Symfony\Component\Console\Command\Command;
  *   shipped as `bin/skills`; the Composer instance is bootstrapped manually
  *   via {@see \Composer\Factory::create()}.
  *
- * Whatever the source, the runner takes a ready-made {@see Composer}
- * instance plus an {@see IOInterface}, and goes through:
+ * Whatever the source, the runner orchestrates the pipeline:
  *
- *   1. Map root `extra.skills` → {@see ProjectConfig}.
- *   2. Discover donors from `local-repository` (skip non-donors silently;
- *      surface malformed `extra.skills` blocks as `-v` warnings).
- *   3. Hand everything to {@see SyncPlanner} for trust/filter partitioning.
+ *   1. Map root `extra.skills` → {@see \LLM\Skills\Config\ProjectConfig}.
+ *   2. {@see DonorDiscovery}: Composer → list of donor {@see VendorConfig}.
+ *   3. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
  *   4. Print skip notices, prompt or warn for untrusted-named donors.
- *   5. Run {@see SyncEngine} and format the {@see SyncReport}.
+ *   5. {@see SkillEnumerator}: enumerate skill subdirs for approved donors.
+ *   6. {@see SyncEngine}: detect conflicts, write files.
+ *   7. Format the {@see SyncReport}.
  *
- * Returns one of {@see Command::SUCCESS} / {@see Command::FAILURE} so both
- * entrypoints can return it as-is.
+ * Returns {@see Command::SUCCESS} / {@see Command::FAILURE} /
+ * {@see Command::INVALID} so both entrypoints can return it as-is.
  */
 final readonly class SyncRunner
 {
@@ -51,7 +50,8 @@ final readonly class SyncRunner
     public function __construct(
         private SyncPlanner $planner = new SyncPlanner(),
         private SyncEngine $engine = new SyncEngine(),
-        private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
+        private DonorDiscovery $donorDiscovery = new DonorDiscovery(),
+        private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
     ) {}
 
@@ -66,10 +66,11 @@ final readonly class SyncRunner
 
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $donors = $this->discoverDonors($composer, $io);
+        $discovery = $this->donorDiscovery->discover($composer);
+        $this->emitWarnings($io, $discovery->warnings);
 
         $projectRoot = Path::create(\getcwd() ?: '.');
-        $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
+        $plan = $this->planner->plan($discovery->donors, $project, $options, $builtin, $projectRoot);
 
         if ($options->hasPackageFilters()
             && $plan->approvedDonors === []
@@ -101,11 +102,10 @@ final readonly class SyncRunner
             $io->write('<comment>[dry-run] no files will be written</comment>');
         }
 
-        $report = $this->engine->sync($approved, $plan->target, dryRun: $options->dryRun);
+        $enumeration = $this->skillEnumerator->enumerate($approved);
+        $this->emitWarnings($io, $enumeration->warnings);
 
-        foreach ($report->warnings as $warning) {
-            $io->writeError('<comment>[warn] ' . $warning . '</comment>', verbosity: IOInterface::VERBOSE);
-        }
+        $report = $this->engine->sync($enumeration->skills, $plan->target, dryRun: $options->dryRun);
 
         if ($report->hasConflicts()) {
             foreach ($report->conflicts as $conflict) {
@@ -138,49 +138,6 @@ final readonly class SyncRunner
         ));
 
         return Command::SUCCESS;
-    }
-
-    /**
-     * Build the list of donor packages from Composer's local repository. Skips
-     * non-donors silently; broken `extra.skills` blocks are surfaced as `-v`
-     * warnings and the offending package is dropped.
-     *
-     * @return list<VendorConfig>
-     */
-    private function discoverDonors(Composer $composer, IOInterface $io): array
-    {
-        $donors = [];
-
-        /** @var PackageInterface $package */
-        foreach ($composer->getRepositoryManager()->getLocalRepository()->getPackages() as $package) {
-            $extra = $package->getExtra();
-            if (!VendorConfigMapper::declaresSkills($extra)) {
-                continue;
-            }
-
-            $installPath = $composer->getInstallationManager()->getInstallPath($package);
-            if ($installPath === null) {
-                $io->writeError(
-                    \sprintf('<comment>[warn] %s: install path unavailable</comment>', $package->getName()),
-                    verbosity: IOInterface::VERBOSE,
-                );
-                continue;
-            }
-
-            /** @var non-empty-string $name */
-            $name = $package->getName();
-
-            try {
-                $donors[] = $this->vendorMapper->fromExtra($name, Path::create($installPath), $extra);
-            } catch (MalformedVendorConfig $e) {
-                $io->writeError(
-                    '<comment>[warn] ' . $e->getMessage() . '</comment>',
-                    verbosity: IOInterface::VERBOSE,
-                );
-            }
-        }
-
-        return $donors;
     }
 
     /**
@@ -218,6 +175,16 @@ final readonly class SyncRunner
         }
 
         return $approved;
+    }
+
+    /**
+     * @param list<string> $warnings
+     */
+    private function emitWarnings(IOInterface $io, array $warnings): void
+    {
+        foreach ($warnings as $warning) {
+            $io->writeError('<comment>[warn] ' . $warning . '</comment>', verbosity: IOInterface::VERBOSE);
+        }
     }
 
     /**

@@ -5,39 +5,39 @@ declare(strict_types=1);
 namespace LLM\Skills\Sync;
 
 use Internal\Path;
-use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Discovery\Skill;
 
 /**
- * Copies AI skills from a curated list of donor packages into a target
- * directory. Three-phase, transactional w.r.t. conflicts:
+ * Writes a curated list of skills into a target directory.
  *
- *   1. Discover  — enumerate skill subdirectories of each donor's `source`.
- *   2. Validate  — detect skill-name collisions across donors.
- *   3. Copy      — only if no conflicts; otherwise abort with the conflict list.
+ * Discovery is no longer the engine's job — callers pass already
+ * enumerated {@see Skill}s (typically from
+ * {@see \LLM\Skills\Discovery\SkillEnumerator}). The engine is two
+ * phases:
  *
- * Trust resolution and CLI filtering happen **before** this engine: callers
- * pass an already-vetted list of donors. The engine is pure logic over a
- * filesystem — no knowledge of Composer, IO interfaces, or interactive
- * prompts.
+ *   1. Validate — detect skill-name collisions. Reported as
+ *      {@see SkillConflict}s; sync aborts before any write.
+ *   2. Copy     — recursive, non-destructive merge per skill.
+ *
+ * Both Composer/Trust resolution and filesystem enumeration happen
+ * **before** the engine. The engine is pure write logic plus conflict
+ * detection — no knowledge of Composer, IO, or interactive prompts.
  */
 final readonly class SyncEngine
 {
     /**
-     * @param list<VendorConfig> $donors curated donor packages (trust + filters already applied)
-     * @param Path               $target absolute destination directory; created if missing
-     * @param bool               $dryRun when `true`, do everything **except** writing files —
-     *                                   discovery and conflict detection still run, and the
-     *                                   returned report's `copied` list still names the skills
-     *                                   that *would* have been written.
+     * @param list<Skill> $skills the skills to write (post-trust, post-enumeration)
+     * @param Path        $target absolute destination directory; created if missing
+     * @param bool        $dryRun when `true`, do everything except writing files —
+     *                            conflict detection still runs, and the returned
+     *                            report's `copied` list still names the skills that
+     *                            *would* have been written.
      */
-    public function sync(array $donors, Path $target, bool $dryRun = false): SyncReport
+    public function sync(array $skills, Path $target, bool $dryRun = false): SyncReport
     {
-        $warnings = [];
-        $skills = $this->discover($donors, $warnings);
-
         $conflicts = $this->detectConflicts($skills);
         if ($conflicts !== []) {
-            return new SyncReport(copied: [], conflicts: $conflicts, warnings: $warnings);
+            return new SyncReport(copied: [], conflicts: $conflicts);
         }
 
         if (!$dryRun) {
@@ -49,60 +49,7 @@ final readonly class SyncEngine
             }
         }
 
-        return new SyncReport(copied: $skills, conflicts: [], warnings: $warnings);
-    }
-
-    /**
-     * @param list<VendorConfig> $donors
-     * @param list<string>       $warnings   accumulator, mutated in place
-     *
-     * @return list<Skill>
-     */
-    private function discover(array $donors, array &$warnings): array
-    {
-        $skills = [];
-        foreach ($donors as $donor) {
-            $sourcePath = (string) $donor->sourcePath();
-
-            if (!\is_dir($sourcePath)) {
-                $warnings[] = \sprintf(
-                    '%s: source directory "%s" does not exist',
-                    $donor->packageName,
-                    $donor->source,
-                );
-                continue;
-            }
-
-            $entries = \scandir($sourcePath);
-            if ($entries === false) {
-                $warnings[] = \sprintf(
-                    '%s: source directory "%s" is unreadable',
-                    $donor->packageName,
-                    $donor->source,
-                );
-                continue;
-            }
-
-            foreach ($entries as $entry) {
-                if ($entry === '.' || $entry === '..') {
-                    continue;
-                }
-                $skillPath = $sourcePath . \DIRECTORY_SEPARATOR . $entry;
-                if (!\is_dir($skillPath)) {
-                    // Files at the source root are not skills (spec §1). Ignore silently.
-                    continue;
-                }
-
-                /** @var non-empty-string $entry */
-                $skills[] = new Skill(
-                    name: $entry,
-                    sourceDir: Path::create($skillPath),
-                    packageName: $donor->packageName,
-                );
-            }
-        }
-
-        return $skills;
+        return new SyncReport(copied: $skills, conflicts: []);
     }
 
     /**
