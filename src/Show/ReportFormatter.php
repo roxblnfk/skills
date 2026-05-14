@@ -233,12 +233,11 @@ final readonly class ReportFormatter
             SkipReason::Malformed,
             SkipReason::SourceMissing => '<bg=red;fg=white;options=bold>',
             // Trust decision required — yellow warning.
-            SkipReason::Untrusted,
-            SkipReason::UntrustedNamed => '<bg=yellow;fg=black;options=bold>',
+            SkipReason::Untrusted => '<bg=yellow;fg=black;options=bold>',
             // User self-excluded — muted neutral.
             SkipReason::FilteredOut => '<bg=white;fg=black>',
-            // Informational, future feature — cyan to differentiate from
-            // anything action-required.
+            // Auto-discovery candidate the user has not opted in to — cyan
+            // to differentiate from anything action-required.
             SkipReason::NotDeclared => '<bg=cyan;fg=black>',
         };
     }

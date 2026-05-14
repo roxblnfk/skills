@@ -13,8 +13,8 @@ use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\AutoDiscoveryProbe;
+use LLM\Skills\Discovery\DiscoveryResolver;
 use LLM\Skills\Discovery\DonorDiscovery;
-use LLM\Skills\Discovery\DonorDiscoveryResult;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Info;
@@ -36,11 +36,13 @@ use Symfony\Component\Console\Command\Command;
  *
  *   1. Map root `extra.skills` → {@see \LLM\Skills\Config\ProjectConfig}.
  *   2. {@see DonorDiscovery}: Composer → list of donor {@see VendorConfig}.
- *   3. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
- *   4. Print skip notices, prompt or warn for untrusted-named donors.
+ *   3. {@see DiscoveryResolver}: merge auto-discovered donors that the user
+ *      asked for (via `--discovery` or a positional name) into the donor list.
+ *   4. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
  *   5. {@see SkillEnumerator}: enumerate skill subdirs for approved donors.
  *   6. {@see SyncEngine}: detect conflicts, write files.
- *   7. Format the {@see SyncReport}.
+ *   7. Format the {@see SyncReport} grouped by package and emit the trailing
+ *      `[skip]` / `[hint]` diagnostics.
  *
  * Returns {@see Command::SUCCESS} / {@see Command::FAILURE} /
  * {@see Command::INVALID} so both entrypoints can return it as-is.
@@ -56,6 +58,7 @@ final readonly class SyncRunner
         private DonorDiscovery $donorDiscovery = new DonorDiscovery(),
         private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
     ) {}
 
     public function run(Composer $composer, IOInterface $io, SyncOptions $options): int
@@ -73,17 +76,17 @@ final readonly class SyncRunner
         $this->emitWarnings($io, $discovery->warnings);
 
         $discoveryActive = $options->discovery ?? $project->discovery;
-        $donors = $discoveryActive
-            ? [...$discovery->donors, ...$discovery->discoverable]
-            : $discovery->donors;
+        $resolution = $this->discoveryResolver->resolve(
+            $discovery->discoverable,
+            $discoveryActive,
+            $options,
+        );
+        $donors = [...$discovery->donors, ...$resolution->included];
 
         $projectRoot = Path::create(\getcwd() ?: '.');
         $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
 
-        if ($options->hasPackageFilters()
-            && $plan->approvedDonors === []
-            && $plan->untrustedNamedDonors === []
-        ) {
+        if ($options->hasPackageFilters() && $plan->approvedDonors === []) {
             $patterns = \implode(
                 ', ',
                 \array_map(static fn($p): string => $p->raw, $options->packageFilters),
@@ -95,13 +98,11 @@ final readonly class SyncRunner
             return Command::INVALID;
         }
 
-        $approved = $this->resolveUntrustedNamed($plan->approvedDonors, $plan->untrustedNamedDonors, $io, $options);
-
         if ($options->dryRun) {
             $io->write('<comment>[dry-run] no files will be written</comment>');
         }
 
-        $enumeration = $this->skillEnumerator->enumerate($approved);
+        $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
         $this->emitWarnings($io, $enumeration->warnings);
 
         $report = $this->engine->sync($enumeration->skills, $plan->target, dryRun: $options->dryRun);
@@ -115,7 +116,7 @@ final readonly class SyncRunner
                 ));
             }
             $io->writeError('<error>Sync aborted due to skill-name conflicts; nothing was written.</error>');
-            $this->emitTrailingDiagnostics($io, $plan, $discovery, $discoveryActive);
+            $this->emitTrailingDiagnostics($io, $plan, $resolution->excluded);
             return Command::FAILURE;
         }
 
@@ -129,7 +130,7 @@ final readonly class SyncRunner
             (string) $plan->target,
         ));
 
-        $this->emitTrailingDiagnostics($io, $plan, $discovery, $discoveryActive);
+        $this->emitTrailingDiagnostics($io, $plan, $resolution->excluded);
 
         return Command::SUCCESS;
     }
@@ -168,11 +169,14 @@ final readonly class SyncRunner
      * the summary line) so the reader sees results first and side
      * notices after.
      */
+    /**
+     * @param list<VendorConfig> $undeclaredCandidates packages still left out of this run (i.e.
+     *         {@see DiscoveryResolution::$excluded}); drives the discovery hint
+     */
     private function emitTrailingDiagnostics(
         IOInterface $io,
         SyncPlan $plan,
-        DonorDiscoveryResult $discovery,
-        bool $discoveryActive,
+        array $undeclaredCandidates,
     ): void {
         if ($plan->skippedUntrustedNames !== []) {
             $io->writeError(\sprintf(
@@ -189,51 +193,14 @@ final readonly class SyncRunner
             );
         }
 
-        if (!$discoveryActive && $discovery->discoverable !== []) {
+        if ($undeclaredCandidates !== []) {
             $io->write(\sprintf(
                 '<comment>[hint] %d package(s) ship undeclared skills under %s/. '
                 . 'Rerun with --discovery (-d) to include them, or set extra.skills.discovery: true.</comment>',
-                \count($discovery->discoverable),
+                \count($undeclaredCandidates),
                 AutoDiscoveryProbe::SOURCE_DIR,
             ));
         }
-    }
-
-    /**
-     * Resolve donors that were named on the CLI but are not trusted: in
-     * interactive mode we prompt (default Yes), otherwise we warn and proceed.
-     *
-     * @param list<VendorConfig> $approved       starting set (already-trusted donors)
-     * @param list<VendorConfig> $untrustedNamed donors needing a confirmation
-     *
-     * @return list<VendorConfig>
-     */
-    private function resolveUntrustedNamed(
-        array $approved,
-        array $untrustedNamed,
-        IOInterface $io,
-        SyncOptions $options,
-    ): array {
-        foreach ($untrustedNamed as $donor) {
-            if ($options->interactive && $io->isInteractive()) {
-                $confirmed = $io->askConfirmation(
-                    \sprintf('<question>%s is not trusted. Sync anyway?</question> [Y/n] ', $donor->packageName),
-                    true,
-                );
-                if ($confirmed) {
-                    $approved[] = $donor;
-                }
-                continue;
-            }
-
-            $io->writeError(\sprintf(
-                '<comment>[warn] %s is not trusted; syncing anyway because explicitly named.</comment>',
-                $donor->packageName,
-            ));
-            $approved[] = $donor;
-        }
-
-        return $approved;
     }
 
     /**

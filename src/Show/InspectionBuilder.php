@@ -12,6 +12,7 @@ use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Discovery\DiscoveryResolver;
 use LLM\Skills\Discovery\DonorDiscovery;
 use LLM\Skills\Discovery\InstalledSkill;
 use LLM\Skills\Discovery\InstalledSkillScanner;
@@ -54,6 +55,7 @@ final readonly class InspectionBuilder
         private DriftDetector $drift = new DriftDetector(),
         private SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
     ) {}
 
     /**
@@ -68,9 +70,12 @@ final readonly class InspectionBuilder
         $discovery = $this->donorDiscovery->discover($composer);
 
         $discoveryActive = $options->discovery ?? $project->discovery;
-        $donors = $discoveryActive
-            ? [...$discovery->donors, ...$discovery->discoverable]
-            : $discovery->donors;
+        $resolution = $this->discoveryResolver->resolve(
+            $discovery->discoverable,
+            $discoveryActive,
+            $options,
+        );
+        $donors = [...$discovery->donors, ...$resolution->included];
 
         $projectRoot = Path::create(\getcwd() ?: '.');
         $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
@@ -100,7 +105,7 @@ final readonly class InspectionBuilder
             $discovery->malformed,
             $approvedEnumeration->warnings,
             $plan,
-            $discoveryActive ? [] : $discovery->discoverable,
+            $resolution->excluded,
         );
 
         return new InspectionReport(
@@ -108,7 +113,7 @@ final readonly class InspectionBuilder
             donors: $donorInspections,
             skipped: $skipped,
             discoveryActive: $discoveryActive,
-            undeclaredCandidatesCount: \count($discovery->discoverable),
+            undeclaredCandidatesCount: \count($resolution->excluded),
         );
     }
 
@@ -301,13 +306,6 @@ final readonly class InspectionBuilder
             $result[] = new SkippedDonor(
                 packageName: $name,
                 reason: SkipReason::Untrusted,
-            );
-        }
-
-        foreach ($plan->untrustedNamedDonors as $donor) {
-            $result[] = new SkippedDonor(
-                packageName: $donor->packageName,
-                reason: SkipReason::UntrustedNamed,
             );
         }
 

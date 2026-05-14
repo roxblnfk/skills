@@ -18,10 +18,20 @@ use LLM\Skills\Config\VendorConfig;
  * the project root path. The planner does not touch the filesystem or
  * Composer's API — that work is the command's responsibility.
  *
- * Outputs: a {@see SyncPlan} that partitions donors into "approved",
- * "untrusted but named on the CLI" (needs an interactive nod), and
- * "untrusted, skipped silently". The plan also resolves the absolute target
+ * Outputs: a {@see SyncPlan} that partitions donors into "approved" (will be
+ * synced) and "skipped — untrusted" (silently dropped, surfaced via the
+ * trailing `[skip]` notice). The plan also resolves the absolute target
  * directory.
+ *
+ * Trust rules:
+ *
+ * - Naming a package as a positional argument is an implicit grant of trust:
+ *   if the user types `composer skills:update acme/foo`, the planner treats
+ *   `acme/foo` as approved regardless of the trust list. The trust list is
+ *   the bouncer for *auto-discovered* donors, not for ones the user already
+ *   asked for by name.
+ * - Without positional filters, every donor must clear the effective trust
+ *   list (built-in ∪ project ∪ `--trust`).
  */
 final readonly class SyncPlanner
 {
@@ -35,35 +45,33 @@ final readonly class SyncPlanner
         TrustedVendors $builtin,
         Path $projectRoot,
     ): SyncPlan {
-        $trust = $this->effectiveTrust($project, $options, $builtin);
         [$filtered, $filteredOut] = $this->partitionByFilter($donors, $options);
 
         $approved = [];
-        $untrustedNamed = [];
         $skipped = [];
 
-        foreach ($filtered as $donor) {
-            if ($trust->trusts($donor->packageName)) {
-                $approved[] = $donor;
-                continue;
-            }
+        if ($options->hasPackageFilters()) {
+            // Positional naming is an implicit trust grant — every donor that
+            // survived the filter goes straight to approved without consulting
+            // the trust list.
+            $approved = $filtered;
+        } else {
+            $trust = $this->effectiveTrust($project, $options, $builtin);
+            foreach ($filtered as $donor) {
+                if ($trust->trusts($donor->packageName)) {
+                    $approved[] = $donor;
+                    continue;
+                }
 
-            if ($options->hasPackageFilters()) {
-                // Explicitly named on the CLI — caller will prompt (interactive)
-                // or warn-and-proceed (non-interactive).
-                $untrustedNamed[] = $donor;
-                continue;
+                // Auto-discovered + untrusted — silently dropped from sync;
+                // the command surfaces a one-line notice so the user knows
+                // skills were ignored.
+                $skipped[] = $donor->packageName;
             }
-
-            // Auto-discovered + untrusted — silently dropped from sync; the
-            // command surfaces a one-line notice so the user knows skills
-            // were ignored.
-            $skipped[] = $donor->packageName;
         }
 
         return new SyncPlan(
             approvedDonors: $approved,
-            untrustedNamedDonors: $untrustedNamed,
             skippedUntrustedNames: $skipped,
             target: $this->resolveTarget($project, $options, $projectRoot),
             filteredOutDonors: $filteredOut,

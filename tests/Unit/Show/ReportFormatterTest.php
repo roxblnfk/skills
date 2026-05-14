@@ -259,7 +259,7 @@ final class ReportFormatterTest
             donors: [],
             skipped: [
                 new SkippedDonor('a/missing-src', SkipReason::SourceMissing),
-                new SkippedDonor('b/named', SkipReason::UntrustedNamed),
+                new SkippedDonor('b/untrusted', SkipReason::Untrusted),
                 new SkippedDonor('c/filtered', SkipReason::FilteredOut),
                 new SkippedDonor('d/not-declared', SkipReason::NotDeclared),
             ],
@@ -269,11 +269,11 @@ final class ReportFormatterTest
 
         // source-missing is vendor breakage → red.
         Assert::true(\str_contains($joined, '<bg=red;fg=white;options=bold> source-missing </>'));
-        // untrusted-named still needs a trust decision → yellow.
-        Assert::true(\str_contains($joined, '<bg=yellow;fg=black;options=bold> untrusted-named </>'));
+        // untrusted needs a trust decision → yellow.
+        Assert::true(\str_contains($joined, '<bg=yellow;fg=black;options=bold> untrusted </>'));
         // User explicitly excluded → muted white.
         Assert::true(\str_contains($joined, '<bg=white;fg=black> filtered-out </>'));
-        // Future --discover discovery → informational cyan.
+        // Auto-discovery candidate the user has not opted in to → informational cyan.
         Assert::true(\str_contains($joined, '<bg=cyan;fg=black> not-declared </>'));
     }
 

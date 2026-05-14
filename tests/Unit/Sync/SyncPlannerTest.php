@@ -35,7 +35,6 @@ final class SyncPlannerTest
         Assert::same(\count($plan->approvedDonors), 1);
         Assert::same($plan->approvedDonors[0]->packageName, 'acme/skills-basic');
         Assert::same($plan->skippedUntrustedNames, []);
-        Assert::same($plan->untrustedNamedDonors, []);
     }
 
     public function untrustedAutoDiscoveredDonorIsSkipped(): void
@@ -53,8 +52,10 @@ final class SyncPlannerTest
         Assert::same($plan->skippedUntrustedNames, ['evil/payload']);
     }
 
-    public function untrustedDonorMatchedByPositionalFilterGoesToUntrustedNamed(): void
+    public function untrustedDonorMatchedByPositionalFilterIsImplicitlyTrusted(): void
     {
+        // Naming a package as a positional arg means "I want this synced",
+        // which short-circuits the trust check. No prompt, no warning.
         $donor = $this->donor('evil/payload');
         $plan = $this->planner()->plan(
             donors: [$donor],
@@ -64,16 +65,36 @@ final class SyncPlannerTest
             projectRoot: $this->projectRoot(),
         );
 
-        Assert::same($plan->approvedDonors, []);
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'evil/payload');
         Assert::same($plan->skippedUntrustedNames, []);
-        Assert::same(\count($plan->untrustedNamedDonors), 1);
-        Assert::same($plan->untrustedNamedDonors[0]->packageName, 'evil/payload');
+    }
+
+    public function vendorWildcardFilterImplicitlyTrustsEveryMatchingDonor(): void
+    {
+        // `evil/*` as a positional grants implicit trust to every package
+        // under the vendor — exactly the same shortcut as naming each.
+        $a = $this->donor('evil/payload');
+        $b = $this->donor('evil/other');
+        $c = $this->donor('acme/skills-basic');
+        $plan = $this->planner()->plan(
+            donors: [$a, $b, $c],
+            project: ProjectConfig::default(),
+            options: $this->optionsWithFilters('evil/*'),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 2);
+        $approvedNames = \array_map(static fn($d) => $d->packageName, $plan->approvedDonors);
+        \sort($approvedNames);
+        Assert::same($approvedNames, ['evil/other', 'evil/payload']);
     }
 
     public function trustedDonorIsApprovedEvenWhenAlsoMatchedByFilter(): void
     {
-        // Belt-and-suspenders: an explicit positional arg must not demote a
-        // trusted donor to "needs prompt".
+        // Belt-and-suspenders: an explicit positional arg must not demote
+        // an already-trusted donor.
         $donor = $this->donor('acme/skills-basic');
         $plan = $this->planner()->plan(
             donors: [$donor],
@@ -84,7 +105,6 @@ final class SyncPlannerTest
         );
 
         Assert::same(\count($plan->approvedDonors), 1);
-        Assert::same($plan->untrustedNamedDonors, []);
     }
 
     public function projectTrustExtendsBuiltinByDefault(): void
@@ -266,7 +286,6 @@ final class SyncPlannerTest
 
         Assert::same($plan->approvedDonors, []);
         Assert::same($plan->skippedUntrustedNames, []);
-        Assert::same($plan->untrustedNamedDonors, []);
     }
 
     private function planner(): SyncPlanner

@@ -20,22 +20,19 @@ use LLM\Skills\Config\VendorConfig;
 final readonly class SyncPlan
 {
     /**
-     * @param list<VendorConfig> $approvedDonors donors that pass trust and filter — copy them.
-     * @param list<VendorConfig> $untrustedNamedDonors donors explicitly named by the CLI filter but **not**
-     *        in any trust list. Interactive mode prompts; non-interactive logs a warning and proceeds with
-     *        sync.
-     * @param list<non-empty-string> $skippedUntrustedNames donors discovered by auto-discovery (no
-     *        positional arg) that are not trusted. Skipped silently except for a notice.
+     * @param list<VendorConfig> $approvedDonors donors that pass trust (or were explicitly named on
+     *         the CLI, which short-circuits the trust check) — copy them
+     * @param list<non-empty-string> $skippedUntrustedNames donors discovered automatically (no positional
+     *         arg) that are not in any trust list; skipped silently except for the trailing `[skip]` notice
      * @param Path $target absolute destination directory
      * @param list<VendorConfig> $filteredOutDonors donors that were discovered but excluded by a positional
-     *        `<package>` pattern. The sync command ignores this field — it exists for `show`, which lists
-     *        these under `Skipped:` with a `filtered-out` reason.
+     *         `<package>` pattern. The sync command ignores this field — it exists for `show`, which lists
+     *         these under `Skipped:` with a `filtered-out` reason.
      *
      * @psalm-mutation-free
      */
     public function __construct(
         public array $approvedDonors,
-        public array $untrustedNamedDonors,
         public array $skippedUntrustedNames,
         public Path $target,
         public array $filteredOutDonors = [],

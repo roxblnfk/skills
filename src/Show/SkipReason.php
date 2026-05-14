@@ -24,7 +24,6 @@ namespace LLM\Skills\Show;
 enum SkipReason: string
 {
     case Untrusted = 'untrusted';
-    case UntrustedNamed = 'untrusted-named';
     case Malformed = 'malformed';
     case SourceMissing = 'source-missing';
     case FilteredOut = 'filtered-out';

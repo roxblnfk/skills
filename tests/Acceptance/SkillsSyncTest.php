@@ -159,16 +159,18 @@ final class SkillsSyncTest
         );
     }
 
-    public function untrustedVendorNamedNonInteractiveSyncsWithWarning(): void
+    public function namingAnUntrustedVendorImplicitlyTrustsItAndSyncsSilently(): void
     {
-        // Composer is invoked with --no-interaction; spec says: warn + sync.
+        // Naming a package as a positional arg is an implicit grant of
+        // trust — no warning, no prompt, just sync.
         $process = $this->runSync('evil/payload');
 
         Assert::same($process->getExitCode(), 0);
         Assert::true(\is_file(self::TARGET_DIR . '/tutorial/SKILL.md'));
-        Assert::true(
-            \str_contains($process->getErrorOutput(), 'evil/payload'),
-            'stderr should mention the untrusted package name. Got: ' . $process->getErrorOutput(),
+        Assert::false(
+            \str_contains($process->getErrorOutput(), 'is not trusted'),
+            'no "untrusted" warning expected for an explicitly named package. Got: '
+            . $process->getErrorOutput(),
         );
     }
 
@@ -205,12 +207,17 @@ final class SkillsSyncTest
 
     public function wildcardPositionalArgMatchesVendor(): void
     {
-        // acme/* hits basic + pro (trusted) + broken (malformed extra → -v warning, skipped).
-        // It does NOT match clash/skills-conflict (different vendor).
+        // acme/* hits basic + pro (declared), undeclared (auto-discovered
+        // because the user named it via wildcard), and broken (malformed
+        // extra → -v warning, skipped). It does NOT match clash/skills-conflict
+        // (different vendor).
         $process = $this->runSync('acme/*');
 
         Assert::same($process->getExitCode(), 0);
-        Assert::same($this->listTargetEntries(), ['code-review', 'greeting', 'migrate', 'refactor']);
+        Assert::same(
+            $this->listTargetEntries(),
+            ['auto-skill', 'code-review', 'greeting', 'migrate', 'refactor'],
+        );
     }
 
     public function positionalArgMatchingNoInstalledPackageExitsWithInvalid(): void
@@ -482,6 +489,36 @@ final class SkillsSyncTest
             \str_contains($combined, '[hint]'),
             'hint must not appear when --discovery is active. Got: ' . $combined,
         );
+    }
+
+    public function namingAnUndeclaredPackageAutoEnablesDiscoveryForItOnly(): void
+    {
+        // Naming acme/skills-undeclared as a positional arg should pull in
+        // its skills/ root via auto-discovery, *without* enabling discovery
+        // globally. evil/payload also has no extra.skills but was not named
+        // — it must not be auto-discovered.
+        $process = $this->runSync('acme/skills-undeclared');
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/auto-skill/SKILL.md'),
+            'named undeclared package must be auto-discovered. stderr: ' . $process->getErrorOutput(),
+        );
+    }
+
+    public function namingAVendorWildcardAutoDiscoversAllUndeclaredPackagesUnderIt(): void
+    {
+        // `acme/*` covers both declared (skills-basic, skills-pro) and
+        // undeclared (skills-undeclared) packages — all should ship.
+        $process = $this->runSync('acme/*');
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/auto-skill/SKILL.md'),
+            'wildcard named undeclared package must be auto-discovered. stderr: '
+            . $process->getErrorOutput(),
+        );
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
