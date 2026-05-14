@@ -13,7 +13,7 @@
     ],
     "files": [
         "resources/version.json",
-        "resources/trusted-vendors.php",
+        "resources/trusted-vendors.txt",
         "bin/skills",
         "LICENSE.md",
         "composer.json",

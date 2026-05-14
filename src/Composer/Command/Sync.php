@@ -29,7 +29,7 @@ final class Sync extends BaseCommand
     #[\Override]
     protected function configure(): void
     {
-        SyncCliDefinition::apply($this, 'skills:update', ['skills:u']);
+        SyncCliDefinition::apply($this, 'skills:update', ['skills:u'], discoveryShortFlag: false);
     }
 
     #[\Override]

@@ -29,7 +29,7 @@ return new ApplicationConfig(
                 include: [__DIR__ . '/tests/Acceptance'],
             ),
             plugins: [
-                new ComposerInstallPlugin(projectDir: Info::PROJECT_DIR, cleanup: true),
+                new ComposerInstallPlugin(projectDir: Info::PROJECT_DIR, cleanup: false),
             ],
         ),
     ],

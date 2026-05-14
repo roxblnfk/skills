@@ -433,6 +433,57 @@ final class SkillsSyncTest
         );
     }
 
+    // ── --discovery ─────────────────────────────────────────────────────────
+
+    public function withoutDiscoveryFlagUndeclaredSkillsAreNotSynced(): void
+    {
+        // acme/skills-undeclared ships a skills/auto-skill but no extra.skills.
+        // Without --discovery, the auto-skill must NOT be copied.
+        $this->runSync();
+
+        Assert::false(
+            \is_file(self::TARGET_DIR . '/auto-skill/SKILL.md'),
+            'auto-skill must not appear without --discovery',
+        );
+    }
+
+    public function withoutDiscoveryFlagOutputIncludesHintWhenCandidatesExist(): void
+    {
+        $process = $this->runSync();
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::true(
+            \str_contains($combined, '--discovery'),
+            'output must hint about --discovery when undeclared candidates exist. Got: ' . $combined,
+        );
+    }
+
+    public function discoveryFlagIncludesUndeclaredSkillsFromTrustedVendor(): void
+    {
+        // acme/* is not blanket-trusted in the sandbox; the project trust only
+        // covers basic and pro by exact name. We use --trust to whitelist the
+        // discovered package explicitly so it survives the trust filter.
+        $process = $this->runSync('--discovery', '--trust=acme/skills-undeclared');
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/auto-skill/SKILL.md'),
+            'auto-skill must be synced under --discovery + trust. stderr: ' . $process->getErrorOutput(),
+        );
+    }
+
+    public function discoveryFlagDoesNotEmitTheHint(): void
+    {
+        // Once --discovery is on, the runner has nothing to hint about.
+        $process = $this->runSync('--discovery');
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::false(
+            \str_contains($combined, '[hint]'),
+            'hint must not appear when --discovery is active. Got: ' . $combined,
+        );
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private function runSync(string ...$args): Process

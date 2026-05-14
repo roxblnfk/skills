@@ -1,0 +1,6 @@
+{
+    "name": "acme/skills-undeclared",
+    "description": "Stub package without extra.skills, ships an undeclared skills/ root used to exercise auto-discovery (--discovery flag)",
+    "type": "library",
+    "license": "MIT"
+}

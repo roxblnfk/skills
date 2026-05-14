@@ -27,9 +27,16 @@ final class ShowCliDefinition
     /**
      * @param non-empty-string $name
      * @param list<non-empty-string> $aliases extra names the same command answers to
+     * @param bool $discoveryShortFlag whether to register `-d` as the short alias for `--discovery`.
+     *         The Composer plugin must pass `false` because Composer reserves `-d` for
+     *         `--working-dir`; the standalone binary passes `true`.
      */
-    public static function apply(Command $command, string $name, array $aliases = []): void
-    {
+    public static function apply(
+        Command $command,
+        string $name,
+        array $aliases = [],
+        bool $discoveryShortFlag = true,
+    ): void {
         $command
             ->setName($name)
             ->setAliases($aliases)
@@ -50,6 +57,13 @@ final class ShowCliDefinition
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
                 'Trust an additional package or vendor for this listing only (repeatable).',
+            )
+            ->addOption(
+                'discovery',
+                $discoveryShortFlag ? 'd' : null,
+                InputOption::VALUE_NONE,
+                'Also include packages that do not declare extra.skills but ship a skills/ '
+                . 'directory. Overrides extra.skills.discovery.',
             );
     }
 
@@ -71,6 +85,7 @@ final class ShowCliDefinition
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
             dryRun: false,
+            discovery: $input->getOption('discovery') === true ? true : null,
         );
     }
 

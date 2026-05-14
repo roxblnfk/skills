@@ -67,8 +67,13 @@ final readonly class InspectionBuilder
 
         $discovery = $this->donorDiscovery->discover($composer);
 
+        $discoveryActive = $options->discovery ?? $project->discovery;
+        $donors = $discoveryActive
+            ? [...$discovery->donors, ...$discovery->discoverable]
+            : $discovery->donors;
+
         $projectRoot = Path::create(\getcwd() ?: '.');
-        $plan = $this->planner->plan($discovery->donors, $project, $options, $builtin, $projectRoot);
+        $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
 
         $attributor = $this->buildAttributor($project, $options, $builtin);
 
@@ -95,12 +100,15 @@ final readonly class InspectionBuilder
             $discovery->malformed,
             $approvedEnumeration->warnings,
             $plan,
+            $discoveryActive ? [] : $discovery->discoverable,
         );
 
         return new InspectionReport(
             target: $plan->target,
             donors: $donorInspections,
             skipped: $skipped,
+            discoveryActive: $discoveryActive,
+            undeclaredCandidatesCount: \count($discovery->discoverable),
         );
     }
 
@@ -258,6 +266,9 @@ final readonly class InspectionBuilder
     /**
      * @param list<\LLM\Skills\Discovery\MalformedDonor> $malformed
      * @param list<string> $enumerationWarnings raw text from {@see SkillEnumerator}
+     * @param list<VendorConfig> $unactivatedDiscoverable packages that ship a `skills/` root but
+     *         were not promoted into the run (because `--discovery` is off); listed under
+     *         `not-declared` so the user sees their names alongside the actionable hint
      *
      * @return list<SkippedDonor>
      *
@@ -267,6 +278,7 @@ final readonly class InspectionBuilder
         array $malformed,
         array $enumerationWarnings,
         \LLM\Skills\Sync\SyncPlan $plan,
+        array $unactivatedDiscoverable,
     ): array {
         $result = [];
 
@@ -275,6 +287,13 @@ final readonly class InspectionBuilder
                 packageName: $bad->packageName,
                 reason: SkipReason::Malformed,
                 detail: $bad->reason,
+            );
+        }
+
+        foreach ($unactivatedDiscoverable as $donor) {
+            $result[] = new SkippedDonor(
+                packageName: $donor->packageName,
+                reason: SkipReason::NotDeclared,
             );
         }
 
@@ -339,19 +358,27 @@ final readonly class InspectionBuilder
     }
 
     /**
-     * @psalm-suppress MissingPureAnnotation `require` is conceptually pure here (the file is shipped with
-     *         the package) but psalm cannot prove it.
+     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall reading a file shipped with the
+     *         package is conceptually pure but psalm cannot prove it.
      *
      * @psalm-pure
      */
     private function loadBuiltinTrustedVendors(): TrustedVendors
     {
-        /**
-         * @var list<non-empty-string> $patterns
-         *
-         * @psalm-suppress UnresolvableInclude
-         */
-        $patterns = require Info::ROOT_DIR . '/resources/trusted-vendors.php';
+        $path = Info::ROOT_DIR . '/resources/trusted-vendors.txt';
+        $content = \file_get_contents($path);
+        if ($content === false) {
+            throw new \RuntimeException('Failed to read built-in trusted-vendors list at ' . $path);
+        }
+
+        $patterns = [];
+        foreach (\explode("\n", $content) as $line) {
+            $line = \trim($line);
+            if ($line === '' || \str_starts_with($line, '#')) {
+                continue;
+            }
+            $patterns[] = $line;
+        }
 
         return TrustedVendors::fromStrings(...$patterns);
     }

@@ -21,6 +21,8 @@ final readonly class SyncOptions
      * @param non-empty-string|null $targetOverride `--target=` override (raw, resolved against `getcwd()` later)
      * @param bool $interactive propagated from {@see \Symfony\Component\Console\Input\InputInterface::isInteractive()}
      * @param bool $dryRun when `true`, the runner prints what would happen but does not write any files
+     * @param bool|null $discovery `--discovery/-d` CLI flag: `true` to opt in, `false` to opt out,
+     *         `null` (default) to defer to project config (`extra.skills.discovery`)
      *
      * @psalm-mutation-free
      */
@@ -30,6 +32,7 @@ final readonly class SyncOptions
         public ?string $targetOverride,
         public bool $interactive,
         public bool $dryRun = false,
+        public ?bool $discovery = null,
     ) {}
 
     /**
@@ -43,6 +46,7 @@ final readonly class SyncOptions
             targetOverride: null,
             interactive: false,
             dryRun: false,
+            discovery: null,
         );
     }
 

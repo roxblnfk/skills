@@ -21,8 +21,6 @@ use LLM\Skills\Config\VendorConfig;
  * - Package has `extra.skills` but it is broken → {@see self::fromExtra()}
  * throws {@see MalformedVendorConfig}; the caller emits a `-v` warning and
  * moves on. One bad vendor never blocks the rest of the sync.
- *
- * @psalm-pure
  */
 final readonly class VendorConfigMapper
 {
@@ -43,8 +41,6 @@ final readonly class VendorConfigMapper
      * @param mixed $extra raw value of `composer.json` `extra` field
      *
      * @throws MalformedVendorConfig when `extra.skills` is present but invalid
-     *
-     * @psalm-pure
      */
     public function fromExtra(string $packageName, Path $packageRoot, mixed $extra): VendorConfig
     {
@@ -62,6 +58,20 @@ final readonly class VendorConfigMapper
             throw new MalformedVendorConfig(
                 $packageName,
                 'extra.skills.source must be a non-empty string',
+            );
+        }
+
+        if (Path::create($source)->isAbsolute()) {
+            throw new MalformedVendorConfig(
+                $packageName,
+                'extra.skills.source must be a relative path',
+            );
+        }
+
+        if (!$packageRoot->join($source)->match((string) $packageRoot . '/*')) {
+            throw new MalformedVendorConfig(
+                $packageName,
+                'extra.skills.source must not escape the package root',
             );
         }
 

@@ -25,6 +25,8 @@ final readonly class VendorConfig
      * @param non-empty-string $packageName Composer name, e.g. `acme/skills-pro`
      * @param Path $packageRoot absolute path where Composer installed the package
      * @param non-empty-string $source directory inside the package containing skill subdirs
+     * @param bool $discovered `true` when this donor was synthesised by auto-discovery
+     *         (the package does not declare `extra.skills`); `false` for declared donors
      *
      * @psalm-mutation-free
      */
@@ -32,6 +34,7 @@ final readonly class VendorConfig
         public string $packageName,
         public Path $packageRoot,
         public string $source,
+        public bool $discovered = false,
     ) {}
 
     /**

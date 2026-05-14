@@ -28,6 +28,8 @@ final readonly class ProjectConfig
      * @param non-empty-string $target destination relative to project root
      * @param TrustedVendors $trusted patterns from project `extra.skills.trusted`
      * @param bool $trustedReplace when true, skip the built-in trusted list entirely
+     * @param bool $discovery when true, treat installed packages without `extra.skills` as
+     *         potential donors if they ship a `skills/` directory; CLI `--discovery` overrides this
      *
      * @psalm-mutation-free
      */
@@ -35,6 +37,7 @@ final readonly class ProjectConfig
         public string $target,
         public TrustedVendors $trusted,
         public bool $trustedReplace,
+        public bool $discovery = false,
     ) {}
 
     /**
@@ -49,6 +52,7 @@ final readonly class ProjectConfig
             target: self::DEFAULT_TARGET,
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
+            discovery: false,
         );
     }
 
@@ -59,6 +63,6 @@ final readonly class ProjectConfig
      */
     public function withTarget(string $target): self
     {
-        return new self($target, $this->trusted, $this->trustedReplace);
+        return new self($target, $this->trusted, $this->trustedReplace, $this->discovery);
     }
 }

@@ -32,10 +32,17 @@ final class SyncCliDefinition
      *
      * @param non-empty-string $name
      * @param list<non-empty-string> $aliases extra names the same command answers to (e.g. `u` for the
-     *        standalone binary, `skills:u` for the Composer plugin)
+     *         standalone binary, `skills:u` for the Composer plugin)
+     * @param bool $discoveryShortFlag whether to register `-d` as the short alias for `--discovery`.
+     *         The Composer plugin must pass `false` because Composer reserves `-d` for
+     *         `--working-dir`; the standalone binary passes `true`.
      */
-    public static function apply(Command $command, string $name, array $aliases = []): void
-    {
+    public static function apply(
+        Command $command,
+        string $name,
+        array $aliases = [],
+        bool $discoveryShortFlag = true,
+    ): void {
         $command
             ->setName($name)
             ->setAliases($aliases)
@@ -63,6 +70,13 @@ final class SyncCliDefinition
                 null,
                 InputOption::VALUE_NONE,
                 'Print what would happen without touching the filesystem.',
+            )
+            ->addOption(
+                'discovery',
+                $discoveryShortFlag ? 'd' : null,
+                InputOption::VALUE_NONE,
+                'Also include packages that do not declare extra.skills but ship a skills/ '
+                . 'directory. Overrides extra.skills.discovery.',
             );
     }
 
@@ -84,6 +98,7 @@ final class SyncCliDefinition
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
             dryRun: (bool) $input->getOption('dry-run'),
+            discovery: $input->getOption('discovery') === true ? true : null,
         );
     }
 

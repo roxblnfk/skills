@@ -11,15 +11,15 @@ namespace LLM\Skills\Show;
  * Reasons are mutually exclusive at the *donor* level — a donor lives in
  * exactly one `Skipped:` row, with one reason. The user reads the reason
  * and decides whether to act (trust the donor, fix the malformed
- * `extra.skills`, drop the positional filter, …).
+ * `extra.skills`, drop the positional filter, opt in to discovery, …).
  *
- * {@see SkipReason::NotDeclared} is reserved for the planned `--discover`
- * flag: packages that ship a `skills/` directory but never declared
- * `extra.skills` in their `composer.json`. With `--discover` off they
- * are invisible by design; with `--discover` on and the feature shipped
- * they would land in the main listing instead. The enum case exists
- * today so consumers can match on it without a follow-up breaking
- * change once `--discover` lands.
+ * {@see SkipReason::NotDeclared} is used when {@see \LLM\Skills\Discovery\AutoDiscoveryProbe}
+ * found a `skills/` directory inside a package that does **not** declare
+ * `extra.skills`, but the run did not opt in via `--discovery` /
+ * `extra.skills.discovery: true`. Listing the donor here makes the
+ * candidate names visible alongside the actionable hint at the bottom of
+ * the report. Enabling discovery moves the donor into the main listing
+ * (or under `untrusted` if the trust filter rejects it).
  */
 enum SkipReason: string
 {

@@ -110,4 +110,57 @@ final class VendorConfigMapperTest
             ['skills' => ['source' => ['nested']]],
         );
     }
+
+    public function fromExtraThrowsWhenSourceContainsDotDotSegment(): void
+    {
+        // `../outside` resolves below the package root — a malicious donor could
+        // point sync at arbitrary files on disk. Must be rejected as malformed,
+        // not silently accepted.
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must not escape the package root');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => '../outside']],
+        );
+    }
+
+    public function fromExtraThrowsWhenSourceContainsDotDotInMiddle(): void
+    {
+        // `..` resolution happens on the whole string, not just the leading
+        // segment — `resources/../../etc` also escapes the package root.
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must not escape the package root');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => 'resources/../../etc']],
+        );
+    }
+
+    public function fromExtraThrowsWhenSourceIsAbsoluteUnixPath(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must be a relative path');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => '/etc/passwd']],
+        );
+    }
+
+    public function fromExtraThrowsWhenSourceIsAbsoluteWindowsPath(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must be a relative path');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => 'C:\\Windows']],
+        );
+    }
 }

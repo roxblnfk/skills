@@ -60,10 +60,16 @@ final readonly class ProjectConfigMapper
             throw new MalformedProjectConfig('extra.skills.trusted-replace must be a boolean');
         }
 
+        $discovery = $skills['discovery'] ?? false;
+        if (!\is_bool($discovery)) {
+            throw new MalformedProjectConfig('extra.skills.discovery must be a boolean');
+        }
+
         return new ProjectConfig(
             target: $target,
             trusted: $trusted,
             trustedReplace: $replace,
+            discovery: $discovery,
         );
     }
 

@@ -13,6 +13,7 @@
         "acme/skills-basic": "@dev",
         "acme/skills-pro": "@dev",
         "acme/skills-broken": "@dev",
+        "acme/skills-undeclared": "@dev",
         "clash/skills-conflict": "@dev",
         "evil/payload": "@dev",
         "spiral/skills-demo": "@dev"

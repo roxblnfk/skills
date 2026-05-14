@@ -5,7 +5,7 @@ name: 🔐 Security analysis
 on:  # yamllint disable-line rule:truthy
   pull_request:
   push:
-    branches: [1.x]
+    branches: [master]
 
 # `head_ref` is the PR source branch on `pull_request` events and empty on `push`
 # (falls back to `github.ref` = `refs/heads/<branch>`). Different PRs from different
@@ -13,7 +13,7 @@ on:  # yamllint disable-line rule:truthy
 # → same group, the new run cancels the previous one.
 #
 # `cancel-in-progress` is only enabled on PR events: pushes to the default branch
-# (1.x) keep their full history of CI runs.
+# (master) keep their full history of CI runs.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

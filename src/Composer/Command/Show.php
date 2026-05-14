@@ -29,7 +29,7 @@ final class Show extends BaseCommand
     #[\Override]
     protected function configure(): void
     {
-        ShowCliDefinition::apply($this, 'skills:show', ['skills:s']);
+        ShowCliDefinition::apply($this, 'skills:show', ['skills:s'], discoveryShortFlag: false);
     }
 
     #[\Override]

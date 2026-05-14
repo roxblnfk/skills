@@ -182,7 +182,7 @@ Bare `vendor` without `/` is rejected as ambiguous.
 
 ### Built-in trusted vendors
 
-Shipped in `resources/trusted-vendors.php`. Maintainers extend it by PR. The current set:
+Shipped in `resources/trusted-vendors.txt`. Maintainers extend it by PR. The current set:
 
 ```
 doctrine/* · internal/* · laravel/* · llm/* · spiral/* · symfony/* · testo/* · yiisoft/*

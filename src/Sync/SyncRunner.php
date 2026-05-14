@@ -12,7 +12,10 @@ use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\DonorDiscovery;
+use LLM\Skills\Discovery\DonorDiscoveryResult;
+use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Info;
 use Symfony\Component\Console\Command\Command;
@@ -69,8 +72,13 @@ final readonly class SyncRunner
         $discovery = $this->donorDiscovery->discover($composer);
         $this->emitWarnings($io, $discovery->warnings);
 
+        $discoveryActive = $options->discovery ?? $project->discovery;
+        $donors = $discoveryActive
+            ? [...$discovery->donors, ...$discovery->discoverable]
+            : $discovery->donors;
+
         $projectRoot = Path::create(\getcwd() ?: '.');
-        $plan = $this->planner->plan($discovery->donors, $project, $options, $builtin, $projectRoot);
+        $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
 
         if ($options->hasPackageFilters()
             && $plan->approvedDonors === []
@@ -85,15 +93,6 @@ final readonly class SyncRunner
                 $patterns,
             ));
             return Command::INVALID;
-        }
-
-        foreach ($plan->skippedUntrustedNames as $name) {
-            $io->writeError(\sprintf(
-                '<comment>[skip] %s is not in the trusted vendors list. '
-                . 'Add it to extra.skills.trusted or rerun with --trust=%s.</comment>',
-                $name,
-                $name,
-            ));
         }
 
         $approved = $this->resolveUntrustedNamed($plan->approvedDonors, $plan->untrustedNamedDonors, $io, $options);
@@ -116,18 +115,11 @@ final readonly class SyncRunner
                 ));
             }
             $io->writeError('<error>Sync aborted due to skill-name conflicts; nothing was written.</error>');
+            $this->emitTrailingDiagnostics($io, $plan, $discovery, $discoveryActive);
             return Command::FAILURE;
         }
 
-        $action = $options->dryRun ? '[would copy]' : '[copy]';
-        foreach ($report->copied as $skill) {
-            $io->write(\sprintf(
-                '<info>%s</info> %s ← %s',
-                $action,
-                $skill->name,
-                $skill->packageName,
-            ));
-        }
+        $this->emitCopyReport($io, $report->copied, $options->dryRun);
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
@@ -137,7 +129,74 @@ final readonly class SyncRunner
             (string) $plan->target,
         ));
 
+        $this->emitTrailingDiagnostics($io, $plan, $discovery, $discoveryActive);
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * Group copied skills by donor package so a multi-package sync reads as
+     * a list of vendor sections, not a flat stream of `name ← package` rows
+     * that the eye has to re-sort.
+     *
+     * @param list<Skill> $copied
+     */
+    private function emitCopyReport(IOInterface $io, array $copied, bool $dryRun): void
+    {
+        if ($copied === []) {
+            return;
+        }
+
+        $action = $dryRun ? '[would copy]' : '[copy]';
+        $byPackage = [];
+        foreach ($copied as $skill) {
+            $byPackage[$skill->packageName][] = $skill->name;
+        }
+
+        foreach ($byPackage as $package => $names) {
+            $io->write('<fg=cyan>' . $package . '</>');
+            foreach ($names as $name) {
+                $io->write('  <info>' . $action . '</info> ' . $name);
+            }
+        }
+    }
+
+    /**
+     * Emit the "what didn't make it" footer: untrusted donors that were
+     * silently dropped, plus the `--discovery` hint when relevant. Lives
+     * at the bottom of the output (after the per-package copy report and
+     * the summary line) so the reader sees results first and side
+     * notices after.
+     */
+    private function emitTrailingDiagnostics(
+        IOInterface $io,
+        SyncPlan $plan,
+        DonorDiscoveryResult $discovery,
+        bool $discoveryActive,
+    ): void {
+        if ($plan->skippedUntrustedNames !== []) {
+            $io->writeError(\sprintf(
+                '<comment>[skip] %d untrusted package(s) were not synced:</comment>',
+                \count($plan->skippedUntrustedNames),
+            ));
+            foreach ($plan->skippedUntrustedNames as $name) {
+                $io->writeError('<comment>  - ' . $name . '</comment>');
+            }
+            $io->writeError(
+                '<comment>       Add them to extra.skills.trusted or rerun with '
+                . '--trust=<pattern> (e.g. --trust=acme/skills-pro, --trust=acme/*, --trust=*; '
+                . 'repeatable).</comment>',
+            );
+        }
+
+        if (!$discoveryActive && $discovery->discoverable !== []) {
+            $io->write(\sprintf(
+                '<comment>[hint] %d package(s) ship undeclared skills under %s/. '
+                . 'Rerun with --discovery (-d) to include them, or set extra.skills.discovery: true.</comment>',
+                \count($discovery->discoverable),
+                AutoDiscoveryProbe::SOURCE_DIR,
+            ));
+        }
     }
 
     /**
@@ -188,19 +247,27 @@ final readonly class SyncRunner
     }
 
     /**
-     * @psalm-suppress MissingPureAnnotation `require` is conceptually pure here (the file is shipped with
-     *         the package) but psalm cannot prove it.
+     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall reading a file shipped with the
+     *         package is conceptually pure but psalm cannot prove it.
      *
      * @psalm-pure
      */
     private function loadBuiltinTrustedVendors(): TrustedVendors
     {
-        /**
-         * @var list<non-empty-string> $patterns
-         *
-         * @psalm-suppress UnresolvableInclude
-         */
-        $patterns = require Info::ROOT_DIR . '/resources/trusted-vendors.php';
+        $path = Info::ROOT_DIR . '/resources/trusted-vendors.txt';
+        $content = \file_get_contents($path);
+        if ($content === false) {
+            throw new \RuntimeException('Failed to read built-in trusted-vendors list at ' . $path);
+        }
+
+        $patterns = [];
+        foreach (\explode("\n", $content) as $line) {
+            $line = \trim($line);
+            if ($line === '' || \str_starts_with($line, '#')) {
+                continue;
+            }
+            $patterns[] = $line;
+        }
 
         return TrustedVendors::fromStrings(...$patterns);
     }

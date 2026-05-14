@@ -288,6 +288,79 @@ final class SkillsShowTest
         Assert::false(\str_contains($out, ' OK '));
     }
 
+    // ── --discovery ─────────────────────────────────────────────────────────
+
+    public function withoutDiscoveryFlagUndeclaredDonorIsAbsentFromMainListing(): void
+    {
+        $process = $this->runShow();
+        $out = $process->getOutput();
+
+        Assert::false(
+            \str_contains($out, 'auto-skill'),
+            'auto-skill must not appear in show without --discovery. Got: ' . $out,
+        );
+    }
+
+    public function withoutDiscoveryFlagUndeclaredDonorIsListedInSkippedAsNotDeclared(): void
+    {
+        // Even though the skill itself is hidden, the package name should
+        // still surface under Skipped with reason `not-declared` so the user
+        // sees what they would be opting in to.
+        $process = $this->runShow();
+        $out = $process->getOutput();
+
+        Assert::true(\str_contains($out, 'Skipped:'));
+        Assert::true(
+            \str_contains($out, 'not-declared'),
+            'undeclared donor must carry a not-declared chip. Got: ' . $out,
+        );
+        Assert::true(
+            \str_contains($out, 'acme/skills-undeclared'),
+            'undeclared donor package name must be listed. Got: ' . $out,
+        );
+    }
+
+    public function withoutDiscoveryFlagOutputHintsRerunWithDiscovery(): void
+    {
+        $process = $this->runShow();
+        $out = $process->getOutput();
+
+        Assert::true(
+            \str_contains($out, '--discovery'),
+            'show must hint about --discovery when undeclared candidates exist. Got: ' . $out,
+        );
+    }
+
+    public function discoveryFlagPromotesUndeclaredDonorAndMarksItDiscovered(): void
+    {
+        $process = $this->runShow('--discovery', '--trust=acme/skills-undeclared');
+        $out = $process->getOutput();
+
+        Assert::true(
+            \str_contains($out, 'skills-undeclared'),
+            'discovered donor must appear in main listing. Got: ' . $out,
+        );
+        Assert::true(
+            \str_contains($out, 'auto-skill'),
+            'discovered donor skill must appear in listing. Got: ' . $out,
+        );
+        Assert::true(
+            \str_contains($out, '[discovered]'),
+            'discovered donor must carry the [discovered] annotation. Got: ' . $out,
+        );
+    }
+
+    public function discoveryFlagDoesNotEmitTheHint(): void
+    {
+        $process = $this->runShow('--discovery');
+        $out = $process->getOutput();
+
+        Assert::false(
+            \str_contains($out, '[hint]'),
+            'hint must not appear when --discovery is on. Got: ' . $out,
+        );
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private function runShow(string ...$args): Process

@@ -80,7 +80,9 @@ final readonly class ReportFormatter
             ? $this->formatSkipped($report->skipped)
             : [];
 
-        if ($main === [] && $skipped === []) {
+        $hint = $this->formatDiscoveryHint($report);
+
+        if ($main === [] && $skipped === [] && $hint === []) {
             return ['No donor packages found.'];
         }
 
@@ -96,8 +98,30 @@ final readonly class ReportFormatter
             }
             $lines = [...$lines, ...$skipped];
         }
+        if ($hint !== []) {
+            $lines[] = '';
+            $lines = [...$lines, ...$hint];
+        }
 
         return $lines;
+    }
+
+    /**
+     * @return list<string>
+     *
+     * @psalm-pure
+     */
+    private function formatDiscoveryHint(InspectionReport $report): array
+    {
+        if ($report->discoveryActive || $report->undeclaredCandidatesCount === 0) {
+            return [];
+        }
+
+        return [\sprintf(
+            '<comment>[hint] %d package(s) ship undeclared skills under skills/. '
+            . 'Rerun with --discovery (-d) to include them, or set extra.skills.discovery: true.</comment>',
+            $report->undeclaredCandidatesCount,
+        )];
     }
 
     /**
@@ -133,11 +157,14 @@ final readonly class ReportFormatter
                 $trustNote = $donor->trustSource === TrustSource::Builtin
                     ? '    [via built-in trust]'
                     : '';
+                $discoveredNote = $donor->donor->discovered
+                    ? '  <fg=magenta>[discovered]</>'
+                    : '';
                 // str_pad on the plain text inside the colour tag keeps
                 // visible-width alignment correct — sprintf %-Ns would
                 // measure the tag bytes as part of the field and break it.
                 $lines[] = '  <fg=cyan>' . \str_pad($pkgTail, 40) . '</> '
-                    . $donor->donor->source . $trustNote;
+                    . $donor->donor->source . $discoveredNote . $trustNote;
 
                 foreach ($donor->skills as $skill) {
                     $lines[] = $this->formatSkillLine($skill);

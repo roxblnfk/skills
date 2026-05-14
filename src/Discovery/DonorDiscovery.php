@@ -9,6 +9,7 @@ use Composer\Package\PackageInterface;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedVendorConfig;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
+use LLM\Skills\Config\VendorConfig;
 
 /**
  * Walks Composer's local repository and maps every package's
@@ -29,6 +30,7 @@ final readonly class DonorDiscovery
      */
     public function __construct(
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
+        private AutoDiscoveryProbe $probe = new AutoDiscoveryProbe(),
     ) {}
 
     public function discover(Composer $composer): DonorDiscoveryResult
@@ -36,25 +38,37 @@ final readonly class DonorDiscovery
         $donors = [];
         $warnings = [];
         $malformed = [];
+        $discoverable = [];
 
         /** @var PackageInterface $package */
         foreach ($composer->getRepositoryManager()->getLocalRepository()->getPackages() as $package) {
             $extra = $package->getExtra();
+            /** @var non-empty-string $name */
+            $name = $package->getName();
+
             if (!VendorConfigMapper::declaresSkills($extra)) {
+                $installPath = $composer->getInstallationManager()->getInstallPath($package);
+                if ($installPath === null) {
+                    continue;
+                }
+                $packageRoot = Path::create($installPath);
+                $source = $this->probe->probe($packageRoot);
+                if ($source !== null) {
+                    $discoverable[] = new VendorConfig(
+                        packageName: $name,
+                        packageRoot: $packageRoot,
+                        source: $source,
+                        discovered: true,
+                    );
+                }
                 continue;
             }
 
             $installPath = $composer->getInstallationManager()->getInstallPath($package);
             if ($installPath === null) {
-                $warnings[] = \sprintf(
-                    '%s: install path unavailable',
-                    $package->getName(),
-                );
+                $warnings[] = \sprintf('%s: install path unavailable', $name);
                 continue;
             }
-
-            /** @var non-empty-string $name */
-            $name = $package->getName();
 
             try {
                 $donors[] = $this->vendorMapper->fromExtra($name, Path::create($installPath), $extra);
@@ -68,6 +82,11 @@ final readonly class DonorDiscovery
             }
         }
 
-        return new DonorDiscoveryResult(donors: $donors, warnings: $warnings, malformed: $malformed);
+        return new DonorDiscoveryResult(
+            donors: $donors,
+            warnings: $warnings,
+            malformed: $malformed,
+            discoverable: $discoverable,
+        );
     }
 }
