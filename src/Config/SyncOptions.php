@@ -16,11 +16,11 @@ namespace LLM\Skills\Config;
 final readonly class SyncOptions
 {
     /**
-     * @param list<VendorPattern>    $packageFilters positional `<package>` args; empty list means "all donor packages"
-     * @param list<VendorPattern>    $extraTrusted   `--trust=` entries, added on top of project + builtin trust lists
-     * @param non-empty-string|null  $targetOverride `--target=` override (raw, resolved against `getcwd()` later)
-     * @param bool                   $interactive    propagated from {@see \Symfony\Component\Console\Input\InputInterface::isInteractive()}
-     * @param bool                   $dryRun         when `true`, the runner prints what would happen but does not write any files
+     * @param list<VendorPattern> $packageFilters positional `<package>` args; empty list means "all donor packages"
+     * @param list<VendorPattern> $extraTrusted `--trust=` entries, added on top of project + builtin trust lists
+     * @param non-empty-string|null $targetOverride `--target=` override (raw, resolved against `getcwd()` later)
+     * @param bool $interactive propagated from {@see \Symfony\Component\Console\Input\InputInterface::isInteractive()}
+     * @param bool $dryRun when `true`, the runner prints what would happen but does not write any files
      *
      * @psalm-mutation-free
      */

@@ -231,9 +231,9 @@ final class SyncEngineTest
      * different subtrees so two skills can coexist with the same name on
      * disk.
      *
-     * @param non-empty-string                $packageName
-     * @param non-empty-string                $skillName
-     * @param array<non-empty-string, string> $files       map of relative path → file contents
+     * @param non-empty-string $packageName
+     * @param non-empty-string $skillName
+     * @param array<non-empty-string, string> $files map of relative path → file contents
      */
     private function makeSkill(string $packageName, string $skillName, array $files): Skill
     {

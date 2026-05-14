@@ -109,9 +109,9 @@ final class SkillEnumeratorTest
     }
 
     /**
-     * @param non-empty-string                $packageName
-     * @param non-empty-string                $sourceDir
-     * @param array<non-empty-string, string> $files       "<skill>/<rel-path>" → contents
+     * @param non-empty-string $packageName
+     * @param non-empty-string $sourceDir
+     * @param array<non-empty-string, string> $files "<skill>/<rel-path>" → contents
      */
     private function makeDonor(string $packageName, string $sourceDir, array $files): VendorConfig
     {

@@ -15,9 +15,9 @@ namespace LLM\Skills\Sync;
 final readonly class SkillConflict
 {
     /**
-     * @param non-empty-string         $name     conflicting skill directory name
-     * @param list<non-empty-string>   $packages Composer names of the conflicting donors,
-     *                                           in the order they were enumerated
+     * @param non-empty-string $name conflicting skill directory name
+     * @param list<non-empty-string> $packages Composer names of the conflicting donors, in the order they
+     *        were enumerated
      *
      * @psalm-mutation-free
      */

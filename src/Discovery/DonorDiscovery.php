@@ -35,6 +35,7 @@ final readonly class DonorDiscovery
     {
         $donors = [];
         $warnings = [];
+        $malformed = [];
 
         /** @var PackageInterface $package */
         foreach ($composer->getRepositoryManager()->getLocalRepository()->getPackages() as $package) {
@@ -59,9 +60,14 @@ final readonly class DonorDiscovery
                 $donors[] = $this->vendorMapper->fromExtra($name, Path::create($installPath), $extra);
             } catch (MalformedVendorConfig $e) {
                 $warnings[] = $e->getMessage();
+                // Strip the `Package "..." :` prefix the exception adds, so the
+                // structured reason is the bare cause: "extra.skills.source must be ...".
+                /** @var non-empty-string $reason */
+                $reason = \preg_replace('/^Package "[^"]+": /', '', $e->getMessage()) ?? $e->getMessage();
+                $malformed[] = new MalformedDonor(packageName: $e->packageName, reason: $reason);
             }
         }
 
-        return new DonorDiscoveryResult(donors: $donors, warnings: $warnings);
+        return new DonorDiscoveryResult(donors: $donors, warnings: $warnings, malformed: $malformed);
     }
 }

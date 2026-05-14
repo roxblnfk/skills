@@ -188,8 +188,8 @@ final readonly class SyncRunner
     }
 
     /**
-     * @psalm-suppress MissingPureAnnotation `require` is conceptually pure here
-     *                 (the file is shipped with the package) but psalm cannot prove it.
+     * @psalm-suppress MissingPureAnnotation `require` is conceptually pure here (the file is shipped with
+     *         the package) but psalm cannot prove it.
      *
      * @psalm-pure
      */

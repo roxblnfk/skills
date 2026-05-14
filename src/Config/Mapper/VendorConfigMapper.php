@@ -39,8 +39,8 @@ final readonly class VendorConfigMapper
 
     /**
      * @param non-empty-string $packageName
-     * @param Path             $packageRoot absolute install path of the package
-     * @param mixed            $extra       raw value of `composer.json` `extra` field
+     * @param Path $packageRoot absolute install path of the package
+     * @param mixed $extra raw value of `composer.json` `extra` field
      *
      * @throws MalformedVendorConfig when `extra.skills` is present but invalid
      *

@@ -24,7 +24,7 @@ final readonly class InstalledSkill
 {
     /**
      * @param non-empty-string $name skill directory name
-     * @param Path             $dir  absolute path to the installed skill directory
+     * @param Path $dir absolute path to the installed skill directory
      *
      * @psalm-mutation-free
      */

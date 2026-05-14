@@ -27,11 +27,9 @@ final readonly class SyncEngine
 {
     /**
      * @param list<Skill> $skills the skills to write (post-trust, post-enumeration)
-     * @param Path        $target absolute destination directory; created if missing
-     * @param bool        $dryRun when `true`, do everything except writing files —
-     *                            conflict detection still runs, and the returned
-     *                            report's `copied` list still names the skills that
-     *                            *would* have been written.
+     * @param Path $target absolute destination directory; created if missing
+     * @param bool $dryRun when `true`, do everything except writing files — conflict detection still runs,
+     *        and the returned report's `copied` list still names the skills that *would* have been written.
      */
     public function sync(array $skills, Path $target, bool $dryRun = false): SyncReport
     {

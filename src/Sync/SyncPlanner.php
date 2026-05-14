@@ -36,7 +36,7 @@ final readonly class SyncPlanner
         Path $projectRoot,
     ): SyncPlan {
         $trust = $this->effectiveTrust($project, $options, $builtin);
-        $filtered = $this->applyFilter($donors, $options);
+        [$filtered, $filteredOut] = $this->partitionByFilter($donors, $options);
 
         $approved = [];
         $untrustedNamed = [];
@@ -66,6 +66,7 @@ final readonly class SyncPlanner
             untrustedNamedDonors: $untrustedNamed,
             skippedUntrustedNames: $skipped,
             target: $this->resolveTarget($project, $options, $projectRoot),
+            filteredOutDonors: $filteredOut,
         );
     }
 
@@ -106,22 +107,35 @@ final readonly class SyncPlanner
     }
 
     /**
+     * Split discovered donors into "kept" and "rejected by positional filter".
+     *
+     * Both halves are needed downstream: the kept half feeds trust resolution,
+     * the rejected half is surfaced by `skills:show` under `Skipped:` so users
+     * can see which donors a filter dropped without re-running without it.
+     *
      * @param list<VendorConfig> $donors
      *
-     * @return list<VendorConfig>
+     * @return array{0: list<VendorConfig>, 1: list<VendorConfig>}
      *
      * @psalm-mutation-free
      */
-    private function applyFilter(array $donors, SyncOptions $options): array
+    private function partitionByFilter(array $donors, SyncOptions $options): array
     {
         if (!$options->hasPackageFilters()) {
-            return $donors;
+            return [$donors, []];
         }
 
-        return \array_values(\array_filter(
-            $donors,
-            static fn(VendorConfig $d): bool => $options->matchesFilter($d->packageName),
-        ));
+        $kept = [];
+        $rejected = [];
+        foreach ($donors as $donor) {
+            if ($options->matchesFilter($donor->packageName)) {
+                $kept[] = $donor;
+            } else {
+                $rejected[] = $donor;
+            }
+        }
+
+        return [$kept, $rejected];
     }
 
     private function resolveTarget(

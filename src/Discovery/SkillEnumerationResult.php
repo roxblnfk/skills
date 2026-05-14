@@ -16,7 +16,7 @@ namespace LLM\Skills\Discovery;
 final readonly class SkillEnumerationResult
 {
     /**
-     * @param list<Skill>  $skills
+     * @param list<Skill> $skills
      * @param list<string> $warnings
      *
      * @psalm-mutation-free

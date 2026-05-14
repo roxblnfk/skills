@@ -12,27 +12,21 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
- * Shared CLI surface for `skills:update` — used by both the Composer plugin
- * entrypoint ({@see \LLM\Skills\Composer\Command\Sync}) and the standalone
- * binary ({@see \LLM\Skills\Console\Command\Sync}).
+ * Shared CLI surface for `skills:show` — used by both the Composer
+ * plugin entrypoint ({@see \LLM\Skills\Composer\Command\Show}) and the
+ * standalone binary ({@see \LLM\Skills\Console\Command\Show}).
  *
- * Centralising `configure()` and `buildOptions()` here guarantees that the
- * two entrypoints accept the exact same arguments and flags. Adding a new
- * option in one place is impossible — it has to land in this file.
+ * Mirrors {@see SyncCliDefinition} so the two commands accept the same
+ * positional pattern + `--target` + `--trust` triple. `show` does not
+ * accept `--dry-run` because it is itself read-only.
  */
-final class SyncCliDefinition
+final class ShowCliDefinition
 {
-    private const DESCRIPTION = 'Update AI skills from vendor packages into the project';
+    private const DESCRIPTION = 'List donor skills, grouped by package, with sync status';
 
     /**
-     * Decorate a Symfony Console command with `update` arguments and
-     * options. The name is passed explicitly because each entrypoint
-     * registers the command under its own identifier — the Composer plugin
-     * uses `skills:update`, the standalone binary uses `update`.
-     *
      * @param non-empty-string $name
-     * @param list<non-empty-string> $aliases extra names the same command answers to (e.g. `u` for the
-     *        standalone binary, `skills:u` for the Composer plugin)
+     * @param list<non-empty-string> $aliases extra names the same command answers to
      */
     public static function apply(Command $command, string $name, array $aliases = []): void
     {
@@ -43,26 +37,19 @@ final class SyncCliDefinition
             ->addArgument(
                 'packages',
                 InputArgument::IS_ARRAY | InputArgument::OPTIONAL,
-                'Restrict sync to matching packages (exact "vendor/pkg" or wildcard "vendor/*"). '
-                . 'When omitted, every installed donor package is considered.',
+                'Restrict listing to matching packages (exact "vendor/pkg" or wildcard "vendor/*").',
             )
             ->addOption(
                 'target',
                 't',
                 InputOption::VALUE_REQUIRED,
-                'Destination directory for synced skills. Overrides extra.skills.target.',
+                'Check sync status against this destination instead of the configured one.',
             )
             ->addOption(
                 'trust',
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
-                'Trust an additional package or vendor for this run only (repeatable).',
-            )
-            ->addOption(
-                'dry-run',
-                null,
-                InputOption::VALUE_NONE,
-                'Print what would happen without touching the filesystem.',
+                'Trust an additional package or vendor for this listing only (repeatable).',
             );
     }
 
@@ -83,7 +70,7 @@ final class SyncCliDefinition
             extraTrusted: self::parsePatterns($rawTrust, '--trust option'),
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
-            dryRun: (bool) $input->getOption('dry-run'),
+            dryRun: false,
         );
     }
 

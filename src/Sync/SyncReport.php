@@ -26,7 +26,7 @@ use LLM\Skills\Discovery\Skill;
 final readonly class SyncReport
 {
     /**
-     * @param list<Skill>         $copied
+     * @param list<Skill> $copied
      * @param list<SkillConflict> $conflicts
      *
      * @psalm-mutation-free

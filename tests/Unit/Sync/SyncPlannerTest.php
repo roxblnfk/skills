@@ -162,6 +162,38 @@ final class SyncPlannerTest
         Assert::same($plan->approvedDonors[0]->packageName, 'acme/keep');
     }
 
+    public function filteredOutDonorsArePreservedForShow(): void
+    {
+        // Donors discovered but rejected by the positional pattern should
+        // surface in the plan so `skills:show` can list them under
+        // `Skipped: ... filtered-out`. They are never copied.
+        $kept = $this->donor('acme/keep');
+        $rejected = $this->donor('acme/drop');
+        $plan = $this->planner()->plan(
+            donors: [$kept, $rejected],
+            project: ProjectConfig::default(),
+            options: $this->optionsWithFilters('acme/keep'),
+            builtin: TrustedVendors::fromStrings('acme/*'),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->filteredOutDonors), 1);
+        Assert::same($plan->filteredOutDonors[0]->packageName, 'acme/drop');
+    }
+
+    public function filteredOutIsEmptyWhenNoPositionalFilterIsGiven(): void
+    {
+        $plan = $this->planner()->plan(
+            donors: [$this->donor('acme/keep'), $this->donor('acme/drop')],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::fromStrings('acme/*'),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same($plan->filteredOutDonors, []);
+    }
+
     public function targetDefaultsToProjectConfigJoinedAgainstProjectRoot(): void
     {
         $plan = $this->planner()->plan(
