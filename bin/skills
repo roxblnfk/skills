@@ -44,9 +44,8 @@ if ('cli' !== PHP_SAPI) {
     $application = new Application();
     $application->setCommandLoader(
         new FactoryCommandLoader([
-            // Pipe syntax registers the alias with the lazy loader. Without
-            // it, `bin/skills u` would not resolve through `has('u')`.
             'update' => static fn() => new \LLM\Skills\Console\Command\Sync(),
+            'show' => static fn() => new \LLM\Skills\Console\Command\Show(),
         ]),
     );
     $application->setDefaultCommand('update', false);
