@@ -27,7 +27,9 @@ doctrine/*
 internal/*
 laravel/*
 llm/*
+moonshine/*
 spiral/*
 symfony/*
+tempest/*
 testo/*
 yiisoft/*

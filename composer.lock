@@ -6561,16 +6561,16 @@
         },
         {
             "name": "testo/testo",
-            "version": "0.10.9",
+            "version": "0.10.10",
             "source": {
                 "type": "git",
                 "url": "https://github.com/php-testo/testo.git",
-                "reference": "522357529ea39fb0a8cb0b192f4f2c8599960f7b"
+                "reference": "819fb53f3b45781feacf49fb81eb85855102e117"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/php-testo/testo/zipball/522357529ea39fb0a8cb0b192f4f2c8599960f7b",
-                "reference": "522357529ea39fb0a8cb0b192f4f2c8599960f7b",
+                "url": "https://api.github.com/repos/php-testo/testo/zipball/819fb53f3b45781feacf49fb81eb85855102e117",
+                "reference": "819fb53f3b45781feacf49fb81eb85855102e117",
                 "shasum": ""
             },
             "require": {
@@ -6613,6 +6613,11 @@
                 "testo/bridge-infection": "Provides integration with Infection PHP mutation testing framework."
             },
             "type": "library",
+            "extra": {
+                "skills": {
+                    "source": "skills"
+                }
+            },
             "autoload": {
                 "psr-4": {
                     "Testo\\": "core/",
@@ -6630,6 +6635,7 @@
                 }
             ],
             "description": "A lightweight PHP testing framework.",
+            "homepage": "https://php-testo.github.io/",
             "keywords": [
                 "dev",
                 "test",
@@ -6647,7 +6653,7 @@
                     "type": "boosty"
                 }
             ],
-            "time": "2026-05-12T16:40:28+00:00"
+            "time": "2026-05-14T16:15:33+00:00"
         },
         {
             "name": "thecodingmachine/safe",

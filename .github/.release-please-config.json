@@ -5,7 +5,7 @@
         ".": {
             "package-name": "skills",
             "changelog-path": "/CHANGELOG.md",
-            "bump-minor-pre-major": true
+            "bump-minor-pre-major": false
         }
     },
     "include-component-in-tag": false,
