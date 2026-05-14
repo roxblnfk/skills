@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/roxblnfk/skills/compare/0.3.0...1.0.0) (2026-05-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* Prepare to release
+
+### Miscellaneous
+
+* Prepare to release ([4246a89](https://github.com/roxblnfk/skills/commit/4246a89a3aa679ad77a7e85be6b2b76ae1268f9a))
+
 ## [0.3.0](https://github.com/roxblnfk/skills/compare/0.2.0...0.3.0) (2026-05-14)
 
 
