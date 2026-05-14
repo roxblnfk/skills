@@ -17,17 +17,12 @@ An *AI Skill* is a directory containing a `SKILL.md` plus any auxiliary files (t
 examples, fixtures). The directory name is the skill's identity; coding-agent tools read
 `SKILL.md` to learn project-specific instructions, conventions, and recipes.
 
-`llm/skills` solves one problem: distributing those instruction bundles as ordinary Composer
-dependencies and assembling them in the consumer project on every `composer install` /
-`composer update`.
+`llm/skills` distributes those instruction bundles as ordinary Composer dependencies and
+assembles them in the consumer project — on demand or automatically on `composer install` /
+`update`.
 
----
 
-## Get Started
-
-### Installation
-
-In the project that should *receive* skills:
+## Install
 
 ```bash
 composer require --dev llm/skills
@@ -38,43 +33,65 @@ composer require --dev llm/skills
 [![License](https://img.shields.io/packagist/l/llm/skills.svg?style=flat-square)](LICENSE.md)
 [![Total Downloads](https://img.shields.io/packagist/dt/llm/skills.svg?style=flat-square)](https://packagist.org/packages/llm/skills/stats)
 
-You will need to allow the plugin to run:
+Allow the plugin to run:
 
 ```jsonc
-{
-  "config": {
-    "allow-plugins": {
-      "llm/skills": true
-    }
-  }
-}
+{ "config": { "allow-plugins": { "llm/skills": true } } }
 ```
 
-The plugin exposes one CLI command — `composer skills:update` (alias `skills:u`) — and ships
-**no** event subscriptions. Wire it into `post-update-cmd` / `post-install-cmd` yourself if you
-want it to run automatically:
+(Optional) auto-sync on every `composer install` / `update`:
 
 ```jsonc
 {
   "scripts": {
-    "post-update-cmd": ["@composer skills:update"],
-    "post-install-cmd": ["@composer skills:update"]
+    "post-install-cmd": ["@composer skills:update"],
+    "post-update-cmd":  ["@composer skills:update"]
   }
 }
 ```
 
-### Shipping skills from a vendor package
 
-A donor package declares one directory whose immediate subdirectories are its skills:
+## Commands
+
+```
+composer skills:update [<package>...] [options]   # alias: skills:u
+composer skills:show   [<package>...] [options]   # alias: skills:s
+```
+
+`skills:update` copies skills into the target directory. `skills:show` is read-only — it lists
+every donor, the per-skill sync status, and what is being skipped and why.
+
+| Option                | Where  | Description                                                                                                                                                 |
+|-----------------------|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<package>...`        | both   | Restrict to matching donors. Exact (`acme/foo`) or wildcard (`acme/*`, `*`). Listed packages are treated as **trusted** for this run (see [Trust](#trust)). |
+| `--target=PATH`, `-t` | both   | Override `extra.skills.target`.                                                                                                                             |
+| `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                           |
+| `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                         |
+| `--dry-run`           | update | Print actions; no files written.                                                                                                                            |
+
+Short flag `-d` for `--discovery` is registered only by the standalone `bin/skills` binary;
+inside Composer it is reserved for `--working-dir`.
+
+### Examples
+
+```bash
+composer skills:update                      # sync everything that is trusted
+composer skills:update acme/skills-basic    # sync one package (implicit trust)
+composer skills:update 'acme/*'             # sync an entire vendor namespace
+composer skills:update --discovery          # also include packages without extra.skills
+composer skills:update --dry-run            # preview, write nothing
+composer skills:show                        # inspect: per-skill status, what is skipped
+```
+
+## Shipping skills (vendor side)
+
+A donor package declares a directory whose immediate subdirectories are its skills:
 
 ```jsonc
 // vendor/acme/skills-pro/composer.json
 {
-  "name": "acme/skills-pro",
   "extra": {
-    "skills": {
-      "source": "resources/skills"
-    }
+    "skills": { "source": "resources/skills" }
   }
 }
 ```
@@ -90,27 +107,23 @@ acme/skills-pro/
         └── SKILL.md
 ```
 
-`composer skills:update` then writes:
+After `skills:update`, the consumer project gets:
 
 ```
 <project>/.agents/skills/
-├── refactor/
-│   ├── SKILL.md
-│   └── templates/suggestion.md
-└── migrate/
-    └── SKILL.md
+├── refactor/{SKILL.md, templates/suggestion.md}
+└── migrate/SKILL.md
 ```
 
-Notes:
+- `source` is relative to the package root.
+- Each immediate subdirectory of `source` is one skill, copied recursively.
+- Loose files at the root of `source` (e.g. `README.md`) are ignored.
+- A package without `extra.skills` is not a donor by default — see [Auto-discovery](#auto-discovery).
 
-- The `source` directory is relative to the package root.
-- Every immediate subdirectory of `source` is one skill, copied recursively.
-- Loose files at the root of `source` (`README.md`, etc.) are ignored.
-- A package with no `extra.skills` block is not a donor and is invisible to the plugin.
 
-### Configuring the consumer project
+## Project configuration
 
-All settings live under `extra.skills` in the project's `composer.json`:
+All settings live under `extra.skills` in the consumer project's `composer.json`:
 
 ```jsonc
 {
@@ -118,191 +131,96 @@ All settings live under `extra.skills` in the project's `composer.json`:
     "skills": {
       "target": ".agents/skills",
       "trusted": ["acme/*", "myorg/skills-internal"],
-      "trusted-replace": false
+      "trusted-replace": false,
+      "discovery": false
     }
   }
 }
 ```
 
-| Key               | Type            | Default          | Meaning                                              |
-|-------------------|-----------------|------------------|------------------------------------------------------|
-| `target`          | string          | `.agents/skills` | Destination directory, relative to the project root. |
-| `trusted`         | list of strings | `[]`             | Extra trust patterns (see *Trust model* below).      |
-| `trusted-replace` | boolean         | `false`          | When `true`, the built-in trust list is ignored.     |
+| Key               | Type     | Default          | Description                                                   |
+|-------------------|----------|------------------|---------------------------------------------------------------|
+| `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.          |
+| `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                   |
+| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list is ignored.              |
+| `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides). |
 
-#### Picking a destination
+`.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
+directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
 
-The default `.agents/skills/` is tool-agnostic: any coding agent
-(Claude Code, Cursor, Aider, …) can be pointed at the same directory, and
-your team avoids deciding which tool to commit to. If you only care about
-one agent, redirect via `target`:
+A malformed `extra.skills` in the project is **fatal**. The same block in a *donor* package is
+skipped with a `-v` warning — one bad vendor never blocks the rest.
 
-```jsonc
-// Claude Code project
-{ "extra": { "skills": { "target": ".claude/skills" } } }
-```
 
-```jsonc
-// Cursor project
-{ "extra": { "skills": { "target": ".cursor/skills" } } }
-```
-
-A broken `extra.skills` block in the project is a **fatal** error — the project owns this
-file, so we surface mistakes loudly. Broken blocks in *donor* packages, by contrast, are
-skipped with a warning (see *Diagnostics*).
-
----
-
-## Trust model
+## Trust
 
 AI skills are Markdown instructions executed by an agent. A malicious package could ship a
-prompt-injection payload, so the plugin will not copy skills from a donor unless that donor is
+prompt-injection payload, so the plugin does not copy skills from a donor unless it is
 **trusted**.
 
-The effective trust list is:
+Effective trust list:
 
 ```
 builtin ∪ project.extra.skills.trusted ∪ --trust=<pattern>
 ```
 
-or — when `trusted-replace: true` —
+(`trusted-replace: true` drops `builtin` from the union.)
 
-```
-project.extra.skills.trusted ∪ --trust=<pattern>
-```
-
-Pattern syntax:
-
-| Pattern          | Matches                                   |
-|------------------|-------------------------------------------|
-| `vendor/package` | The exact package name.                   |
-| `vendor/*`       | Any package within that vendor namespace. |
+| Pattern          | Matches                               |
+|------------------|---------------------------------------|
+| `vendor/package` | Exact package name.                   |
+| `vendor/*`       | Any package in that vendor namespace. |
+| `*`              | Every installed package.              |
 
 Bare `vendor` without `/` is rejected as ambiguous.
 
+### Shortcuts
+
+- **Named on the CLI is implicit trust.** `composer skills:update acme/foo` syncs `acme/foo`
+  without consulting the trust list. Naming a vendor wildcard (`acme/*`) extends the grant to
+  every package matching the pattern.
+- **Named is also implicit auto-discovery.** If the named package does not declare
+  `extra.skills`, the plugin still scans its `skills/` directory — discovery is enabled for
+  that package only.
+
 ### Built-in trusted vendors
 
-Shipped in `resources/trusted-vendors.txt`. Maintainers extend it by PR. The current set:
+Shipped in [`resources/trusted-vendors.txt`](resources/trusted-vendors.txt); extended by PR.
+
+
+## Auto-discovery
+
+When a package does not declare `extra.skills` but ships a `skills/` directory at its install
+root, `llm/skills` can still pick up the skills inside. Opt in one of three ways:
+
+- `--discovery` flag on the command line (for a single run);
+- `extra.skills.discovery: true` in the project (always on);
+- Name the package as a positional argument (implicit, per-package — see [Shortcuts](#shortcuts)).
 
 ```
-doctrine/* · internal/* · laravel/* · llm/* · spiral/* · symfony/* · testo/* · yiisoft/*
+acme/skills-undeclared/
+├── composer.json   # no extra.skills
+└── skills/
+    └── auto-skill/SKILL.md
 ```
 
-### Resolution table
-
-| Scenario                                                      | Trusted donor | Untrusted donor             |
-|---------------------------------------------------------------|---------------|-----------------------------|
-| Auto-discovery (no positional argument)                       | sync          | skip, with one-line notice  |
-| Positional argument names the donor, **interactive** terminal | sync          | prompt `[Y/n]`              |
-| Positional argument names the donor, **non-interactive** (CI) | sync          | warning, then sync          |
-| `--trust=<pattern>` matches the donor                         | sync          | sync (explicit allowance)   |
-
-Rationale: an explicit `composer skills:update <package>` already counts as intent. The
-interactive prompt is a safety net for humans; CI gets a loud warning instead of a wall.
-
----
-
-## Command synopsis
-
-```
-composer skills:update [<package>...] [options]
-composer skills:u      [<package>...] [options]   # short alias
+```bash
+composer skills:update --discovery            # picks up auto-skill
+composer skills:update acme/skills-undeclared # also picks up auto-skill (named ⇒ trust + discovery)
 ```
 
-### Arguments
+Auto-discovered donors still pass through the trust filter unless they were named on the CLI.
+A junction or symlink that escapes the package root is silently rejected.
 
-| Argument         | Description                                                                                 |
-|------------------|---------------------------------------------------------------------------------------------|
-| `package` (var…) | Restrict sync to matching donors. Exact name (`acme/skills-pro`) or vendor glob (`acme/*`). |
-
-### Options
-
-| Option                | Description                                                                           |
-|-----------------------|---------------------------------------------------------------------------------------|
-| `--target=PATH`, `-t` | Destination directory, relative to the project root. Overrides `extra.skills.target`. |
-| `--trust=PATTERN`     | Trust an additional pattern for this run (repeatable).                                |
-| `--dry-run`           | Print what would happen without touching the filesystem.                              |
-| `-v` / `-vv` / `-vvv` | Show diagnostics — malformed donor configs, etc.                                      |
-
-### Exit codes
-
-| Code | Meaning                                                                                |
-|------|----------------------------------------------------------------------------------------|
-| 0    | Sync completed. Notices/warnings may have been printed.                                |
-| 1    | Unrecoverable: malformed root config, or a skill-name conflict between trusted donors. |
-| 2    | Invalid invocation (e.g. malformed `<package>` or `--trust` pattern).                  |
-
----
 
 ## Sync behaviour
 
-- **Non-destructive merge.** Files inside the target that the donor *does not* ship are left
-  alone (your local notes survive). Files the donor *does* ship are overwritten — the donor
-  is the source of truth.
-- **Idempotent.** Running `skills:update` twice in a row produces the same state with no errors.
-- **Transactional on conflicts.** If two trusted donors declare a skill with the same
-  directory name, sync aborts with exit 1 *before* touching the filesystem. Nothing is
-  written. The output lists every offending package.
-
----
-
-## Diagnostics
-
-Donor packages with a malformed `extra.skills` block (missing `source`, wrong types, …) are
-**skipped, not fatal**: one bad vendor never blocks the rest. Run with `-v` to see the warning
-text and identify which donor needs fixing:
-
-```bash
-composer skills:update -v
-```
-
-```text
-[warn] Package "acme/skills-broken": extra.skills.source must be a non-empty string
-[copy] greeting ← acme/skills-basic
-[copy] code-review ← acme/skills-basic
-[copy] refactor ← acme/skills-pro
-[copy] migrate ← acme/skills-pro
-[llm/skills] synced 4 skill(s) into D:\project\.claude\skills
-```
-
----
-
-## Examples
-
-Sync everything that is allowed:
-
-```bash
-composer skills:update
-# or, short alias:
-composer skills:u
-```
-
-Sync only one donor:
-
-```bash
-composer skills:update acme/skills-basic
-```
-
-Sync the entire `acme` namespace:
-
-```bash
-composer skills:update 'acme/*'
-```
-
-Trust a one-off donor for a single run:
-
-```bash
-composer skills:update --trust=evil/payload
-```
-
-Redirect output to a different directory:
-
-```bash
-composer skills:update --target=docs/agent-skills
-```
-
----
-
-## License
-
-BSD-3-Clause — see [LICENSE.md](LICENSE.md).
+- **Non-destructive merge.** Files inside the target directory that the donor does *not* ship
+  are left alone (your local notes survive). Files the donor *does* ship are overwritten — the
+  donor is the source of truth.
+- **Idempotent.** Running `skills:update` twice produces the same state with no errors.
+- **Transactional on conflicts.** If two donors declare a skill with the same directory name,
+  sync aborts *before* touching the filesystem; nothing is written. Every offending package is
+  listed in the output.
+- **Grouped output.** Copied skills are grouped by donor package; trailing `[skip]` and
+  `[hint]` blocks summarise what was left out and how to opt in.

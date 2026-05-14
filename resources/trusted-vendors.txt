@@ -22,6 +22,7 @@
 # Format: one pattern per line. Blank lines and lines starting with `#` are
 # ignored. Surrounding whitespace is trimmed.
 
+cycle/*
 doctrine/*
 internal/*
 laravel/*
