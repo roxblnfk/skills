@@ -63,7 +63,11 @@
         }
     },
     "extra": {
-        "class": "LLM\\Skills\\Composer\\SkillsPlugin"
+        "class": "LLM\\Skills\\Composer\\SkillsPlugin",
+        "skills": {
+            "target": ".claude/skills",
+            "discovery": true
+        }
     },
     "config": {
         "sort-packages": true,

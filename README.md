@@ -50,6 +50,24 @@ Allow the plugin to run:
 }
 ```
 
+### Global installation
+
+Install once and use the `skills:*` commands in any project:
+
+```bash
+composer global require llm/skills
+```
+
+Then from any project root:
+
+```bash
+composer skills:show
+composer skills:update
+```
+
+Project-level settings (`extra.skills.target`, `trusted`, `discovery`) are still read from the
+**consumer project's** `composer.json`.
+
 
 ## Commands
 
