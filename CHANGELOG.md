@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/roxblnfk/skills/compare/1.0.0...1.0.1) (2026-05-15)
+
+
+### Documentation
+
+* Update CLAUDE.md and README with installation instructions and guidelines ([ce1479f](https://github.com/roxblnfk/skills/commit/ce1479fd8839d910df347d08e17a6430e2bf23a0))
+
 ## [1.0.0](https://github.com/roxblnfk/skills/compare/0.3.0...1.0.0) (2026-05-14)
 
 
