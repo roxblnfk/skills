@@ -3,6 +3,16 @@
     "type": "composer-plugin",
     "description": "AI skills discovery and management system for LLM agents",
     "license": "BSD-3-Clause",
+    "keywords": [
+        "ai",
+        "llm",
+        "skills",
+        "agents",
+        "ai-skills",
+        "ai-agents",
+        "llm-agents",
+        "claude-code"
+    ],
     "support": {
         "issues": "https://github.com/roxblnfk/skills/issues",
         "source": "https://github.com/roxblnfk/skills"

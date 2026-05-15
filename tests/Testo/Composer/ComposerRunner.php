@@ -38,6 +38,10 @@ final class ComposerRunner
         $process = Process::fromShellCommandline(
             "composer {$command} --no-interaction --no-ansi",
             cwd: (string) $projectRoot,
+            // Override SHELL_VERBOSITY so the inner composer is not silenced when
+            // the outer testo run is invoked with -q/-v. Without this, acceptance
+            // tests that assert on composer's stdout become flaky-on-flags.
+            env: ['SHELL_VERBOSITY' => '0'],
         );
         $process->setTimeout($timeout);
 
