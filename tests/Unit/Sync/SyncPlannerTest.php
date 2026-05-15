@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Sync;
 
 use Internal\Path;
+use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
@@ -12,6 +13,7 @@ use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Sync\SyncPlanner;
 use Testo\Assert;
+use Testo\Expect;
 use Testo\Test;
 
 #[Test]
@@ -271,6 +273,131 @@ final class SyncPlannerTest
         Assert::same(
             $this->normalizePath((string) $plan->target),
             $this->normalizePath('/abs/skills'),
+        );
+    }
+
+    public function aliasesDefaultToEmptyListWhenNeitherConfigNorCliProvidesThem(): void
+    {
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same($plan->aliases, []);
+    }
+
+    public function aliasesFromProjectConfigAreResolvedAgainstProjectRoot(): void
+    {
+        $project = ProjectConfig::default()->withAliases(['.claude/skills', '.cursor/skills']);
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->aliases), 2);
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[0]),
+            $this->normalizePath('/some/project/.claude/skills'),
+        );
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[1]),
+            $this->normalizePath('/some/project/.cursor/skills'),
+        );
+    }
+
+    public function absoluteAliasIsUsedAsIs(): void
+    {
+        // Absolute paths must not be joined to the project root, exactly
+        // like {@see SyncPlanner::resolveTarget()} treats them.
+        $project = ProjectConfig::default()->withAliases(['/abs/alias']);
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[0]),
+            $this->normalizePath('/abs/alias'),
+        );
+    }
+
+    public function aliasOverrideReplacesProjectConfigEntirely(): void
+    {
+        // Passing `--alias` at all is an explicit takeover, never a merge —
+        // the planner must drop the project's aliases and use only the CLI list.
+        $project = ProjectConfig::default()->withAliases(['.claude/skills']);
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: null,
+            interactive: false,
+            aliasOverrides: ['.cursor/skills'],
+        );
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: $options,
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->aliases), 1);
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[0]),
+            $this->normalizePath('/some/project/.cursor/skills'),
+        );
+    }
+
+    public function aliasResolvingToTargetThrows(): void
+    {
+        // `./.claude/skills` and `.claude/skills` collapse to the same
+        // absolute path; the planner must catch the equality even though
+        // the raw strings differ from the configured target.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('alias');
+
+        $project = new ProjectConfig(
+            target: '.claude/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            aliases: ['./.claude/skills'],
+        );
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function duplicateAliasesAfterResolutionThrow(): void
+    {
+        // `.claude/skills` and `./.claude/skills` are lexically distinct
+        // but collapse to the same absolute path. The mapper's lexical
+        // pass cannot tell — the planner's resolved-path pass must.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('duplicates');
+
+        $project = ProjectConfig::default()->withAliases([
+            '.claude/skills',
+            './.claude/skills',
+        ]);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
         );
     }
 

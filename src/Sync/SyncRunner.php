@@ -59,6 +59,7 @@ final readonly class SyncRunner
         private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
         private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
+        private SymlinkLinker $symlinkLinker = new SymlinkLinker(),
     ) {}
 
     public function run(Composer $composer, IOInterface $io, SyncOptions $options): int
@@ -130,9 +131,64 @@ final readonly class SyncRunner
             (string) $plan->target,
         ));
 
+        $aliasFailed = $this->processAliases($io, $plan, $options->dryRun);
+
         $this->emitTrailingDiagnostics($io, $plan, $resolution->excluded);
 
-        return Command::SUCCESS;
+        // Alias errors fail the run loudly — silent partial success would
+        // mask broken `.claude/skills` / `.cursor/skills` aliases on CI,
+        // which is exactly the footgun §4.2 of the multitarget spec
+        // exists to prevent.
+        return $aliasFailed ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * Process every alias declared in the plan through {@see SymlinkLinker}.
+     * Returns `true` if any alias errored — the caller turns that into a
+     * non-zero exit code per §4.2 of the multitarget spec.
+     */
+    private function processAliases(IOInterface $io, SyncPlan $plan, bool $dryRun): bool
+    {
+        if ($plan->aliases === []) {
+            return false;
+        }
+
+        $anyFailed = false;
+        foreach ($plan->aliases as $alias) {
+            $result = $this->symlinkLinker->link($alias, $plan->target, $dryRun);
+            $this->emitAliasOutcome($io, $result);
+            if ($result->isFailure()) {
+                $anyFailed = true;
+            }
+        }
+
+        return $anyFailed;
+    }
+
+    private function emitAliasOutcome(IOInterface $io, LinkResult $result): void
+    {
+        $aliasStr = (string) $result->alias;
+        $targetStr = (string) $result->target;
+
+        switch ($result->status) {
+            case LinkStatus::Created:
+                $io->write(\sprintf('<info>[link]</info> %s → %s', $aliasStr, $targetStr));
+                return;
+            case LinkStatus::AlreadyCorrect:
+                $io->write(\sprintf('<info>[link]</info> %s → %s (already correct)', $aliasStr, $targetStr));
+                return;
+            case LinkStatus::WouldCreate:
+                $io->write(\sprintf('<info>[would link]</info> %s → %s', $aliasStr, $targetStr));
+                return;
+            case LinkStatus::Failed:
+                $io->writeError(\sprintf(
+                    '<error>[link-failed] %s → %s: %s</error>',
+                    $aliasStr,
+                    $targetStr,
+                    $result->reason ?? 'unknown error',
+                ));
+                return;
+        }
     }
 
     /**

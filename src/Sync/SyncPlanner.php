@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Sync;
 
 use Internal\Path;
+use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
@@ -70,10 +71,13 @@ final readonly class SyncPlanner
             }
         }
 
+        $target = $this->resolveTarget($project, $options, $projectRoot);
+
         return new SyncPlan(
             approvedDonors: $approved,
             skippedUntrustedNames: $skipped,
-            target: $this->resolveTarget($project, $options, $projectRoot),
+            target: $target,
+            aliases: $this->resolveAliases($project, $options, $projectRoot, $target),
             filteredOutDonors: $filteredOut,
         );
     }
@@ -154,6 +158,70 @@ final readonly class SyncPlanner
         /** @var non-empty-string $raw */
         $raw = $options->targetOverride ?? $project->target;
 
+        return $this->resolvePath($raw, $projectRoot);
+    }
+
+    /**
+     * Resolve every alias entry to an absolute {@see Path}. The CLI list,
+     * when present, replaces the project's aliases entirely — passing any
+     * `--alias` is an explicit takeover, matching `--target` semantics.
+     *
+     * Post-resolution checks: aliases must not match the resolved target
+     * and must not collide with each other. These mirror the lexical
+     * checks the mapper already runs against the raw config, but they
+     * have to run again here because the CLI input is unstructured and
+     * because relative paths could collapse to the same absolute path
+     * even when their raw strings differ.
+     *
+     * @return list<Path>
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function resolveAliases(
+        ProjectConfig $project,
+        SyncOptions $options,
+        Path $projectRoot,
+        Path $target,
+    ): array {
+        $raw = $options->aliasOverrides ?? $project->aliases;
+        if ($raw === []) {
+            return [];
+        }
+
+        $targetStr = (string) $target;
+
+        $out = [];
+        $seen = [];
+        foreach ($raw as $entry) {
+            $resolved = $this->resolvePath($entry, $projectRoot);
+            $resolvedStr = (string) $resolved;
+
+            if ($resolvedStr === $targetStr) {
+                throw new MalformedProjectConfig(\sprintf(
+                    'alias "%s" resolves to the target path %s; an alias cannot point at itself',
+                    $entry,
+                    $targetStr,
+                ));
+            }
+            if (isset($seen[$resolvedStr])) {
+                throw new MalformedProjectConfig(\sprintf(
+                    'alias "%s" resolves to %s, which duplicates an earlier alias',
+                    $entry,
+                    $resolvedStr,
+                ));
+            }
+            $seen[$resolvedStr] = true;
+            $out[] = $resolved;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param non-empty-string $raw
+     */
+    private function resolvePath(string $raw, Path $projectRoot): Path
+    {
         return self::isAbsolute($raw)
             ? Path::create($raw)
             : $projectRoot->join($raw);

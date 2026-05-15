@@ -39,6 +39,8 @@ use Testo\Test;
 final class SkillsSyncTest
 {
     private const TARGET_DIR = Info::PROJECT_DIR . '/.agents/skills';
+    private const ALIAS_CLAUDE = Info::PROJECT_DIR . '/.claude/skills-alias';
+    private const ALIAS_CURSOR = Info::PROJECT_DIR . '/.cursor/skills-alias';
 
     /**
      * Wipe the synced skills directory before each test so assertions reflect
@@ -50,6 +52,8 @@ final class SkillsSyncTest
         Filesystem::removeRecursive(self::TARGET_DIR);
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/custom-skills-target');
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/config-target');
+        Filesystem::removeRecursive(self::ALIAS_CLAUDE);
+        Filesystem::removeRecursive(self::ALIAS_CURSOR);
     }
 
     // ── basic happy path ────────────────────────────────────────────────────
@@ -521,6 +525,196 @@ final class SkillsSyncTest
         Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
+    // ── aliases ─────────────────────────────────────────────────────────────
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasConfiguredInProjectIsCreatedAsLinkPointingAtTarget(): void
+    {
+        $process = $this->runSync();
+
+        Assert::same(
+            $process->getExitCode(),
+            0,
+            'sync must succeed with an alias configured. stderr: ' . $process->getErrorOutput(),
+        );
+        Assert::true(
+            \file_exists(self::ALIAS_CLAUDE),
+            'alias path must exist after sync. stderr: ' . $process->getErrorOutput(),
+        );
+        Assert::true(
+            $this->aliasResolvesToTarget(self::ALIAS_CLAUDE),
+            'alias must resolve to the configured target (.agents/skills)',
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasContentsMatchTarget(): void
+    {
+        // Behavioural proof that the link is real: skill files copied
+        // into the target must be visible through the alias path.
+        $this->runSync();
+
+        Assert::true(\is_file(self::ALIAS_CLAUDE . '/greeting/SKILL.md'));
+        Assert::true(\is_file(self::ALIAS_CLAUDE . '/refactor/SKILL.md'));
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias', '.cursor/skills-alias'],
+    ])]
+    public function multipleAliasesAreAllCreated(): void
+    {
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true($this->aliasResolvesToTarget(self::ALIAS_CLAUDE));
+        Assert::true($this->aliasResolvesToTarget(self::ALIAS_CURSOR));
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasCreationIsIdempotent(): void
+    {
+        // A second run must accept the existing link as already-correct
+        // and exit cleanly. The §4.2 state-matrix's "link → target → noop"
+        // path is what makes routine re-runs safe.
+        $first = $this->runSync();
+        $second = $this->runSync();
+
+        Assert::same($first->getExitCode(), 0, 'first run failed: ' . $first->getErrorOutput());
+        Assert::same($second->getExitCode(), 0, 'second run failed: ' . $second->getErrorOutput());
+        Assert::true($this->aliasResolvesToTarget(self::ALIAS_CLAUDE));
+    }
+
+    public function cliAliasFlagReplacesProjectConfigAliases(): void
+    {
+        // Default sandbox has no aliases; pass one via `--alias` to prove
+        // the CLI surface works. Plain sync without --alias has nothing
+        // at the alias path, but with the flag the link materialises.
+        $process = $this->runSync('--alias=.claude/skills-alias');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            $this->aliasResolvesToTarget(self::ALIAS_CLAUDE),
+            '--alias must create the link. stderr: ' . $process->getErrorOutput(),
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function cliAliasFlagReplacesProjectAliasesEntirely(): void
+    {
+        // Project config has `.claude/skills-alias`, CLI passes only
+        // `.cursor/skills-alias`. The takeover semantics in §3 of the
+        // spec mean only the cursor alias is created — the claude one
+        // is NOT inherited from project config.
+        $process = $this->runSync('--alias=.cursor/skills-alias');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true($this->aliasResolvesToTarget(self::ALIAS_CURSOR));
+        Assert::false(
+            \file_exists(self::ALIAS_CLAUDE),
+            'project alias must not be created when CLI --alias takes over',
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasOutputLineIsEmittedAfterCopyReport(): void
+    {
+        $process = $this->runSync();
+
+        Assert::true(
+            \str_contains($process->getOutput(), '[link]'),
+            '[link] line must appear in stdout. Got: ' . $process->getOutput(),
+        );
+        Assert::true(
+            \str_contains($process->getOutput(), '.claude/skills-alias')
+            || \str_contains($process->getOutput(), '.claude\\skills-alias'),
+            '[link] line must name the alias path. Got: ' . $process->getOutput(),
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function preExistingRealDirectoryAtAliasPathFailsTheRun(): void
+    {
+        // §4.2: the linker never destroys user-owned content. A real
+        // directory at the alias path is a fatal misconfiguration the
+        // user must resolve before any link can be created. Exit code
+        // is non-zero so CI catches it.
+        \mkdir(self::ALIAS_CLAUDE, 0o777, true);
+        \file_put_contents(self::ALIAS_CLAUDE . '/user-file.txt', 'precious user content');
+
+        $process = $this->runSync();
+
+        Assert::notSame(
+            $process->getExitCode(),
+            0,
+            'real directory at alias path must fail the run',
+        );
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'link-failed')
+            || \str_contains($process->getErrorOutput(), 'real directory'),
+            'stderr must explain the alias failure. Got: ' . $process->getErrorOutput(),
+        );
+        // User content is left untouched — the linker refuses to wipe.
+        Assert::true(\is_file(self::ALIAS_CLAUDE . '/user-file.txt'));
+        Assert::same(\file_get_contents(self::ALIAS_CLAUDE . '/user-file.txt'), 'precious user content');
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.agents/skills'],
+    ])]
+    public function aliasEqualToTargetIsRejectedByConfig(): void
+    {
+        // Mapper-level lexical validation: the alias and the target
+        // point at the same location. Fail loudly, do not invoke the
+        // linker at all.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0);
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'extra.skills.aliases')
+            || \str_contains($process->getErrorOutput(), 'alias'),
+            'stderr must mention the alias config error. Got: ' . $process->getErrorOutput(),
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function dryRunDoesNotCreateAliasOnDisk(): void
+    {
+        $process = $this->runSync('--dry-run');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(
+            \file_exists(self::ALIAS_CLAUDE),
+            'dry-run must not create the alias',
+        );
+        Assert::true(
+            \str_contains($process->getOutput(), '[would link]'),
+            'dry-run must announce the would-be link. Got: ' . $process->getOutput(),
+        );
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private function runSync(string ...$args): Process
@@ -536,6 +730,26 @@ final class SkillsSyncTest
             timeout: 60,
             mustSucceed: false,
         );
+    }
+
+    /**
+     * Behavioural check: does `$aliasPath` resolve, on disk, to the same
+     * canonical path as the sandbox's default target dir? Used in lieu
+     * of `is_link` because PHP can't reliably detect NTFS junctions —
+     * the realpath comparison works across symlinks, junctions and
+     * platform separators.
+     */
+    private function aliasResolvesToTarget(string $aliasPath): bool
+    {
+        $resolvedAlias = \realpath($aliasPath);
+        $resolvedTarget = \realpath(self::TARGET_DIR);
+        if ($resolvedAlias === false || $resolvedTarget === false) {
+            return false;
+        }
+
+        return \DIRECTORY_SEPARATOR === '\\'
+            ? \strcasecmp($resolvedAlias, $resolvedTarget) === 0
+            : $resolvedAlias === $resolvedTarget;
     }
 
     /**

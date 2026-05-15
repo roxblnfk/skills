@@ -165,4 +165,108 @@ final class ProjectConfigMapperTest
 
         (new ProjectConfigMapper())->fromExtra(['skills' => ['discovery' => 'yes']]);
     }
+
+    public function aliasesDefaultToEmptyListWhenAbsent(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['target' => 'custom/skills']]);
+
+        Assert::same($cfg->aliases, []);
+    }
+
+    public function aliasesDefaultToEmptyListWhenExplicitEmpty(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['aliases' => []]]);
+
+        Assert::same($cfg->aliases, []);
+    }
+
+    public function mapsAliasesAsConfigured(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'target' => '.agents/skills',
+                'aliases' => ['.claude/skills', '.cursor/skills'],
+            ],
+        ]);
+
+        Assert::same($cfg->aliases, ['.claude/skills', '.cursor/skills']);
+    }
+
+    public function aliasesNotAListThrows(): void
+    {
+        // Associative arrays are rejected — `aliases` is a list-shape only,
+        // any keys other than 0..N break the contract.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.aliases');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['aliases' => ['one' => '.claude/skills']],
+        ]);
+    }
+
+    public function aliasesScalarThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.aliases');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['aliases' => '.claude/skills']]);
+    }
+
+    public function aliasesNonStringEntryThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.aliases');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['aliases' => [42]]]);
+    }
+
+    public function aliasesEmptyStringEntryThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.aliases');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['aliases' => ['']]]);
+    }
+
+    public function aliasEqualToTargetThrows(): void
+    {
+        // An alias of itself is nonsense — caught lexically up front so
+        // misconfigurations never reach the planner.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('cannot equal extra.skills.target');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'target' => '.agents/skills',
+                'aliases' => ['.agents/skills'],
+            ],
+        ]);
+    }
+
+    public function aliasEqualToTargetIsDetectedAfterLexicalNormalisation(): void
+    {
+        // Backslash vs forward slash and trailing-slash variants must not
+        // sneak past the equality check.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('cannot equal extra.skills.target');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'target' => '.agents/skills',
+                'aliases' => ['.agents\\skills/'],
+            ],
+        ]);
+    }
+
+    public function duplicateAliasesThrow(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('duplicates an earlier entry');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'aliases' => ['.claude/skills', '.claude/skills'],
+            ],
+        ]);
+    }
 }

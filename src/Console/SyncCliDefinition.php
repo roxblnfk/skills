@@ -60,6 +60,14 @@ final class SyncCliDefinition
                 'Destination directory for synced skills. Overrides extra.skills.target.',
             )
             ->addOption(
+                'alias',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'Additional path that should be created as a junction (Windows) or '
+                . 'symlink (POSIX) pointing at the target. Repeatable. Passing the flag '
+                . 'at all replaces extra.skills.aliases entirely (no merging).',
+            )
+            ->addOption(
                 'trust',
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
@@ -92,6 +100,8 @@ final class SyncCliDefinition
         $rawTarget = $input->getOption('target');
         $targetOverride = \is_string($rawTarget) && $rawTarget !== '' ? $rawTarget : null;
 
+        $aliasOverrides = self::parseAliases($input);
+
         return new SyncOptions(
             packageFilters: self::parsePatterns($rawPackages, 'package argument'),
             extraTrusted: self::parsePatterns($rawTrust, '--trust option'),
@@ -99,7 +109,36 @@ final class SyncCliDefinition
             interactive: $input->isInteractive(),
             dryRun: (bool) $input->getOption('dry-run'),
             discovery: $input->getOption('discovery') === true ? true : null,
+            aliasOverrides: $aliasOverrides,
         );
+    }
+
+    /**
+     * Convert `--alias=PATH` entries into an override list. Returns `null`
+     * when the flag was not present at all (so the runner can fall back to
+     * project config); returns a `list<non-empty-string>` (possibly empty)
+     * once the flag has been used, signalling an explicit takeover.
+     *
+     * @return list<non-empty-string>|null
+     *
+     * @throws \InvalidArgumentException when an alias value is not a non-empty string
+     */
+    private static function parseAliases(InputInterface $input): ?array
+    {
+        $raw = (array) $input->getOption('alias');
+        if ($raw === []) {
+            return null;
+        }
+
+        $out = [];
+        foreach ($raw as $value) {
+            if (!\is_string($value) || $value === '') {
+                throw new \InvalidArgumentException('--alias option must be a non-empty string');
+            }
+            $out[] = $value;
+        }
+
+        return $out;
     }
 
     /**
