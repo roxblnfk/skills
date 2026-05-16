@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/roxblnfk/skills/compare/1.0.1...1.1.0) (2026-05-16)
+
+
+### Features
+
+* Add composer auto-sync ([953337d](https://github.com/roxblnfk/skills/commit/953337da327a482ae138f620f55a0987c1e47554))
+* Mirror target via junction/symlink aliases ([#8](https://github.com/roxblnfk/skills/issues/8)) ([234e5bf](https://github.com/roxblnfk/skills/commit/234e5bfaa8a14b195669d7540aa0813d93f109cc))
+
 ## [1.0.1](https://github.com/roxblnfk/skills/compare/1.0.0...1.0.1) (2026-05-15)
 
 
