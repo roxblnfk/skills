@@ -7,6 +7,7 @@ namespace LLM\Skills\Tests\Unit\Show;
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\Skill;
+use LLM\Skills\Show\AliasInspection;
 use LLM\Skills\Show\DonorInspection;
 use LLM\Skills\Show\InspectionReport;
 use LLM\Skills\Show\ReportFormatter;
@@ -311,6 +312,97 @@ final class ReportFormatterTest
             static fn(string $l) => \str_contains($l, 'skills-') && \str_contains($l, '<fg=cyan>'),
         );
         Assert::same(\count($packages), 2);
+    }
+
+    public function omitsAliasesLineWhenReportHasNoAliases(): void
+    {
+        // Default single-target setup — the `Aliases:` header would be
+        // pure noise. The first line must be just `Target: …`, immediately
+        // followed by the blank separator.
+        $donor = $this->donorInspection(
+            packageName: 'acme/skills-basic',
+            source: '.claude/skills',
+            trust: TrustSource::Project,
+            skills: [['greeting', SyncStatus::InSync]],
+        );
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/.agents/skills'),
+            donors: [$donor],
+            skipped: [],
+        ));
+
+        foreach ($lines as $line) {
+            Assert::false(
+                \str_starts_with($line, 'Aliases:'),
+                'no Aliases: line expected when aliases array is empty; got: ' . $line,
+            );
+        }
+    }
+
+    public function rendersAliasesLineAfterTargetWhenAliasesPresent(): void
+    {
+        $donor = $this->donorInspection(
+            packageName: 'acme/skills-basic',
+            source: '.claude/skills',
+            trust: TrustSource::Project,
+            skills: [['greeting', SyncStatus::InSync]],
+        );
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/.agents/skills'),
+            donors: [$donor],
+            skipped: [],
+            aliases: [
+                new AliasInspection(Path::create('/p/.claude/skills')),
+                new AliasInspection(Path::create('/p/.cursor/skills')),
+            ],
+        ));
+
+        // Layout: line 0 = Target, line 1 = Aliases, line 2 = blank separator.
+        Assert::true(\str_starts_with($lines[0], 'Target:'));
+        Assert::true(\str_starts_with($lines[1], 'Aliases:'));
+        Assert::same($lines[2], '');
+        Assert::true(\str_contains($lines[1], '.claude/skills'));
+        Assert::true(\str_contains($lines[1], '.cursor/skills'));
+        // Comma-separated on a single line — no per-alias rows.
+        Assert::true(\str_contains($lines[1], ', '));
+    }
+
+    public function annotatesAliasWithDriftMarkerWhenItPointsElsewhere(): void
+    {
+        // An existing alias resolving to a path other than the configured
+        // target must surface inline so the user does not have to compare
+        // paths by eye.
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/.agents/skills'),
+            donors: [],
+            skipped: [],
+            aliases: [
+                new AliasInspection(
+                    Path::create('/p/.claude/skills'),
+                    driftResolvedTo: '/old/path',
+                ),
+            ],
+        ));
+
+        $aliasesLine = $this->findLineStartingWith($lines, 'Aliases:');
+        Assert::true($aliasesLine !== null, 'Aliases: line must be present');
+        Assert::true(
+            \str_contains($aliasesLine, '[drift: → /old/path]'),
+            'drift marker must point at the resolved path. Got: ' . $aliasesLine,
+        );
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function findLineStartingWith(array $lines, string $prefix): ?string
+    {
+        foreach ($lines as $line) {
+            if (\str_starts_with($line, $prefix)) {
+                return $line;
+            }
+        }
+        return null;
     }
 
     private function renderJoined(DonorInspection ...$donors): string

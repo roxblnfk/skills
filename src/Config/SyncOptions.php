@@ -23,6 +23,10 @@ final readonly class SyncOptions
      * @param bool $dryRun when `true`, the runner prints what would happen but does not write any files
      * @param bool|null $discovery `--discovery/-d` CLI flag: `true` to opt in, `false` to opt out,
      *         `null` (default) to defer to project config (`extra.skills.discovery`)
+     * @param list<non-empty-string>|null $aliasOverrides `--alias=` overrides: `null` means "use the project's
+     *         configured aliases", a list (including the empty one) means "the CLI list replaces project
+     *         config entirely". Symmetric with {@see $targetOverride}: passing `--alias` at all is an
+     *         explicit takeover, never a merge.
      *
      * @psalm-mutation-free
      */
@@ -33,6 +37,7 @@ final readonly class SyncOptions
         public bool $interactive,
         public bool $dryRun = false,
         public ?bool $discovery = null,
+        public ?array $aliasOverrides = null,
     ) {}
 
     /**
@@ -47,6 +52,7 @@ final readonly class SyncOptions
             interactive: false,
             dryRun: false,
             discovery: null,
+            aliasOverrides: null,
         );
     }
 

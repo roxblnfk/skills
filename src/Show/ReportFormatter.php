@@ -82,13 +82,18 @@ final readonly class ReportFormatter
 
         $hint = $this->formatDiscoveryHint($report);
 
-        if ($main === [] && $skipped === [] && $hint === []) {
+        if ($main === [] && $skipped === [] && $hint === [] && $report->aliases === []) {
             return ['No donor packages found.'];
         }
 
-        // Target header — single line at the top so the per-skill rows
-        // can use the second column for description rather than path.
-        $lines = ['Target: ' . (string) $report->target, ''];
+        // Target header — one line per concept. `Aliases:` is omitted
+        // entirely when there are no aliases so the common single-target
+        // setup keeps its short two-line header.
+        $lines = ['Target: ' . (string) $report->target];
+        if ($report->aliases !== []) {
+            $lines[] = $this->formatAliasesHeader($report->aliases);
+        }
+        $lines[] = '';
         if ($main !== []) {
             $lines = [...$lines, ...$main];
         }
@@ -104,6 +109,31 @@ final readonly class ReportFormatter
         }
 
         return $lines;
+    }
+
+    /**
+     * Single-line summary of every configured alias path, with any
+     * drift annotated inline so the reader does not have to cross-
+     * reference paths against the target by eye.
+     *
+     * @param list<AliasInspection> $aliases
+     *
+     * @psalm-pure
+     */
+    private function formatAliasesHeader(array $aliases): string
+    {
+        $parts = [];
+        foreach ($aliases as $entry) {
+            $label = (string) $entry->alias;
+            if ($entry->hasDrift()) {
+                /** @var non-empty-string $drift */
+                $drift = $entry->driftResolvedTo;
+                $label .= ' <fg=yellow>[drift: → ' . $drift . ']</>';
+            }
+            $parts[] = $label;
+        }
+
+        return 'Aliases: ' . \implode(', ', $parts);
     }
 
     /**

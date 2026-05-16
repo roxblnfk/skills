@@ -25,6 +25,9 @@ final readonly class SyncPlan
      * @param list<non-empty-string> $skippedUntrustedNames donors discovered automatically (no positional
      *         arg) that are not in any trust list; skipped silently except for the trailing `[skip]` notice
      * @param Path $target absolute destination directory
+     * @param list<Path> $aliases absolute alias paths; each is created as a junction (Windows) or
+     *         symlink (POSIX) pointing at `$target` after the copy phase completes. Empty list means
+     *         "no aliases for this run".
      * @param list<VendorConfig> $filteredOutDonors donors that were discovered but excluded by a positional
      *         `<package>` pattern. The sync command ignores this field — it exists for `show`, which lists
      *         these under `Skipped:` with a `filtered-out` reason.
@@ -35,6 +38,7 @@ final readonly class SyncPlan
         public array $approvedDonors,
         public array $skippedUntrustedNames,
         public Path $target,
+        public array $aliases = [],
         public array $filteredOutDonors = [],
     ) {}
 }

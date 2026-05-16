@@ -28,6 +28,9 @@ final readonly class InspectionReport
      * @param bool $discoveryActive whether the effective `--discovery` flag is on for this run
      * @param int $undeclaredCandidatesCount how many installed packages ship a `skills/` directory but
      *         do not declare `extra.skills`; drives the "rerun with --discovery" hint when discovery is off
+     * @param list<AliasInspection> $aliases mirrors of `$target`, each with optional drift info.
+     *         Empty list means "no aliases configured", which is the default and corresponds to
+     *         the entire 1.x contract — the formatter hides the `Aliases:` header in that case.
      *
      * @psalm-mutation-free
      */
@@ -37,5 +40,6 @@ final readonly class InspectionReport
         public array $skipped,
         public bool $discoveryActive = false,
         public int $undeclaredCandidatesCount = 0,
+        public array $aliases = [],
     ) {}
 }

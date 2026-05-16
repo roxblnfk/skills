@@ -22,6 +22,7 @@ use LLM\Skills\Discovery\SkillFrontmatterReader;
 use LLM\Skills\Info;
 use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Sync\SyncEngine;
+use LLM\Skills\Sync\SyncPlan;
 use LLM\Skills\Sync\SyncPlanner;
 
 /**
@@ -114,7 +115,75 @@ final readonly class InspectionBuilder
             skipped: $skipped,
             discoveryActive: $discoveryActive,
             undeclaredCandidatesCount: \count($resolution->excluded),
+            aliases: $this->inspectAliases($plan),
         );
+    }
+
+    /**
+     * @psalm-pure
+     */
+    private static function pathsEqual(string $a, string $b): bool
+    {
+        $aNorm = \rtrim(\str_replace('/', \DIRECTORY_SEPARATOR, $a), \DIRECTORY_SEPARATOR);
+        $bNorm = \rtrim(\str_replace('/', \DIRECTORY_SEPARATOR, $b), \DIRECTORY_SEPARATOR);
+
+        return \DIRECTORY_SEPARATOR === '\\'
+            ? \strcasecmp($aNorm, $bNorm) === 0
+            : $aNorm === $bNorm;
+    }
+
+    /**
+     * For each configured alias, decide whether it currently points at
+     * the target on disk. The check is intentionally observational —
+     * it never creates, removes, or touches anything. A non-existent
+     * alias is **not** drift (the next sync will create it); only an
+     * existing junction/symlink/directory pointing somewhere else is.
+     *
+     * @return list<AliasInspection>
+     */
+    private function inspectAliases(SyncPlan $plan): array
+    {
+        if ($plan->aliases === []) {
+            return [];
+        }
+
+        $resolvedTarget = \realpath((string) $plan->target);
+
+        $out = [];
+        foreach ($plan->aliases as $alias) {
+            $out[] = new AliasInspection($alias, $this->detectAliasDrift($alias, $resolvedTarget));
+        }
+
+        return $out;
+    }
+
+    /**
+     * Return the resolved path the alias currently points at, but only
+     * when that resolution disagrees with the target. `null` means
+     * "nothing to report" — either the alias is correct, doesn't exist
+     * yet, or can't be resolved.
+     *
+     * @param string|false $resolvedTarget result of {@see \realpath()} on the configured target
+     *
+     * @return non-empty-string|null
+     */
+    private function detectAliasDrift(\Internal\Path $alias, string|false $resolvedTarget): ?string
+    {
+        $aliasStr = (string) $alias;
+        if (!\file_exists($aliasStr) && !\is_link($aliasStr)) {
+            return null;
+        }
+
+        $resolvedAlias = \realpath($aliasStr);
+        if ($resolvedAlias === false || $resolvedAlias === '') {
+            return null;
+        }
+
+        if ($resolvedTarget !== false && $resolvedTarget !== '' && self::pathsEqual($resolvedAlias, $resolvedTarget)) {
+            return null;
+        }
+
+        return $resolvedAlias;
     }
 
     /**

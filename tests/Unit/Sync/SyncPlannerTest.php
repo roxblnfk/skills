@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Sync;
 
 use Internal\Path;
+use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
@@ -12,6 +13,7 @@ use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Sync\SyncPlanner;
 use Testo\Assert;
+use Testo\Expect;
 use Testo\Test;
 
 #[Test]
@@ -252,12 +254,15 @@ final class SyncPlannerTest
         );
     }
 
-    public function absoluteTargetOverrideIsUsedAsIs(): void
+    public function absoluteTargetInsideProjectRootIsAccepted(): void
     {
+        // Absolute paths are honoured as-is, *but* they must still
+        // resolve inside the project root. A path that happens to be
+        // expressed absolutely yet lives under the project is fine.
         $options = new SyncOptions(
             packageFilters: [],
             extraTrusted: [],
-            targetOverride: '/abs/skills',
+            targetOverride: '/some/project/abs/skills',
             interactive: false,
         );
         $plan = $this->planner()->plan(
@@ -270,7 +275,214 @@ final class SyncPlannerTest
 
         Assert::same(
             $this->normalizePath((string) $plan->target),
-            $this->normalizePath('/abs/skills'),
+            $this->normalizePath('/some/project/abs/skills'),
+        );
+    }
+
+    public function absoluteTargetOutsideProjectRootIsRejected(): void
+    {
+        // Footgun guard: a CLI `--target=/etc/passwd` or a typo in
+        // composer.json must not be able to direct writes outside the
+        // project tree. Symmetric with the donor-side `source` escape
+        // check ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper}).
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: '/etc/passwd',
+            interactive: false,
+        );
+        $this->planner()->plan(
+            donors: [],
+            project: ProjectConfig::default(),
+            options: $options,
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function targetWithDotDotEscapeIsRejected(): void
+    {
+        // Relative paths that collapse to a location outside the
+        // project root are caught after Path normalises the `..`
+        // segments. The error names both the raw value and the
+        // resolved location so the user can find the entry.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = new ProjectConfig(
+            target: '../escape',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+        );
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aliasesDefaultToEmptyListWhenNeitherConfigNorCliProvidesThem(): void
+    {
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same($plan->aliases, []);
+    }
+
+    public function aliasesFromProjectConfigAreResolvedAgainstProjectRoot(): void
+    {
+        $project = ProjectConfig::default()->withAliases(['.claude/skills', '.cursor/skills']);
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->aliases), 2);
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[0]),
+            $this->normalizePath('/some/project/.claude/skills'),
+        );
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[1]),
+            $this->normalizePath('/some/project/.cursor/skills'),
+        );
+    }
+
+    public function absoluteAliasInsideProjectRootIsAccepted(): void
+    {
+        // Absolute paths must not be joined to the project root, exactly
+        // like {@see SyncPlanner::resolveTarget()} treats them — and
+        // they must still live inside the project tree.
+        $project = ProjectConfig::default()->withAliases(['/some/project/abs/alias']);
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[0]),
+            $this->normalizePath('/some/project/abs/alias'),
+        );
+    }
+
+    public function absoluteAliasOutsideProjectRootIsRejected(): void
+    {
+        // Same containment guard as for `target`. Aliases create
+        // junctions/symlinks, so a path outside the project tree
+        // would expose arbitrary filesystem locations through the
+        // project's own directory structure.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = ProjectConfig::default()->withAliases(['/tmp/escape']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aliasWithDotDotEscapeIsRejected(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = ProjectConfig::default()->withAliases(['../escape']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aliasOverrideReplacesProjectConfigEntirely(): void
+    {
+        // Passing `--alias` at all is an explicit takeover, never a merge —
+        // the planner must drop the project's aliases and use only the CLI list.
+        $project = ProjectConfig::default()->withAliases(['.claude/skills']);
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: null,
+            interactive: false,
+            aliasOverrides: ['.cursor/skills'],
+        );
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: $options,
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->aliases), 1);
+        Assert::same(
+            $this->normalizePath((string) $plan->aliases[0]),
+            $this->normalizePath('/some/project/.cursor/skills'),
+        );
+    }
+
+    public function aliasResolvingToTargetThrows(): void
+    {
+        // `./.claude/skills` and `.claude/skills` collapse to the same
+        // absolute path; the planner must catch the equality even though
+        // the raw strings differ from the configured target.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('alias');
+
+        $project = new ProjectConfig(
+            target: '.claude/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            aliases: ['./.claude/skills'],
+        );
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function duplicateAliasesAfterResolutionThrow(): void
+    {
+        // `.claude/skills` and `./.claude/skills` are lexically distinct
+        // but collapse to the same absolute path. The mapper's lexical
+        // pass cannot tell — the planner's resolved-path pass must.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('duplicates');
+
+        $project = ProjectConfig::default()->withAliases([
+            '.claude/skills',
+            './.claude/skills',
+        ]);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
         );
     }
 

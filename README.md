@@ -83,6 +83,7 @@ every donor, the per-skill sync status, and what is being skipped and why.
 |-----------------------|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `<package>...`        | both   | Restrict to matching donors. Exact (`acme/foo`) or wildcard (`acme/*`, `*`). Listed packages are treated as **trusted** for this run (see [Trust](#trust)). |
 | `--target=PATH`, `-t` | both   | Override `extra.skills.target`.                                                                                                                             |
+| `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces `extra.skills.aliases` entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                           |
 | `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                         |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                            |
@@ -97,6 +98,7 @@ composer skills:update                      # sync everything that is trusted
 composer skills:update acme/skills-basic    # sync one package (implicit trust)
 composer skills:update 'acme/*'             # sync an entire vendor namespace
 composer skills:update --discovery          # also include packages without extra.skills
+composer skills:update --alias=.claude/skills   # mirror target via a junction/symlink
 composer skills:update --dry-run            # preview, write nothing
 composer skills:show                        # inspect: per-skill status, what is skipped
 ```
@@ -148,6 +150,7 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
   "extra": {
     "skills": {
       "target": ".agents/skills",
+      "aliases": [".claude/skills", ".cursor/skills"],
       "trusted": ["acme/*", "myorg/skills-internal"],
       "trusted-replace": false,
       "discovery": false
@@ -156,18 +159,75 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
 }
 ```
 
-| Key               | Type     | Default          | Description                                                   |
-|-------------------|----------|------------------|---------------------------------------------------------------|
-| `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.          |
-| `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                   |
-| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list is ignored.              |
-| `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides). |
+| Key               | Type     | Default          | Description                                                                              |
+|-------------------|----------|------------------|------------------------------------------------------------------------------------------|
+| `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.                                     |
+| `aliases`         | string[] | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).           |
+| `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                                              |
+| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list is ignored.                                         |
+| `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                            |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
 
 A malformed `extra.skills` in the project is **fatal**. The same block in a *donor* package is
 skipped with a `-v` warning — one bad vendor never blocks the rest.
+
+
+## Aliases
+
+A single project often needs the same skills directory available to several coding agents at
+once — Claude Code at `.claude/skills`, Cursor at `.cursor/skills`, plus an agent-agnostic
+`.agents/skills`. Copying the same bytes into N places wastes disk and forces them out of sync.
+
+`aliases` keeps **one** real directory (`target`) and creates additional paths as
+OS-level mirrors:
+
+- **POSIX** — symbolic links via `symlink(2)`.
+- **Windows** — directory **junctions** via `mklink /J`. Junctions work without
+  admin/dev-mode privilege, unlike `SeCreateSymbolicLink`. Cross-volume junctions are
+  refused with a non-zero exit; the plugin never silently degrades to a copy.
+
+```jsonc
+{
+  "extra": {
+    "skills": {
+      "target":  ".agents/skills",
+      "aliases": [".claude/skills", ".cursor/skills"]
+    }
+  }
+}
+```
+
+`skills:update` produces one real `.agents/skills/` plus two link paths pointing at it. Reads
+through any path see the same files.
+
+### Behaviour
+
+- **Idempotent.** A second run sees the existing link and treats it as already-correct.
+- **Non-destructive.** If the alias path already exists as a real directory, the run fails
+  with a non-zero exit and leaves the directory untouched. To convert it, remove the
+  directory manually and re-run — the plugin never destroys user content.
+- **Stale aliases not pruned.** Removing an entry from `aliases` does not delete the
+  junction/symlink on disk. Clean it up manually if needed.
+- **CLI override is total.** `--alias=PATH` (repeatable) replaces `extra.skills.aliases`
+  for that run — there is no merging.
+
+```bash
+composer skills:update --alias=.claude/skills --alias=.cursor/skills
+```
+
+### Git
+
+Alias paths are build artefacts and typically belong in `.gitignore`:
+
+```gitignore
+.claude/skills
+.cursor/skills
+```
+
+On Windows, `git status` reads junctions transparently — but committing a junction is rarely
+what you want, so the ignore line is the safer default.
 
 
 ## Trust

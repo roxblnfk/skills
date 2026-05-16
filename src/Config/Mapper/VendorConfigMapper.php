@@ -68,7 +68,7 @@ final readonly class VendorConfigMapper
             );
         }
 
-        if (!$packageRoot->join($source)->match((string) $packageRoot . '/*')) {
+        if (!$packageRoot->join($source)->match($packageRoot->join('*'))) {
             throw new MalformedVendorConfig(
                 $packageName,
                 'extra.skills.source must not escape the package root',

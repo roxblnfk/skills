@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Sync;
 
 use Internal\Path;
+use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
@@ -70,10 +71,14 @@ final readonly class SyncPlanner
             }
         }
 
+        $target = $this->resolveTarget($project, $options, $projectRoot);
+        $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
+
         return new SyncPlan(
             approvedDonors: $approved,
             skippedUntrustedNames: $skipped,
-            target: $this->resolveTarget($project, $options, $projectRoot),
+            target: $target,
+            aliases: $this->resolveAliases($project, $options, $projectRoot, $target),
             filteredOutDonors: $filteredOut,
         );
     }
@@ -97,6 +102,52 @@ final readonly class SyncPlanner
         }
 
         return false;
+    }
+
+    /**
+     * Reject paths that resolve outside the project root.
+     *
+     * The project's own `composer.json` is trusted input (the user
+     * wrote it), so this is not a sandbox boundary against malicious
+     * actors — it's a footgun guard. A typo like `target: "../.."`
+     * or a CLI argument like `--target=/etc/passwd` would otherwise
+     * happily start writing files (or planting junctions) outside
+     * the project. Donor packages are already pinned to their own
+     * roots ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper},
+     * {@see \LLM\Skills\Discovery\AutoDiscoveryProbe}); this check
+     * brings the project side in line with that posture.
+     *
+     * Uses the same {@see Path::match()} idiom as the vendor-side
+     * escape check ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper})
+     * so containment semantics — separator normalisation,
+     * case-insensitivity on Windows, `..` collapse — stay consistent
+     * across the codebase.
+     *
+     * @param non-empty-string $context human-readable label of the config field, e.g. `target`
+     *        or `alias[0]`; goes into the error message
+     * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
+     *        the user can locate the offending entry in their config
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function assertWithinProject(
+        Path $resolved,
+        Path $projectRoot,
+        string $context,
+        string $raw,
+    ): void {
+        if ($resolved->match($projectRoot->join('*'))) {
+            return;
+        }
+
+        throw new MalformedProjectConfig(\sprintf(
+            '%s "%s" resolves to "%s", which is outside the project root "%s"; '
+            . 'target and aliases must stay inside the project',
+            $context,
+            $raw,
+            $resolved,
+            $projectRoot,
+        ));
     }
 
     /**
@@ -154,6 +205,71 @@ final readonly class SyncPlanner
         /** @var non-empty-string $raw */
         $raw = $options->targetOverride ?? $project->target;
 
+        return $this->resolvePath($raw, $projectRoot);
+    }
+
+    /**
+     * Resolve every alias entry to an absolute {@see Path}. The CLI list,
+     * when present, replaces the project's aliases entirely — passing any
+     * `--alias` is an explicit takeover, matching `--target` semantics.
+     *
+     * Post-resolution checks: aliases must not match the resolved target
+     * and must not collide with each other. These mirror the lexical
+     * checks the mapper already runs against the raw config, but they
+     * have to run again here because the CLI input is unstructured and
+     * because relative paths could collapse to the same absolute path
+     * even when their raw strings differ.
+     *
+     * @return list<Path>
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function resolveAliases(
+        ProjectConfig $project,
+        SyncOptions $options,
+        Path $projectRoot,
+        Path $target,
+    ): array {
+        $raw = $options->aliasOverrides ?? $project->aliases;
+        if ($raw === []) {
+            return [];
+        }
+
+        $targetStr = (string) $target;
+
+        $out = [];
+        $seen = [];
+        foreach ($raw as $index => $entry) {
+            $resolved = $this->resolvePath($entry, $projectRoot);
+            $this->assertWithinProject($resolved, $projectRoot, \sprintf('alias[%d]', $index), $entry);
+            $resolvedStr = (string) $resolved;
+
+            if ($resolvedStr === $targetStr) {
+                throw new MalformedProjectConfig(\sprintf(
+                    'alias "%s" resolves to the target path %s; an alias cannot point at itself',
+                    $entry,
+                    $targetStr,
+                ));
+            }
+            if (isset($seen[$resolvedStr])) {
+                throw new MalformedProjectConfig(\sprintf(
+                    'alias "%s" resolves to %s, which duplicates an earlier alias',
+                    $entry,
+                    $resolvedStr,
+                ));
+            }
+            $seen[$resolvedStr] = true;
+            $out[] = $resolved;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param non-empty-string $raw
+     */
+    private function resolvePath(string $raw, Path $projectRoot): Path
+    {
         return self::isAbsolute($raw)
             ? Path::create($raw)
             : $projectRoot->join($raw);

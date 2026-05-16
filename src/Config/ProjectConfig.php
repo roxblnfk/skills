@@ -30,6 +30,10 @@ final readonly class ProjectConfig
      * @param bool $trustedReplace when true, skip the built-in trusted list entirely
      * @param bool $discovery when true, treat installed packages without `extra.skills` as
      *         potential donors if they ship a `skills/` directory; CLI `--discovery` overrides this
+     * @param list<non-empty-string> $aliases extra paths that should be created as junctions
+     *         (Windows) or symbolic links (POSIX) pointing at the resolved `$target`. The target
+     *         itself is the only place skills are physically written; aliases are mirrors. Empty
+     *         list means "no aliases", which is the default and matches the entire 1.x contract.
      *
      * @psalm-mutation-free
      */
@@ -38,6 +42,7 @@ final readonly class ProjectConfig
         public TrustedVendors $trusted,
         public bool $trustedReplace,
         public bool $discovery = false,
+        public array $aliases = [],
     ) {}
 
     /**
@@ -53,6 +58,7 @@ final readonly class ProjectConfig
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
             discovery: false,
+            aliases: [],
         );
     }
 
@@ -63,6 +69,16 @@ final readonly class ProjectConfig
      */
     public function withTarget(string $target): self
     {
-        return new self($target, $this->trusted, $this->trustedReplace, $this->discovery);
+        return new self($target, $this->trusted, $this->trustedReplace, $this->discovery, $this->aliases);
+    }
+
+    /**
+     * @param list<non-empty-string> $aliases
+     *
+     * @psalm-mutation-free
+     */
+    public function withAliases(array $aliases): self
+    {
+        return new self($this->target, $this->trusted, $this->trustedReplace, $this->discovery, $aliases);
     }
 }
