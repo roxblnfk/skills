@@ -39,16 +39,18 @@ Allow the plugin to run:
 { "config": { "allow-plugins": { "llm/skills": true } } }
 ```
 
-(Optional) auto-sync on every `composer install` / `update`:
+(Optional) auto-sync on every `composer install` / `update` — opt in once:
 
 ```jsonc
 {
-  "scripts": {
-    "post-install-cmd": ["@composer skills:update"],
-    "post-update-cmd":  ["@composer skills:update"]
+  "extra": {
+    "skills": { "auto-sync": true }
   }
 }
 ```
+
+The plugin then runs `skills:update` for you after `composer install` / `update`.
+`composer install --no-scripts` still suppresses the auto-run.
 
 ### Global installation
 
@@ -153,7 +155,8 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
       "aliases": [".claude/skills", ".cursor/skills"],
       "trusted": ["acme/*", "myorg/skills-internal"],
       "trusted-replace": false,
-      "discovery": false
+      "discovery": false,
+      "auto-sync": false
     }
   }
 }
@@ -166,6 +169,7 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
 | `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                                              |
 | `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list is ignored.                                         |
 | `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                            |
+| `auto-sync`       | bool     | `false`          | When `true`, run `skills:update` after `composer install` / `update`.                    |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.

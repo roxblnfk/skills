@@ -269,4 +269,33 @@ final class ProjectConfigMapperTest
             ],
         ]);
     }
+
+    public function autoSyncDefaultsToFalse(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::same($cfg->autoSync, false);
+    }
+
+    public function autoSyncIsMappedWhenTrue(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => true]]);
+
+        Assert::same($cfg->autoSync, true);
+    }
+
+    public function autoSyncIsMappedWhenExplicitlyFalse(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => false]]);
+
+        Assert::same($cfg->autoSync, false);
+    }
+
+    public function autoSyncNonBoolThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.auto-sync');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => 'yes']]);
+    }
 }

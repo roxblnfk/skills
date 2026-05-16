@@ -67,12 +67,18 @@ final readonly class ProjectConfigMapper
             throw new MalformedProjectConfig('extra.skills.discovery must be a boolean');
         }
 
+        $autoSync = $skills['auto-sync'] ?? false;
+        if (!\is_bool($autoSync)) {
+            throw new MalformedProjectConfig('extra.skills.auto-sync must be a boolean');
+        }
+
         return new ProjectConfig(
             target: $target,
             trusted: $trusted,
             trustedReplace: $replace,
             discovery: $discovery,
             aliases: $aliases,
+            autoSync: $autoSync,
         );
     }
 

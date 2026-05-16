@@ -34,6 +34,9 @@ final readonly class ProjectConfig
      *         (Windows) or symbolic links (POSIX) pointing at the resolved `$target`. The target
      *         itself is the only place skills are physically written; aliases are mirrors. Empty
      *         list means "no aliases", which is the default and matches the entire 1.x contract.
+     * @param bool $autoSync when true, the plugin runs `skills:update` automatically after
+     *         every `composer install` / `composer update`, removing the need to wire up
+     *         `scripts.post-install-cmd` and `scripts.post-update-cmd` by hand
      *
      * @psalm-mutation-free
      */
@@ -43,6 +46,7 @@ final readonly class ProjectConfig
         public bool $trustedReplace,
         public bool $discovery = false,
         public array $aliases = [],
+        public bool $autoSync = false,
     ) {}
 
     /**
@@ -59,6 +63,7 @@ final readonly class ProjectConfig
             trustedReplace: false,
             discovery: false,
             aliases: [],
+            autoSync: false,
         );
     }
 
@@ -69,7 +74,14 @@ final readonly class ProjectConfig
      */
     public function withTarget(string $target): self
     {
-        return new self($target, $this->trusted, $this->trustedReplace, $this->discovery, $this->aliases);
+        return new self(
+            $target,
+            $this->trusted,
+            $this->trustedReplace,
+            $this->discovery,
+            $this->aliases,
+            $this->autoSync,
+        );
     }
 
     /**
@@ -79,6 +91,13 @@ final readonly class ProjectConfig
      */
     public function withAliases(array $aliases): self
     {
-        return new self($this->target, $this->trusted, $this->trustedReplace, $this->discovery, $aliases);
+        return new self(
+            $this->target,
+            $this->trusted,
+            $this->trustedReplace,
+            $this->discovery,
+            $aliases,
+            $this->autoSync,
+        );
     }
 }
