@@ -72,6 +72,7 @@ final readonly class SyncPlanner
         }
 
         $target = $this->resolveTarget($project, $options, $projectRoot);
+        $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
 
         return new SyncPlan(
             approvedDonors: $approved,
@@ -101,6 +102,52 @@ final readonly class SyncPlanner
         }
 
         return false;
+    }
+
+    /**
+     * Reject paths that resolve outside the project root.
+     *
+     * The project's own `composer.json` is trusted input (the user
+     * wrote it), so this is not a sandbox boundary against malicious
+     * actors — it's a footgun guard. A typo like `target: "../.."`
+     * or a CLI argument like `--target=/etc/passwd` would otherwise
+     * happily start writing files (or planting junctions) outside
+     * the project. Donor packages are already pinned to their own
+     * roots ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper},
+     * {@see \LLM\Skills\Discovery\AutoDiscoveryProbe}); this check
+     * brings the project side in line with that posture.
+     *
+     * Uses the same {@see Path::match()} idiom as the vendor-side
+     * escape check ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper})
+     * so containment semantics — separator normalisation,
+     * case-insensitivity on Windows, `..` collapse — stay consistent
+     * across the codebase.
+     *
+     * @param non-empty-string $context human-readable label of the config field, e.g. `target`
+     *        or `alias[0]`; goes into the error message
+     * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
+     *        the user can locate the offending entry in their config
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function assertWithinProject(
+        Path $resolved,
+        Path $projectRoot,
+        string $context,
+        string $raw,
+    ): void {
+        if ($resolved->match($projectRoot->join('*'))) {
+            return;
+        }
+
+        throw new MalformedProjectConfig(\sprintf(
+            '%s "%s" resolves to "%s", which is outside the project root "%s"; '
+            . 'target and aliases must stay inside the project',
+            $context,
+            $raw,
+            $resolved,
+            $projectRoot,
+        ));
     }
 
     /**
@@ -192,8 +239,9 @@ final readonly class SyncPlanner
 
         $out = [];
         $seen = [];
-        foreach ($raw as $entry) {
+        foreach ($raw as $index => $entry) {
             $resolved = $this->resolvePath($entry, $projectRoot);
+            $this->assertWithinProject($resolved, $projectRoot, \sprintf('alias[%d]', $index), $entry);
             $resolvedStr = (string) $resolved;
 
             if ($resolvedStr === $targetStr) {

@@ -696,6 +696,42 @@ final class SkillsSyncTest
         );
     }
 
+    public function targetEscapingProjectRootIsRejected(): void
+    {
+        // Containment guard: a CLI `--target=../escape` (or anything
+        // that resolves outside the project tree) must fail loudly,
+        // never start writing files into a parent directory.
+        $process = $this->runSync('--target=../escape');
+
+        Assert::notSame($process->getExitCode(), 0);
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'outside the project root'),
+            'stderr must explain the containment failure. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \is_dir(Info::PROJECT_DIR . '/../escape'),
+            'no directory must be created outside the project root',
+        );
+    }
+
+    public function aliasEscapingProjectRootIsRejected(): void
+    {
+        // Same guard for `--alias`: a junction at `../escape` would
+        // expose an arbitrary parent location through the project
+        // tree. Reject before any junction is created.
+        $process = $this->runSync('--alias=../escape');
+
+        Assert::notSame($process->getExitCode(), 0);
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'outside the project root'),
+            'stderr must explain the containment failure. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \file_exists(Info::PROJECT_DIR . '/../escape'),
+            'no junction must be created outside the project root',
+        );
+    }
+
     #[WithSandboxExtras([
         'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
         'aliases' => ['.claude/skills-alias'],
