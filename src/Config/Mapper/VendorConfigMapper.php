@@ -15,24 +15,39 @@ use LLM\Skills\Config\VendorConfig;
  *
  * Two distinct outcomes:
  *
- * - Package has no `extra.skills` at all → it is not a donor. Use
+ * - Package has no `extra.skills.source` → it is not a donor. Use
  * {@see self::declaresSkills()} to detect this before calling
- * {@see self::fromExtra()}; non-donors are skipped **silently**.
- * - Package has `extra.skills` but it is broken → {@see self::fromExtra()}
- * throws {@see MalformedVendorConfig}; the caller emits a `-v` warning and
- * moves on. One bad vendor never blocks the rest of the sync.
+ * {@see self::fromExtra()}; non-donors are skipped **silently**. This
+ * covers packages that legitimately use `llm/skills` (e.g. set
+ * `aliases`, `auto-sync`, or other root-level options in their own
+ * `composer.json`) without donating skills of their own.
+ * - Package has `extra.skills.source` but the value is broken →
+ * {@see self::fromExtra()} throws {@see MalformedVendorConfig}; the
+ * caller emits a `-v` warning and moves on. One bad vendor never blocks
+ * the rest of the sync.
  */
 final readonly class VendorConfigMapper
 {
     /**
-     * Quick predicate: does the package's `extra` declare a `skills` block?
-     * Used by the sync command to skip non-donors without producing noise.
+     * Quick predicate: does the package opt in to being a donor?
+     *
+     * A package becomes a donor by setting `extra.skills.source`. The
+     * mere presence of an `extra.skills` block is not enough — that
+     * block may carry only root-level options (`aliases`, `auto-sync`,
+     * etc.) that are meaningful when the package is the root project
+     * but should be ignored when it is installed as a vendor dependency.
      *
      * @psalm-pure
      */
     public static function declaresSkills(mixed $extra): bool
     {
-        return \is_array($extra) && isset($extra['skills']);
+        if (!\is_array($extra)) {
+            return false;
+        }
+
+        /** @var mixed $skills */
+        $skills = $extra['skills'] ?? null;
+        return \is_array($skills) && \array_key_exists('source', $skills);
     }
 
     /**

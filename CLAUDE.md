@@ -29,3 +29,13 @@ installs them into the consumer project (default `.agents/skills/`, configurable
   name and should be migrated to `LLM\Skills\…`; do not propagate it in new code.
 - File paths in commands and services should flow through the `Internal\Path` value object
   (provided by the `internal/path` dependency).
+- **Behavioural changes require acceptance coverage.** Whenever a change alters
+  observable plugin behaviour — what gets discovered, copied, skipped, warned
+  about, or how output looks — add or update an acceptance test in
+  `tests/Acceptance/` alongside the unit test. The sandbox project at
+  `tests/Sandbox/project/` exists for exactly this; introduce a new fixture
+  package under `tests/Sandbox/packages/<vendor>/<name>/` when an existing
+  fixture cannot express the scenario, wire it into the sandbox's
+  `composer.json`, and run `composer update <vendor>/<name>` inside the
+  sandbox so `installed.json` reflects the new metadata. Unit tests alone are
+  not enough: they pass the mapper, miss the end-to-end pipeline.

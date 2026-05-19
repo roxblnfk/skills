@@ -22,8 +22,12 @@ use Testo\Test;
  *                            Skills: `greeting/`, `code-review/`.
  * - `acme/skills-pro`      — trusted. Source `resources/skills`.
  *                            Skills: `refactor/` (with nested `templates/suggestion.md`), `migrate/`.
- * - `acme/skills-broken`   — declares `extra.skills` but the block is malformed
- *                            (missing `source`). Used to exercise graceful skip-with-warning.
+ * - `acme/skills-broken`   — declares `extra.skills.source` but the value is malformed
+ *                            (empty string). Used to exercise graceful skip-with-warning.
+ * - `acme/skills-rootlike` — declares `extra.skills` with only root-level options
+ *                            (`aliases`, `auto-sync`) and no `source`. Mirrors the
+ *                            shape of `llm/skills` itself when seen as a vendor: must
+ *                            be skipped silently, not surfaced as malformed.
  * - `clash/skills-conflict`— untrusted. Declares a `greeting` skill that collides
  *                            with `acme/skills-basic` once trusted. Different vendor
  *                            namespace so it is *not* matched by `acme/*` filters.
@@ -441,6 +445,24 @@ final class SkillsSyncTest
         Assert::true(
             \str_contains($process->getErrorOutput(), 'acme/skills-broken'),
             '-v output should mention the malformed donor. Got: ' . $process->getErrorOutput(),
+        );
+    }
+
+    public function vendorWithRootLevelSkillsConfigButNoSourceIsSkippedSilently(): void
+    {
+        // acme/skills-rootlike declares extra.skills with only `aliases` and
+        // `auto-sync` (root-level keys) and no `source`. It is not opting in
+        // as a donor, so even -v must not warn about it — silent skip.
+        // This is the same shape `llm/skills` itself has when installed as a
+        // vendor dependency.
+        $process = $this->runSync('-v');
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::false(
+            \str_contains($combined, 'acme/skills-rootlike'),
+            'package without extra.skills.source must not appear anywhere in sync output. '
+            . 'Got: ' . $combined,
         );
     }
 

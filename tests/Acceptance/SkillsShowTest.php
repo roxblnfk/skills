@@ -242,6 +242,25 @@ final class SkillsShowTest
         );
     }
 
+    public function packageWithRootLevelSkillsConfigButNoSourceIsNotListedAnywhere(): void
+    {
+        // acme/skills-rootlike declares extra.skills with only `aliases` and
+        // `auto-sync` — root-level options that are meaningful for the root
+        // project but not for a vendor donor. Because it sets no `source`,
+        // the package is not a donor and must not appear anywhere in show
+        // output: not in the main listing, not in `Skipped:` as malformed.
+        // This mirrors what `llm/skills` itself looks like when seen as a
+        // vendor dependency (issue #10).
+        $process = $this->runShow();
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::false(
+            \str_contains($combined, 'acme/skills-rootlike'),
+            'package without extra.skills.source must not appear in show output. '
+            . 'Got: ' . $combined,
+        );
+    }
+
     public function listsFilteredOutDonorsWhenPositionalPatternIsUsed(): void
     {
         $process = $this->runShow('acme/skills-basic');

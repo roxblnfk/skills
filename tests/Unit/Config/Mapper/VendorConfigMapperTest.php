@@ -14,16 +14,35 @@ use Testo\Test;
 #[Test]
 final class VendorConfigMapperTest
 {
-    public function declaresSkillsTrueForArrayWithSkillsKey(): void
+    public function declaresSkillsTrueWhenSourceKeyPresent(): void
     {
         Assert::true(VendorConfigMapper::declaresSkills(['skills' => ['source' => 'a']]));
     }
 
-    public function declaresSkillsTrueEvenForBrokenSkillsBlock(): void
+    public function declaresSkillsTrueWhenSourceKeyPresentEvenIfValueIsInvalid(): void
     {
-        // A donor with a broken block is still a donor — we want to surface a
-        // warning, not silently treat it as a non-donor.
-        Assert::true(VendorConfigMapper::declaresSkills(['skills' => 'not-an-object']));
+        // A package that opted in by setting `source` but botched the value is
+        // still a donor — surface a malformed warning rather than silently
+        // skipping it.
+        Assert::true(VendorConfigMapper::declaresSkills(['skills' => ['source' => '']]));
+        Assert::true(VendorConfigMapper::declaresSkills(['skills' => ['source' => null]]));
+        Assert::true(VendorConfigMapper::declaresSkills(['skills' => ['source' => 42]]));
+    }
+
+    public function declaresSkillsFalseWhenSkillsBlockHasNoSourceKey(): void
+    {
+        // A package that uses `llm/skills` for its own root-level config
+        // (aliases, auto-sync, …) without donating skills of its own must not
+        // be flagged as a malformed donor.
+        Assert::false(VendorConfigMapper::declaresSkills([
+            'skills' => ['aliases' => ['.claude/skills'], 'auto-sync' => true],
+        ]));
+        Assert::false(VendorConfigMapper::declaresSkills(['skills' => []]));
+    }
+
+    public function declaresSkillsFalseWhenSkillsBlockIsNotAnArray(): void
+    {
+        Assert::false(VendorConfigMapper::declaresSkills(['skills' => 'not-an-object']));
     }
 
     public function declaresSkillsFalseWhenSkillsKeyMissing(): void

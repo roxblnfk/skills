@@ -1,0 +1,12 @@
+{
+    "name": "acme/skills-rootlike",
+    "description": "Stub package that declares extra.skills with only root-level options (aliases, auto-sync) and no `source`. Mirrors the shape of `llm/skills` itself when seen as a vendor dependency — it must be skipped silently, not flagged malformed.",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "aliases": [".claude/skills", ".cursor/skills"],
+            "auto-sync": true
+        }
+    }
+}
