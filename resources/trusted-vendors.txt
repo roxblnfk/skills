@@ -31,5 +31,6 @@ moonshine/*
 spiral/*
 symfony/*
 tempest/*
+temporal/*
 testo/*
 yiisoft/*
