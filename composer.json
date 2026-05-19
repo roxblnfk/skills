@@ -11,7 +11,8 @@
         "ai-skills",
         "ai-agents",
         "llm-agents",
-        "claude-code"
+        "claude-code",
+        "dev"
     ],
     "support": {
         "issues": "https://github.com/roxblnfk/skills/issues",
