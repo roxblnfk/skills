@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/roxblnfk/skills/compare/1.1.0...1.1.1) (2026-05-19)
+
+
+### Bug Fixes
+
+* Treat vendor `extra.skills` without `source` as non-donor ([#10](https://github.com/roxblnfk/skills/issues/10)) ([f503793](https://github.com/roxblnfk/skills/commit/f503793d2eca77c1f4e5971e5d35f331b2b45dab))
+
 ## [1.1.0](https://github.com/roxblnfk/skills/compare/1.0.1...1.1.0) (2026-05-16)
 
 
