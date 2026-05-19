@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bd0396b2b599673087455a71b953e7ef",
+    "content-hash": "0ecf4fe8f1613b2313c5ea36285bdc09",
     "packages": [
         {
             "name": "internal/path",
@@ -383,16 +383,16 @@
         },
         {
             "name": "amphp/parallel",
-            "version": "v2.3.4",
+            "version": "v2.4.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/parallel.git",
-                "reference": "3ad45d1cff1bfbfe832c79671e6a4a1017dd9921"
+                "reference": "37f5b2754fadc229c00f9416bd68fb8d04529a81"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/parallel/zipball/3ad45d1cff1bfbfe832c79671e6a4a1017dd9921",
-                "reference": "3ad45d1cff1bfbfe832c79671e6a4a1017dd9921",
+                "url": "https://api.github.com/repos/amphp/parallel/zipball/37f5b2754fadc229c00f9416bd68fb8d04529a81",
+                "reference": "37f5b2754fadc229c00f9416bd68fb8d04529a81",
                 "shasum": ""
             },
             "require": {
@@ -455,7 +455,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/parallel/issues",
-                "source": "https://github.com/amphp/parallel/tree/v2.3.4"
+                "source": "https://github.com/amphp/parallel/tree/v2.4.0"
             },
             "funding": [
                 {
@@ -463,7 +463,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-05-06T19:26:51+00:00"
+            "time": "2026-05-16T16:54:01+00:00"
         },
         {
             "name": "amphp/parser",
@@ -1143,16 +1143,16 @@
         },
         {
             "name": "composer/ca-bundle",
-            "version": "1.5.11",
+            "version": "1.5.12",
             "source": {
                 "type": "git",
                 "url": "https://github.com/composer/ca-bundle.git",
-                "reference": "68ff39175e8e94a4bb1d259407ce51a6a60f09e6"
+                "reference": "00a2f4201641d5c53f7fc0195e6c8d9fcc321a78"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/composer/ca-bundle/zipball/68ff39175e8e94a4bb1d259407ce51a6a60f09e6",
-                "reference": "68ff39175e8e94a4bb1d259407ce51a6a60f09e6",
+                "url": "https://api.github.com/repos/composer/ca-bundle/zipball/00a2f4201641d5c53f7fc0195e6c8d9fcc321a78",
+                "reference": "00a2f4201641d5c53f7fc0195e6c8d9fcc321a78",
                 "shasum": ""
             },
             "require": {
@@ -1199,7 +1199,7 @@
             "support": {
                 "irc": "irc://irc.freenode.org/composer",
                 "issues": "https://github.com/composer/ca-bundle/issues",
-                "source": "https://github.com/composer/ca-bundle/tree/1.5.11"
+                "source": "https://github.com/composer/ca-bundle/tree/1.5.12"
             },
             "funding": [
                 {
@@ -1211,7 +1211,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-03-30T09:16:10+00:00"
+            "time": "2026-05-19T11:26:22+00:00"
         },
         {
             "name": "composer/class-map-generator",
@@ -3150,16 +3150,16 @@
         },
         {
             "name": "php-cs-fixer/shim",
-            "version": "v3.95.1",
+            "version": "v3.95.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/PHP-CS-Fixer/shim.git",
-                "reference": "f81ccf51ca60cc9dd21358ffba0e79ebd2ebb78a"
+                "reference": "319bd80c8db64ab5f7b79a19178299045bdb9957"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/PHP-CS-Fixer/shim/zipball/f81ccf51ca60cc9dd21358ffba0e79ebd2ebb78a",
-                "reference": "f81ccf51ca60cc9dd21358ffba0e79ebd2ebb78a",
+                "url": "https://api.github.com/repos/PHP-CS-Fixer/shim/zipball/319bd80c8db64ab5f7b79a19178299045bdb9957",
+                "reference": "319bd80c8db64ab5f7b79a19178299045bdb9957",
                 "shasum": ""
             },
             "require": {
@@ -3196,9 +3196,9 @@
             "description": "A tool to automatically fix PHP code style",
             "support": {
                 "issues": "https://github.com/PHP-CS-Fixer/shim/issues",
-                "source": "https://github.com/PHP-CS-Fixer/shim/tree/v3.95.1"
+                "source": "https://github.com/PHP-CS-Fixer/shim/tree/v3.95.2"
             },
-            "time": "2026-04-12T17:00:34+00:00"
+            "time": "2026-05-15T09:21:09+00:00"
         },
         {
             "name": "php-http/message",
@@ -3911,16 +3911,16 @@
         },
         {
             "name": "revolt/event-loop",
-            "version": "v1.0.8",
+            "version": "v1.0.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/revoltphp/event-loop.git",
-                "reference": "b6fc06dce8e9b523c9946138fa5e62181934f91c"
+                "reference": "44061cf513e53c6200372fc935ac42271566295d"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/revoltphp/event-loop/zipball/b6fc06dce8e9b523c9946138fa5e62181934f91c",
-                "reference": "b6fc06dce8e9b523c9946138fa5e62181934f91c",
+                "url": "https://api.github.com/repos/revoltphp/event-loop/zipball/44061cf513e53c6200372fc935ac42271566295d",
+                "reference": "44061cf513e53c6200372fc935ac42271566295d",
                 "shasum": ""
             },
             "require": {
@@ -3930,7 +3930,7 @@
                 "ext-json": "*",
                 "jetbrains/phpstorm-stubs": "^2019.3",
                 "phpunit/phpunit": "^9",
-                "psalm/phar": "^5.15"
+                "psalm/phar": "6.16.*"
             },
             "type": "library",
             "extra": {
@@ -3977,9 +3977,9 @@
             ],
             "support": {
                 "issues": "https://github.com/revoltphp/event-loop/issues",
-                "source": "https://github.com/revoltphp/event-loop/tree/v1.0.8"
+                "source": "https://github.com/revoltphp/event-loop/tree/v1.0.9"
             },
-            "time": "2025-08-27T21:33:23+00:00"
+            "time": "2026-05-16T17:55:38+00:00"
         },
         {
             "name": "roxblnfk/unpoly",
@@ -5808,16 +5808,16 @@
         },
         {
             "name": "testo/assert",
-            "version": "0.1.2",
+            "version": "0.1.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/php-testo/assert.git",
-                "reference": "4efdff118f0ba9143571e2a0214c73faed32e07d"
+                "reference": "a7c8d721203a1bb57d0026fc5d3c980d98cbaf91"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/php-testo/assert/zipball/4efdff118f0ba9143571e2a0214c73faed32e07d",
-                "reference": "4efdff118f0ba9143571e2a0214c73faed32e07d",
+                "url": "https://api.github.com/repos/php-testo/assert/zipball/a7c8d721203a1bb57d0026fc5d3c980d98cbaf91",
+                "reference": "a7c8d721203a1bb57d0026fc5d3c980d98cbaf91",
                 "shasum": ""
             },
             "require": {
@@ -5855,7 +5855,7 @@
                 "testo"
             ],
             "support": {
-                "source": "https://github.com/php-testo/assert/tree/0.1.2"
+                "source": "https://github.com/php-testo/assert/tree/0.1.3"
             },
             "funding": [
                 {
@@ -5863,7 +5863,7 @@
                     "type": "boosty"
                 }
             ],
-            "time": "2026-05-09T12:55:45+00:00"
+            "time": "2026-05-15T07:06:23+00:00"
         },
         {
             "name": "testo/bench",
@@ -5927,21 +5927,21 @@
         },
         {
             "name": "testo/bridge-infection",
-            "version": "0.1.3",
+            "version": "0.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/php-testo/bridge-infection.git",
-                "reference": "6d8fb5989521426e9dadb1a3b54d7497b6153d23"
+                "reference": "3512035c527513e67c7cbc082cd4111c107c6e2a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/php-testo/bridge-infection/zipball/6d8fb5989521426e9dadb1a3b54d7497b6153d23",
-                "reference": "6d8fb5989521426e9dadb1a3b54d7497b6153d23",
+                "url": "https://api.github.com/repos/php-testo/bridge-infection/zipball/3512035c527513e67c7cbc082cd4111c107c6e2a",
+                "reference": "3512035c527513e67c7cbc082cd4111c107c6e2a",
                 "shasum": ""
             },
             "require": {
                 "infection/abstract-testframework-adapter": "^0.5",
-                "infection/include-interceptor": "^0.2",
+                "infection/include-interceptor": "^0.2 || ^1.0",
                 "php": ">=8.2"
             },
             "type": "infection-extension",
@@ -5975,7 +5975,7 @@
                 "testo"
             ],
             "support": {
-                "source": "https://github.com/php-testo/bridge-infection/tree/0.1.3"
+                "source": "https://github.com/php-testo/bridge-infection/tree/0.1.4"
             },
             "funding": [
                 {
@@ -5983,7 +5983,7 @@
                     "type": "boosty"
                 }
             ],
-            "time": "2026-05-10T20:48:28+00:00"
+            "time": "2026-05-17T16:21:03+00:00"
         },
         {
             "name": "testo/bridge-symfony-console",
@@ -6561,16 +6561,16 @@
         },
         {
             "name": "testo/testo",
-            "version": "0.10.10",
+            "version": "0.10.11",
             "source": {
                 "type": "git",
                 "url": "https://github.com/php-testo/testo.git",
-                "reference": "819fb53f3b45781feacf49fb81eb85855102e117"
+                "reference": "de522a0d978d1c352a9b2a9dc6b8f38c9bb908cd"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/php-testo/testo/zipball/819fb53f3b45781feacf49fb81eb85855102e117",
-                "reference": "819fb53f3b45781feacf49fb81eb85855102e117",
+                "url": "https://api.github.com/repos/php-testo/testo/zipball/de522a0d978d1c352a9b2a9dc6b8f38c9bb908cd",
+                "reference": "de522a0d978d1c352a9b2a9dc6b8f38c9bb908cd",
                 "shasum": ""
             },
             "require": {
@@ -6604,6 +6604,7 @@
                 "buggregator/trap": "^1.10",
                 "infection/infection": "dev-testo-bridge-82 as 0.32.6",
                 "internal/dload": "^1.6",
+                "llm/skills": "^1.1",
                 "roxblnfk/unpoly": "1.8.2",
                 "spiral/code-style": "^2.2.2",
                 "testo/bridge-infection": "0.1 - 1",
@@ -6615,7 +6616,9 @@
             "type": "library",
             "extra": {
                 "skills": {
-                    "source": "skills"
+                    "source": "skills",
+                    "target": ".claude/skills",
+                    "auto-sync": true
                 }
             },
             "autoload": {
@@ -6653,7 +6656,7 @@
                     "type": "boosty"
                 }
             ],
-            "time": "2026-05-14T16:15:33+00:00"
+            "time": "2026-05-18T13:41:21+00:00"
         },
         {
             "name": "thecodingmachine/safe",
