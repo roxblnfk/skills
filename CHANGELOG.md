@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.2.0](https://github.com/roxblnfk/skills/compare/1.1.1...1.2.0) (2026-05-20)
+
+
+### Features
+
+* Trust direct dependencies implicitly ([3ecd9c5](https://github.com/roxblnfk/skills/commit/3ecd9c5090b996220f11a52538f6f8e34646cf4f))
+
+
+### Documentation
+
+* Update trusted vendors guidelines for submissions ([df8a5b5](https://github.com/roxblnfk/skills/commit/df8a5b5d0f39fd4009f2d43f7c3c8db5299d1331))
+
 ## [1.1.1](https://github.com/roxblnfk/skills/compare/1.1.0...1.1.1) (2026-05-19)
 
 
