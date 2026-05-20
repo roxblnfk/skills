@@ -285,21 +285,84 @@ final class SkillsSyncTest
     #[WithSandboxExtras(['trusted' => ['evil/*']])]
     public function wildcardPatternInProjectTrustedAllowsThatVendor(): void
     {
-        // `extra.skills.trusted: ["evil/*"]` is the project's only trust
-        // statement; the built-in list is still active (default
-        // `trusted-replace: false`). Expected result: evil/payload from the
-        // project's wildcard plus spiral/skills-demo from the built-in
-        // `spiral/*` pattern. acme/* — which lost its entry when we
-        // replaced the `extra.skills` block — must not appear.
+        // `extra.skills.trusted: ["evil/*"]` is the project's only explicit
+        // trust statement. Implicit trust is still active (default
+        // `trusted-replace: false`), so we additionally pick up:
+        //
+        // - acme/skills-basic / acme/skills-pro via direct-dep trust
+        //   (declared under the sandbox's root `require`),
+        // - spiral/skills-demo via direct-dep trust AND the built-in
+        //   `spiral/*` pattern,
+        // - evil/payload via the project wildcard (it is a *transitive*
+        //   dep through transit/untrusted-relay, so direct-dep trust
+        //   does not cover it — the wildcard is what unlocks it).
+        //
+        // clash/skills-conflict stays skipped: same transitive position,
+        // no pattern matches it.
         $process = $this->runSync();
 
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['demo', 'tutorial'],
-            'evil/payload (project wildcard) + spiral/skills-demo (built-in). stderr: '
+            ['code-review', 'demo', 'greeting', 'migrate', 'refactor', 'tutorial'],
+            'project wildcard unlocks evil/payload; direct-dep trust covers the rest. stderr: '
             . $process->getErrorOutput(),
         );
+    }
+
+    // ── direct-dep trust ────────────────────────────────────────────────────
+
+    #[WithSandboxExtras(['trusted' => []])]
+    public function directDependencyIsImplicitlyTrustedWithoutAnyExplicitPattern(): void
+    {
+        // Project trust list is empty and the built-in list does not
+        // cover `acme/*`. The donors still ship because they are
+        // declared under the sandbox's root `require` — direct-dep
+        // trust is the implicit grant.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/greeting/SKILL.md'),
+            'acme/skills-basic (direct dep, not in any trust list) must be synced. stderr: '
+            . $process->getErrorOutput(),
+        );
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/refactor/SKILL.md'),
+            'acme/skills-pro (direct dep, not in any trust list) must be synced',
+        );
+    }
+
+    public function transitiveDependencyStaysSkippedWithoutTrustPattern(): void
+    {
+        // evil/payload reaches the sandbox transitively through
+        // transit/untrusted-relay; the consumer never declared it
+        // directly, so direct-dep trust does not cover it. With no
+        // matching pattern it stays in the untrusted bucket.
+        $process = $this->runSync();
+
+        Assert::false(
+            \is_file(self::TARGET_DIR . '/tutorial/SKILL.md'),
+            'transitive dep without trust must not be synced',
+        );
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'evil/payload'),
+            'untrusted transitive dep should be named in the skip notice. stderr: '
+            . $process->getErrorOutput(),
+        );
+    }
+
+    #[WithSandboxExtras(['trusted' => [], 'trusted-replace' => true])]
+    public function trustedReplaceTrueAlsoDisablesDirectDependencyTrust(): void
+    {
+        // `trusted-replace: true` is the opt-out for every implicit
+        // trust source — built-in *and* direct-dep. With an empty
+        // project list the effective trust becomes empty, so even
+        // root-declared donors get skipped.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::same($this->listTargetEntries(), []);
     }
 
     // ── trusted-replace ─────────────────────────────────────────────────────
@@ -308,13 +371,20 @@ final class SkillsSyncTest
     public function builtinTrustedListIsActiveWhenReplaceIsFalse(): void
     {
         // Project trust is explicitly empty. With the default
-        // `trusted-replace: false`, the built-in list still applies, so
-        // spiral/skills-demo (matched by built-in `spiral/*`) is approved.
-        // acme/* and evil/* — not in built-in — are skipped.
+        // `trusted-replace: false`, both implicit lists remain active:
+        // the built-in list approves spiral/skills-demo, and direct-dep
+        // trust approves every donor declared under the sandbox's root
+        // `require` (acme/skills-basic, acme/skills-pro and again
+        // spiral/skills-demo). The transitive evil/payload and
+        // clash/skills-conflict have no pattern coverage and stay
+        // skipped.
         $process = $this->runSync();
 
         Assert::same($process->getExitCode(), 0);
-        Assert::same($this->listTargetEntries(), ['demo']);
+        Assert::same(
+            $this->listTargetEntries(),
+            ['code-review', 'demo', 'greeting', 'migrate', 'refactor'],
+        );
     }
 
     #[WithSandboxExtras(['trusted' => [], 'trusted-replace' => true])]

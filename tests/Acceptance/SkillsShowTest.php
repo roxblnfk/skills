@@ -6,6 +6,7 @@ namespace LLM\Skills\Tests\Acceptance;
 
 use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
+use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
@@ -196,6 +197,33 @@ final class SkillsShowTest
         Assert::true(
             \str_contains($spiralLine, '[via built-in trust]'),
             'spiral/skills-demo should be annotated as built-in. line: ' . $spiralLine,
+        );
+    }
+
+    #[WithSandboxExtras(['trusted' => []])]
+    public function annotatesDirectDependencyTrustedDonor(): void
+    {
+        // With an empty project trust list and a built-in list that
+        // does not cover `acme/*`, the only thing approving
+        // `acme/skills-basic` is the fact that it is declared under
+        // the sandbox's root `require`. The show output should credit
+        // that source via the `[via direct dependency]` annotation.
+        $process = $this->runShow();
+        $out = $process->getOutput();
+
+        $lines = \explode("\n", $out);
+        $basicLine = null;
+        foreach ($lines as $line) {
+            if (\str_contains($line, 'skills-basic')) {
+                $basicLine = $line;
+                break;
+            }
+        }
+        Assert::true($basicLine !== null, 'skills-basic must appear in show output. stdout: ' . $out);
+        \assert($basicLine !== null);
+        Assert::true(
+            \str_contains($basicLine, '[via direct dependency]'),
+            'direct-dep-trusted donor should be annotated. line: ' . $basicLine,
         );
     }
 

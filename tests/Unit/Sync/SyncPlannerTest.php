@@ -486,6 +486,88 @@ final class SyncPlannerTest
         );
     }
 
+    public function directDependencyIsImplicitlyTrustedWithoutAnyTrustPattern(): void
+    {
+        // A package listed in the consumer's root `require` (or
+        // `require-dev`) does not need an explicit trust entry — the
+        // act of depending on it is already an act of trust.
+        $donor = $this->donor('acme/skills-basic');
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+            directDependencies: ['acme/skills-basic'],
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->skippedUntrustedNames, []);
+    }
+
+    public function transitiveDependencyStillRequiresTrustPattern(): void
+    {
+        // Direct-dep trust only short-circuits packages declared at the
+        // root level. Anything pulled in transitively must still pass
+        // through the trust list.
+        $donor = $this->donor('evil/payload');
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+            directDependencies: ['acme/skills-basic'],
+        );
+
+        Assert::same($plan->approvedDonors, []);
+        Assert::same($plan->skippedUntrustedNames, ['evil/payload']);
+    }
+
+    public function trustedReplaceDisablesDirectDependencyTrust(): void
+    {
+        // `trusted-replace: true` is "I curate trust explicitly" — it
+        // turns off built-in trust and direct-dep trust alike, leaving
+        // only the project's own list (and `--trust=`).
+        $donor = $this->donor('acme/skills-basic');
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: new ProjectConfig(
+                target: '.agents/skills',
+                trusted: TrustedVendors::empty(),
+                trustedReplace: true,
+            ),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+            directDependencies: ['acme/skills-basic'],
+        );
+
+        Assert::same($plan->approvedDonors, []);
+        Assert::same($plan->skippedUntrustedNames, ['acme/skills-basic']);
+    }
+
+    public function directDependencyTrustIgnoredWhenPositionalFilterPresent(): void
+    {
+        // Positional filters short-circuit every trust source — the
+        // direct-dep list is no different. Filter-rejected direct deps
+        // are dropped, not silently approved.
+        $kept = $this->donor('acme/keep');
+        $rejected = $this->donor('acme/drop');
+        $plan = $this->planner()->plan(
+            donors: [$kept, $rejected],
+            project: ProjectConfig::default(),
+            options: $this->optionsWithFilters('acme/keep'),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+            directDependencies: ['acme/keep', 'acme/drop'],
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'acme/keep');
+        Assert::same(\count($plan->filteredOutDonors), 1);
+    }
+
     public function emptyDonorsListYieldsEmptyApprovedAndEmptySkipped(): void
     {
         $plan = $this->planner()->plan(

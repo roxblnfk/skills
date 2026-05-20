@@ -6,6 +6,12 @@
 # so a malicious package could ship a prompt-injection payload. The trust
 # list narrows the attack surface to maintainers we are willing to vouch for.
 #
+# Note that direct dependencies of the consumer project (anything under the
+# root `require` / `require-dev`) are *also* implicitly trusted at runtime,
+# independent of this list. This file therefore mostly matters for packages
+# that arrive transitively — the curated vendors below get a free pass even
+# when nobody in the project depends on them directly.
+#
 # Pattern syntax (see \LLM\Skills\Config\VendorPattern):
 #   - `vendor/*`       — every package in the vendor namespace
 #   - `vendor/package` — exact package match

@@ -17,19 +17,23 @@ use LLM\Skills\Config\TrustedVendors;
  * which pattern. The attributor keeps them apart and walks them in a
  * defined priority order.
  *
- * Priority on match: **project → cli → builtin**. Rationale:
+ * Priority on match: **project → cli → builtin → direct-dep**. Rationale:
  *
  * - Project trust is the durable, version-controlled answer to "do we
  * trust this vendor". If it covers the donor, that's the canonical
  * source.
  * - CLI `--trust` is a per-invocation override; it ranks above the
- * built-in fallback so users can audit a one-off decision.
- * - Built-in is the silent default. It is only surfaced when nothing
- * else explains the trust.
+ * implicit fallbacks so users can audit a one-off decision.
+ * - Built-in is the curated default. It is surfaced only when nothing
+ * more specific explains the trust.
+ * - Direct-dep is the implicit catch-all: a package the consumer
+ * already chose to depend on is implicitly trusted, but we credit
+ * any more specific source first.
  *
  * When {@see \LLM\Skills\Config\ProjectConfig::$trustedReplace} is
- * `true` the built-in list is not in effect; pass `null` as `$builtin`
- * to reflect that. Donors that no list matches return `null` from
+ * `true` neither the built-in list nor the direct-dep short-circuit
+ * apply; pass `null` for both `$builtin` and `$directDeps` to reflect
+ * that. Donors that no list matches return `null` from
  * {@see attribute()} — the caller is expected to not pass untrusted
  * donors in the first place.
  *
@@ -37,14 +41,25 @@ use LLM\Skills\Config\TrustedVendors;
  */
 final readonly class TrustAttributor
 {
+    /** @var array<non-empty-string, true>|null */
+    private ?array $directDepSet;
+
     /**
+     * @param list<non-empty-string>|null $directDeps `null` when direct-dep trust is not in
+     *         effect (e.g. `trustedReplace: true`); a flat list of package names otherwise.
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private ?TrustedVendors $builtin,
         private TrustedVendors $project,
         private TrustedVendors $cli,
-    ) {}
+        ?array $directDeps = null,
+    ) {
+        $this->directDepSet = $directDeps === null
+            ? null
+            : \array_fill_keys($directDeps, true);
+    }
 
     /**
      * @param non-empty-string $packageName
@@ -61,6 +76,9 @@ final readonly class TrustAttributor
         }
         if ($this->builtin !== null && $this->builtin->trusts($packageName)) {
             return TrustSource::Builtin;
+        }
+        if ($this->directDepSet !== null && isset($this->directDepSet[$packageName])) {
+            return TrustSource::DirectDep;
         }
 
         return null;

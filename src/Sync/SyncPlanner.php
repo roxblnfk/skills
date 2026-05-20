@@ -31,13 +31,21 @@ use LLM\Skills\Config\VendorConfig;
  *   `acme/foo` as approved regardless of the trust list. The trust list is
  *   the bouncer for *auto-discovered* donors, not for ones the user already
  *   asked for by name.
+ * - A package declared as a direct dependency in the consumer's root
+ *   `composer.json` (under `require` or `require-dev`) is implicitly
+ *   trusted — the user already owns the decision to depend on it. This
+ *   short-circuit is disabled when `extra.skills.trusted-replace` is
+ *   `true`, since that flag asks for explicit-only trust.
  * - Without positional filters, every donor must clear the effective trust
- *   list (built-in ∪ project ∪ `--trust`).
+ *   list (built-in ∪ project ∪ `--trust` ∪ direct deps).
  */
 final readonly class SyncPlanner
 {
     /**
      * @param list<VendorConfig> $donors all donor packages successfully mapped from Composer
+     * @param list<non-empty-string> $directDependencies package names declared in the consumer's
+     *         root `require` and `require-dev`. Implicitly trusted unless
+     *         {@see ProjectConfig::$trustedReplace} is `true`.
      */
     public function plan(
         array $donors,
@@ -45,6 +53,7 @@ final readonly class SyncPlanner
         SyncOptions $options,
         TrustedVendors $builtin,
         Path $projectRoot,
+        array $directDependencies = [],
     ): SyncPlan {
         [$filtered, $filteredOut] = $this->partitionByFilter($donors, $options);
 
@@ -58,8 +67,11 @@ final readonly class SyncPlanner
             $approved = $filtered;
         } else {
             $trust = $this->effectiveTrust($project, $options, $builtin);
+            $directSet = $project->trustedReplace
+                ? []
+                : \array_fill_keys($directDependencies, true);
             foreach ($filtered as $donor) {
-                if ($trust->trusts($donor->packageName)) {
+                if (isset($directSet[$donor->packageName]) || $trust->trusts($donor->packageName)) {
                     $approved[] = $donor;
                     continue;
                 }

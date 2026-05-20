@@ -1,0 +1,10 @@
+{
+    "name": "transit/untrusted-relay",
+    "description": "Meta-package that pulls in evil/payload and clash/skills-conflict as transitive dependencies. Exists so the sandbox can install those donors without listing them under the consumer project's direct `require`, which would now (with direct-dep auto-trust) bypass the trust gate the tests are designed to exercise.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "evil/payload": "@dev",
+        "clash/skills-conflict": "@dev"
+    }
+}

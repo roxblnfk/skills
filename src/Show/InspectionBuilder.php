@@ -79,9 +79,17 @@ final readonly class InspectionBuilder
         $donors = [...$discovery->donors, ...$resolution->included];
 
         $projectRoot = Path::create(\getcwd() ?: '.');
-        $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
+        $directDeps = $this->collectDirectDependencies($composer);
+        $plan = $this->planner->plan(
+            $donors,
+            $project,
+            $options,
+            $builtin,
+            $projectRoot,
+            $directDeps,
+        );
 
-        $attributor = $this->buildAttributor($project, $options, $builtin);
+        $attributor = $this->buildAttributor($project, $options, $builtin, $directDeps);
 
         // Conflict detection: run the engine in dry-run over the approved
         // donors' skills. We get a SkillConflict[] without touching the
@@ -187,18 +195,48 @@ final readonly class InspectionBuilder
     }
 
     /**
+     * @param list<non-empty-string> $directDeps
+     *
      * @psalm-pure
      */
     private function buildAttributor(
         ProjectConfig $project,
         SyncOptions $options,
         TrustedVendors $builtin,
+        array $directDeps,
     ): TrustAttributor {
         return new TrustAttributor(
             builtin: $project->trustedReplace ? null : $builtin,
             project: $project->trusted,
             cli: new TrustedVendors($options->extraTrusted),
+            // When `trustedReplace: true` the planner ignores direct
+            // deps too — mirror that here so the formatter never
+            // annotates a donor with "direct dep" trust that did not
+            // actually contribute to the approval decision.
+            directDeps: $project->trustedReplace ? null : $directDeps,
         );
+    }
+
+    /**
+     * Names declared under `require` and `require-dev` of the consumer's
+     * root `composer.json`. Used to attribute trust to the "direct dep"
+     * source in the `show` output.
+     *
+     * @return list<non-empty-string>
+     */
+    private function collectDirectDependencies(Composer $composer): array
+    {
+        $root = $composer->getPackage();
+        $names = [];
+        foreach ([...$root->getRequires(), ...$root->getDevRequires()] as $name => $_link) {
+            if ($name === '' || !\str_contains($name, '/')) {
+                continue;
+            }
+            /** @var non-empty-string $name */
+            $names[] = $name;
+        }
+
+        return $names;
     }
 
     /**

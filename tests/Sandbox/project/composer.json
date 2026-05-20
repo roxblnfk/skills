@@ -15,9 +15,8 @@
         "acme/skills-broken": "@dev",
         "acme/skills-rootlike": "@dev",
         "acme/skills-undeclared": "@dev",
-        "clash/skills-conflict": "@dev",
-        "evil/payload": "@dev",
-        "spiral/skills-demo": "@dev"
+        "spiral/skills-demo": "@dev",
+        "transit/untrusted-relay": "@dev"
     },
     "config": {
         "allow-plugins": {

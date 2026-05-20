@@ -85,7 +85,15 @@ final readonly class SyncRunner
         $donors = [...$discovery->donors, ...$resolution->included];
 
         $projectRoot = Path::create(\getcwd() ?: '.');
-        $plan = $this->planner->plan($donors, $project, $options, $builtin, $projectRoot);
+        $directDeps = $this->collectDirectDependencies($composer);
+        $plan = $this->planner->plan(
+            $donors,
+            $project,
+            $options,
+            $builtin,
+            $projectRoot,
+            $directDeps,
+        );
 
         if ($options->hasPackageFilters() && $plan->approvedDonors === []) {
             $patterns = \implode(
@@ -267,6 +275,34 @@ final readonly class SyncRunner
         foreach ($warnings as $warning) {
             $io->writeError('<comment>[warn] ' . $warning . '</comment>', verbosity: IOInterface::VERBOSE);
         }
+    }
+
+    /**
+     * Pull the consumer project's direct dependencies — every package
+     * named under `require` or `require-dev` in the root `composer.json`.
+     * These are implicitly trusted by the planner: depending on a
+     * package is already an act of trust, and asking the user to repeat
+     * it under `extra.skills.trusted` would be busywork. `trustedReplace`
+     * users opted out of implicit lists, so they pass the list through
+     * but the planner ignores it.
+     *
+     * @return list<non-empty-string>
+     */
+    private function collectDirectDependencies(Composer $composer): array
+    {
+        $root = $composer->getPackage();
+        $names = [];
+        foreach ([...$root->getRequires(), ...$root->getDevRequires()] as $name => $_link) {
+            if ($name === '' || !\str_contains($name, '/')) {
+                // Platform requirements like `php` or `ext-json` and the
+                // odd metapackage placeholder don't carry skills.
+                continue;
+            }
+            /** @var non-empty-string $name */
+            $names[] = $name;
+        }
+
+        return $names;
     }
 
     /**

@@ -167,7 +167,7 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
 | `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.                                     |
 | `aliases`         | string[] | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).           |
 | `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                                              |
-| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list is ignored.                                         |
+| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored.  |
 | `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                            |
 | `auto-sync`       | bool     | `false`          | When `true`, run `skills:update` after `composer install` / `update`.                    |
 
@@ -243,10 +243,13 @@ prompt-injection payload, so the plugin does not copy skills from a donor unless
 Effective trust list:
 
 ```
-builtin ∪ project.extra.skills.trusted ∪ --trust=<pattern>
+builtin ∪ project.extra.skills.trusted ∪ --trust=<pattern> ∪ direct-deps
 ```
 
-(`trusted-replace: true` drops `builtin` from the union.)
+`direct-deps` is the set of packages declared under `require` and `require-dev` in the
+consumer's root `composer.json`. Setting `trusted-replace: true` drops both implicit sources
+(`builtin` and `direct-deps`) from the union, leaving only project trust and `--trust=` —
+the explicit-only mode.
 
 | Pattern          | Matches                               |
 |------------------|---------------------------------------|
@@ -264,6 +267,10 @@ Bare `vendor` without `/` is rejected as ambiguous.
 - **Named is also implicit auto-discovery.** If the named package does not declare
   `extra.skills`, the plugin still scans its `skills/` directory — discovery is enabled for
   that package only.
+- **Direct dependencies are implicit trust.** A package the consumer chose to depend on
+  (`require` / `require-dev`) does not need a trust pattern: the dependency declaration is
+  already a trust decision. Transitive dependencies are still gated by the trust list.
+  Setting `trusted-replace: true` turns this off for projects that want explicit-only trust.
 
 ### Built-in trusted vendors
 

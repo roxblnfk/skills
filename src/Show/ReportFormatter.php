@@ -38,10 +38,11 @@ namespace LLM\Skills\Show;
  * for self-imposed exclusions (filtered-out), cyan for informational
  * cases (not-declared).
  *
- * The `[via built-in trust]` annotation is shown only when the donor was
- * approved by the built-in list alone (neither project config nor
- * `--trust=` covers it) — keeps noise low for the common case where the
- * user explicitly configured the trust.
+ * The `[via built-in trust]` and `[via direct dependency]` annotations
+ * are shown only when the donor was approved by that implicit source
+ * alone (neither project config nor `--trust=` covers it) — keeps noise
+ * low for the common case where the user explicitly configured the
+ * trust.
  *
  * Returns a `list<string>` rather than printing directly so the runner
  * can route lines to either stdout or stderr as it sees fit.
@@ -184,9 +185,11 @@ final readonly class ReportFormatter
 
             foreach ($donors as $donor) {
                 [, $pkgTail] = $this->splitName($donor->donor->packageName);
-                $trustNote = $donor->trustSource === TrustSource::Builtin
-                    ? '    [via built-in trust]'
-                    : '';
+                $trustNote = match ($donor->trustSource) {
+                    TrustSource::Builtin => '    [via built-in trust]',
+                    TrustSource::DirectDep => '    [via direct dependency]',
+                    default => '',
+                };
                 $discoveredNote = $donor->donor->discovered
                     ? '  <fg=magenta>[discovered]</>'
                     : '';
