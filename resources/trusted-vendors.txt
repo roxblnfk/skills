@@ -20,7 +20,25 @@
 #     }
 #
 # Format: one pattern per line. Blank lines and lines starting with `#` are
-# ignored. Surrounding whitespace is trimmed.
+# ignored. Surrounding whitespace is trimmed. Entries are kept in alphabetical
+# order — please preserve that when adding a new line.
+#
+# How to get your vendor added
+# ----------------------------
+# Open a Pull Request that adds your pattern to the list below. Because there
+# is no objective "trust" metric, inclusion is ultimately a judgement call,
+# and the bar we apply is community visibility: a vendor that is recognisable
+# to PHP developers working with AI tooling is welcome to submit a PR.
+#
+# If your vendor is newer or less widely known, that is not a blocker — ask
+# one or more well-known maintainers from the ecosystem to vouch for you on
+# the PR (an approving review is enough). Endorsement from people the
+# wider community already trusts is what lets us extend the list responsibly.
+#
+# Prefer the narrowest pattern that fits your distribution. If only one or
+# two packages from your namespace ship skills, list them explicitly
+# (`vendor/package`) rather than claiming the whole `vendor/*` namespace —
+# this keeps the attack surface small and makes future audits easier.
 
 cycle/*
 doctrine/*
