@@ -194,7 +194,7 @@ final readonly class ProjectConfigMapper
             );
         }
 
-        $autoSync = $skills['auto-sync'] ?? false;
+        $autoSync = $skills['auto-sync'] ?? true;
         if (!\is_bool($autoSync)) {
             throw new MalformedProjectConfig(
                 self::field($prefix, 'auto-sync') . ' must be a boolean',

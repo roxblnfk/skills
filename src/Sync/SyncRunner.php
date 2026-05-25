@@ -150,14 +150,22 @@ final readonly class SyncRunner
         $donors = [...$discovery->donors, ...$discoveryResolution->included];
 
         $directDeps = $provider->directDependencies($projectRoot);
-        $plan = $this->planner->plan(
-            $donors,
-            $project,
-            $options,
-            $builtin,
-            $projectRoot,
-            $directDeps,
-        );
+        try {
+            $plan = $this->planner->plan(
+                $donors,
+                $project,
+                $options,
+                $builtin,
+                $projectRoot,
+                $directDeps,
+            );
+        } catch (MalformedProjectConfig $e) {
+            // Containment-check failures (target / alias escapes the
+            // project root) surface here. Same UX as inline / skills.json
+            // shape errors caught by the mapper above.
+            $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
 
         if ($options->hasPackageFilters() && $plan->approvedDonors === []) {
             $patterns = \implode(

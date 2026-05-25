@@ -39,18 +39,19 @@ Allow the plugin to run:
 { "config": { "allow-plugins": { "llm/skills": true } } }
 ```
 
-(Optional) auto-sync on every `composer install` / `update` — opt in once:
+Auto-sync after every `composer install` / `update` is **on by default** — you don't have to
+configure anything to get fresh skills after running Composer. To opt out:
 
 ```jsonc
 {
   "extra": {
-    "skills": { "auto-sync": true }
+    "skills": { "auto-sync": false }
   }
 }
 ```
 
-The plugin then runs `skills:update` for you after `composer install` / `update`.
-`composer install --no-scripts` still suppresses the auto-run.
+(or, in a `skills.json`, the same `"auto-sync": false`.) `composer install --no-scripts`
+also suppresses the auto-run for a single invocation without changing the config.
 
 ### Global installation
 
@@ -84,14 +85,14 @@ every donor, the per-skill sync status, and what is being skipped and why. `skil
 bootstraps an external [`skills.json`](#external-config-skillsjson) at the project root and
 (when `composer.json` carries inline project keys) migrates them out.
 
-| Option                | Where  | Description                                                                                                                                                 |
-|-----------------------|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `<package>...`        | both   | Restrict to matching donors. Exact (`acme/foo`) or wildcard (`acme/*`, `*`). Listed packages are treated as **trusted** for this run (see [Trust](#trust)). |
-| `--target=PATH`, `-t` | both   | Override `extra.skills.target`.                                                                                                                             |
+| Option                | Where  | Description                                                                                                                                                        |
+|-----------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `<package>...`        | both   | Restrict to matching donors. Exact (`acme/foo`) or wildcard (`acme/*`, `*`). Listed packages are treated as **trusted** for this run (see [Trust](#trust)).        |
+| `--target=PATH`, `-t` | both   | Override `extra.skills.target`.                                                                                                                                    |
 | `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces `extra.skills.aliases` entirely. See [Aliases](#aliases). |
-| `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                           |
-| `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                         |
-| `--dry-run`           | update | Print actions; no files written.                                                                                                                            |
+| `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
+| `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                                |
+| `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
 Short flag `-d` for `--discovery` is registered only by the standalone `bin/skills` binary;
 inside Composer it is reserved for `--working-dir`.
@@ -160,20 +161,20 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
       "trusted": ["acme/*", "myorg/skills-internal"],
       "trusted-replace": false,
       "discovery": false,
-      "auto-sync": false
+      "auto-sync": true
     }
   }
 }
 ```
 
-| Key               | Type     | Default          | Description                                                                              |
-|-------------------|----------|------------------|------------------------------------------------------------------------------------------|
-| `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.                                     |
-| `aliases`         | string[] | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).           |
-| `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                                              |
-| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored.  |
-| `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                            |
-| `auto-sync`       | bool     | `false`          | When `true`, run `skills:update` after `composer install` / `update`.                    |
+| Key               | Type     | Default          | Description                                                                             |
+|-------------------|----------|------------------|-----------------------------------------------------------------------------------------|
+| `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.                                    |
+| `aliases`         | string[] | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).          |
+| `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                                             |
+| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
+| `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
+| `auto-sync`       | bool     | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.

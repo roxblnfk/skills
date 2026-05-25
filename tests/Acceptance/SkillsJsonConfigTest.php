@@ -205,6 +205,76 @@ final class SkillsJsonConfigTest
         );
     }
 
+    // ── security: paths must stay inside the project root ──────────────
+
+    #[WithSkillsJson([
+        'target' => '../escape/skills',
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function targetEscapingProjectRootViaSkillsJsonIsRejected(): void
+    {
+        // SyncPlanner's containment guard catches the escape regardless
+        // of where the value came from (CLI, inline composer.json,
+        // skills.json). This test pins the contract specifically for
+        // the skills.json source so a future loader refactor cannot
+        // silently bypass the planner.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0, '../escape via skills.json must fail');
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'outside the project root'),
+            'stderr must explain containment failure. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \is_dir(Info::PROJECT_DIR . '/../escape'),
+            'no directory must be created outside the project root',
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => '/tmp/absolute-escape',
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function absoluteTargetOutsideProjectRootViaSkillsJsonIsRejected(): void
+    {
+        // Absolute paths are honoured (matching the legacy contract),
+        // but they still must live inside the project. /tmp/...
+        // obviously does not.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0);
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'outside the project root'),
+            'stderr must explain containment failure. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \is_dir('/tmp/absolute-escape'),
+            'no absolute escape directory must be created',
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'aliases' => ['../escape-alias'],
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function aliasEscapingProjectRootViaSkillsJsonIsRejected(): void
+    {
+        // Same guard for aliases: a junction at ../escape-alias would
+        // expose an arbitrary parent location through the project tree.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0, 'alias ../escape via skills.json must fail');
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'outside the project root'),
+            'stderr must explain containment failure. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \file_exists(Info::PROJECT_DIR . '/../escape-alias'),
+            'no junction must be created outside the project root',
+        );
+    }
+
     // ── skills:init ─────────────────────────────────────────────────────
 
     #[WithSandboxExtras([

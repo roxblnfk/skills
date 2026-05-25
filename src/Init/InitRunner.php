@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace LLM\Skills\Init;
 
 use Composer\IO\IOInterface;
+use Composer\Json\JsonManipulator;
 use Internal\Path;
 use LLM\Skills\Config\InitOptions;
 use LLM\Skills\Config\Mapper\MigrationStatus;
+use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use Symfony\Component\Console\Command\Command;
 
@@ -47,6 +49,7 @@ final readonly class InitRunner
      */
     public function __construct(
         private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
+        private InteractiveInitWizard $wizard = new InteractiveInitWizard(),
     ) {}
 
     public function run(Path $projectRoot, IOInterface $io, InitOptions $options): int
@@ -80,12 +83,35 @@ final readonly class InitRunner
         // `--force` re-runs in the canonical location are handled by
         // unlinking the existing file first so the migrator's
         // "skills.json already exists → skip" branch does not short-
-        // circuit the rewrite the user explicitly asked for.
-        if ($options->force && $options->path === 'skills.json' && \is_file($target)) {
+        // circuit the rewrite the user explicitly asked for. For the
+        // interactive path we hold off on the unlink so we can still
+        // read the existing skills.json values as defaults — handled
+        // inside runInteractive() instead.
+        if (
+            !$io->isInteractive()
+            && $options->force
+            && $options->path === 'skills.json'
+            && \is_file($target)
+        ) {
             @\unlink($target);
         }
 
         $composerJsonPath = (string) $projectRoot->join('composer.json');
+
+        // `skills:init` is the command users run on purpose — it exists
+        // precisely because they want to think about their config. In
+        // interactive mode, walk them through the wizard with sensible
+        // defaults. CI / `--no-interaction` keeps the silent flow.
+        if ($io->isInteractive() && $options->path === 'skills.json') {
+            return $this->runInteractive(
+                $projectRoot,
+                $io,
+                $options,
+                $target,
+                \is_file($composerJsonPath) ? $composerJsonPath : null,
+            );
+        }
+
         if (!\is_file($composerJsonPath)) {
             return $this->runStandalone($io, $options, $target);
         }
@@ -132,6 +158,187 @@ final readonly class InitRunner
                 $io->write('<info>[init]</info> note: skills:update will read project config from skills.json');
                 return Command::SUCCESS;
         }
+    }
+
+    /**
+     * Interactive flow. Resolves defaults from (priority order):
+     *
+     * 1. The existing `skills.json` when `--force` re-runs on top of
+     *    one — current values become the prompts' defaults so users
+     *    can tune knob-by-knob.
+     * 2. The inline `extra.skills` block in `composer.json` — only
+     *    when the user confirms "import current settings?" at the
+     *    top of the wizard.
+     * 3. {@see ProjectConfig::default()}.
+     *
+     * After the wizard returns: writes `skills.json` with the user's
+     * answers, then strips the inline keys from `composer.json` (if
+     * the file existed and carried project keys). Cancelling at the
+     * final confirmation aborts cleanly without writing anything.
+     *
+     * @param non-empty-string $target
+     * @param non-empty-string|null $composerJsonPath
+     */
+    private function runInteractive(
+        Path $projectRoot,
+        IOInterface $io,
+        InitOptions $options,
+        string $target,
+        ?string $composerJsonPath,
+    ): int {
+        $defaults = [];
+
+        // Existing skills.json (only under --force; the early refusal
+        // check would have failed otherwise).
+        if (\is_file($target)) {
+            $existing = $this->readJsonObject($target, $io, 'skills.json');
+            if ($existing === null) {
+                return Command::FAILURE;
+            }
+            unset($existing['$schema']);
+            $defaults = $existing;
+        }
+
+        $inlineKeys = [];
+        if ($composerJsonPath !== null && $defaults === []) {
+            $composerDecoded = $this->readJsonObject($composerJsonPath, $io, 'composer.json');
+            if ($composerDecoded === null) {
+                return Command::FAILURE;
+            }
+            /** @var array<string, mixed> $extra */
+            $extra = \is_array($composerDecoded['extra'] ?? null) ? $composerDecoded['extra'] : [];
+            /** @var array<string, mixed> $skills */
+            $skills = \is_array($extra['skills'] ?? null) ? $extra['skills'] : [];
+            $inlineKeys = ProjectConfigMigrator::extractProjectKeys($skills);
+
+            if ($inlineKeys !== []) {
+                $io->write(\sprintf(
+                    '<info>[init]</info> detected inline extra.skills in composer.json: %s',
+                    \implode(', ', \array_keys($inlineKeys)),
+                ));
+                if ($io->askConfirmation(
+                    '<info>Import these as defaults?</info> [<comment>Y/n</comment>]: ',
+                    true,
+                )) {
+                    $defaults = $inlineKeys;
+                }
+            }
+        }
+
+        $resolved = $this->wizard->run($io, $defaults);
+        if ($resolved === null) {
+            return Command::SUCCESS;
+        }
+
+        $content = ProjectConfigMigrator::renderSkillsJson($this->orderedProjectKeys($resolved));
+        if (\file_put_contents($target, $content) === false) {
+            $io->writeError(\sprintf('<error>[llm/skills] failed to write %s</error>', $target));
+            return Command::FAILURE;
+        }
+
+        // Strip inline keys from composer.json if any are present. We
+        // re-read composer.json here (instead of reusing the
+        // earlier decode) because JsonManipulator needs the raw bytes
+        // for in-place editing.
+        if ($composerJsonPath !== null && $inlineKeys !== []) {
+            if (!$this->stripInlineKeys($composerJsonPath, \array_keys($inlineKeys), $io)) {
+                $io->write(
+                    '<comment>[init] note: skills.json was written, but stripping '
+                    . 'composer.json failed. skills.json wins from now on regardless.</comment>',
+                );
+                return Command::FAILURE;
+            }
+            $io->write('<info>[init]</info> composer.json updated: removed inline project keys.');
+        }
+
+        $io->write(\sprintf('<info>[init]</info> wrote %s', $options->path));
+        $io->write('<info>[init]</info> done.');
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * Re-order an arbitrary project-keys map to match
+     * {@see ProjectConfigMapper::PROJECT_KEYS} so generated files are
+     * diff-stable across runs.
+     *
+     * @param array<string, mixed> $values
+     *
+     * @return array<non-empty-string, mixed>
+     *
+     * @psalm-pure
+     */
+    private function orderedProjectKeys(array $values): array
+    {
+        $out = [];
+        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
+            if (\array_key_exists($key, $values)) {
+                /** @psalm-suppress MixedAssignment */
+                $out[$key] = $values[$key];
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * @param non-empty-string $path
+     * @param non-empty-string $label used in error messages
+     *
+     * @return array<string, mixed>|null
+     */
+    private function readJsonObject(string $path, IOInterface $io, string $label): ?array
+    {
+        $raw = \file_get_contents($path);
+        if ($raw === false) {
+            $io->writeError(\sprintf('<error>[llm/skills] failed to read %s</error>', $label));
+            return null;
+        }
+        try {
+            /** @var mixed $decoded */
+            $decoded = \json_decode($raw, true, flags: \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] %s is not valid JSON: %s</error>',
+                $label,
+                $e->getMessage(),
+            ));
+            return null;
+        }
+        if (!\is_array($decoded)) {
+            $io->writeError(\sprintf('<error>[llm/skills] %s must be a JSON object</error>', $label));
+            return null;
+        }
+
+        /** @var array<string, mixed> $decoded */
+        return $decoded;
+    }
+
+    /**
+     * @param non-empty-string $composerJsonPath
+     * @param list<non-empty-string> $keys
+     */
+    private function stripInlineKeys(string $composerJsonPath, array $keys, IOInterface $io): bool
+    {
+        $raw = \file_get_contents($composerJsonPath);
+        if ($raw === false) {
+            $io->writeError('<error>[llm/skills] failed to re-read composer.json for cleanup</error>');
+            return false;
+        }
+        $manipulator = new JsonManipulator($raw);
+        foreach ($keys as $key) {
+            if (!$manipulator->removeSubNode('extra', 'skills.' . $key)) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] JsonManipulator failed on extra.skills.%s</error>',
+                    $key,
+                ));
+                return false;
+            }
+        }
+        if (\file_put_contents($composerJsonPath, $manipulator->getContents()) === false) {
+            $io->writeError('<error>[llm/skills] failed to write composer.json</error>');
+            return false;
+        }
+        return true;
     }
 
     /**

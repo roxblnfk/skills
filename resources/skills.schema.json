@@ -48,8 +48,8 @@
         },
         "auto-sync": {
             "type": "boolean",
-            "description": "When true, the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
-            "default": false
+            "description": "When true (default), the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
+            "default": true
         }
     }
 }

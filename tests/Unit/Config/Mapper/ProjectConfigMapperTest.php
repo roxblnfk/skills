@@ -289,11 +289,15 @@ final class ProjectConfigMapperTest
         ]);
     }
 
-    public function autoSyncDefaultsToFalse(): void
+    public function autoSyncDefaultsToTrue(): void
     {
+        // Default flipped to true so most projects get the
+        // post-install/update freshness behaviour without ceremony.
+        // Projects with stricter CI policies opt out via
+        // `auto-sync: false`.
         $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
 
-        Assert::same($cfg->autoSync, false);
+        Assert::same($cfg->autoSync, true);
     }
 
     public function autoSyncIsMappedWhenTrue(): void

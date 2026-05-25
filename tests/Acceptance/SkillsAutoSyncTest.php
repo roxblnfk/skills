@@ -82,17 +82,37 @@ final class SkillsAutoSyncTest
         Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
-    public function autoSyncDefaultsToOffAndDoesNotWriteAnything(): void
+    public function autoSyncDefaultsToOnAndRunsOnPostInstall(): void
     {
-        // Sandbox's default `extra.skills` has no `auto-sync` key. Firing
-        // the install event must be a no-op for our plugin — the user
-        // hasn't opted in, so the filesystem stays untouched.
+        // The sandbox's default extra.skills carries no `auto-sync`
+        // key, so the new default (`true`) takes effect: firing the
+        // post-install event should sync the trusted donors without
+        // any explicit opt-in. This is the "just install the plugin
+        // and it works" path users get out of the box.
+        $process = $this->runScript('post-install-cmd');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/greeting/SKILL.md'),
+            'auto-sync defaults to on, so the trusted donor must have synced',
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic'],
+        'auto-sync' => false,
+    ])]
+    public function explicitAutoSyncFalseOptsOut(): void
+    {
+        // Users who explicitly opt out keep the old "nothing happens
+        // until skills:update" behaviour. Set `auto-sync: false` in
+        // skills.json or composer.json's extra.skills.
         $process = $this->runScript('post-install-cmd');
 
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
         Assert::false(
             \is_dir(self::TARGET_DIR),
-            'auto-sync must stay off by default; nothing should appear under target',
+            'explicit auto-sync=false must keep the filesystem untouched',
         );
     }
 
