@@ -12,9 +12,11 @@ use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event as ScriptEvent;
 use Composer\Script\ScriptEvents;
+use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Discovery\Provider\ComposerProvider;
 use LLM\Skills\Sync\SyncRunner;
 
 /**
@@ -102,17 +104,28 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             return;
         }
 
+        $projectRoot = Path::create(\getcwd() ?: '.');
         try {
-            $project = (new ProjectConfigMapper())->fromExtra($this->composer->getPackage()->getExtra());
+            $resolution = (new ProjectConfigMapper())->forProject(
+                $projectRoot,
+                $this->composer->getPackage()->getExtra(),
+            );
         } catch (MalformedProjectConfig $e) {
             $this->io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return;
         }
 
-        if (!$project->autoSync) {
+        if (!$resolution->config->autoSync) {
             return;
         }
 
-        (new SyncRunner())->run($this->composer, $this->io, SyncOptions::default());
+        $provider = new ComposerProvider($this->composer);
+        (new SyncRunner())->run(
+            $projectRoot,
+            $provider,
+            $provider->rootExtras(),
+            $this->io,
+            SyncOptions::default(),
+        );
     }
 }

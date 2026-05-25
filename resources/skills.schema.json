@@ -1,0 +1,55 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
+    "title": "llm/skills project configuration",
+    "description": "Project-level configuration for the llm/skills Composer plugin, stored at <project-root>/skills.json. When present, this file shadows the inline extra.skills block in composer.json. See https://github.com/roxblnfk/skills for full documentation.",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+        "$schema": {
+            "type": "string",
+            "description": "Optional pointer to this schema for IDE/editor support. Ignored by the mapper."
+        },
+        "target": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Destination directory for synced skills, relative to the project root. Default: .agents/skills.",
+            "default": ".agents/skills"
+        },
+        "aliases": {
+            "type": "array",
+            "description": "Additional paths created as symlinks (POSIX) or junctions (Windows) pointing at the target. Each entry must be a non-empty string. No entry may equal target or duplicate another entry (after lexical normalisation).",
+            "items": {
+                "type": "string",
+                "minLength": 1
+            },
+            "uniqueItems": true,
+            "default": []
+        },
+        "trusted": {
+            "type": "array",
+            "description": "Packages or vendor patterns allowed to ship skills into this project. Each pattern is either an exact name like \"vendor/package\" or a wildcard like \"vendor/*\". Bare vendor names (no slash) are rejected.",
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^/]+/[^/]+$"
+            },
+            "default": []
+        },
+        "trusted-replace": {
+            "type": "boolean",
+            "description": "When true, the project's trusted list completely replaces both the built-in trusted vendors and the implicit direct-dependency trust. Default: false (project list extends the implicit sources).",
+            "default": false
+        },
+        "discovery": {
+            "type": "boolean",
+            "description": "When true, packages without an explicit extra.skills.source block are still considered as donors if they ship a top-level skills/ directory. CLI --discovery overrides this.",
+            "default": false
+        },
+        "auto-sync": {
+            "type": "boolean",
+            "description": "When true, the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
+            "default": false
+        }
+    }
+}

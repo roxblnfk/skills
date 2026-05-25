@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Console\Command;
 
+use Composer\Composer;
 use Composer\Factory;
 use Composer\IO\ConsoleIO;
+use Composer\IO\IOInterface;
+use Internal\Path;
 use LLM\Skills\Console\ShowCliDefinition;
+use LLM\Skills\Discovery\Provider\ComposerProvider;
 use LLM\Skills\Show\ShowRunner;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\HelperSet;
@@ -18,10 +22,11 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Standalone `show` (alias `s`) for the `bin/skills` binary.
  *
  * Mirrors {@see \LLM\Skills\Composer\Command\Show} but bootstraps
- * Composer itself via {@see Factory::create()} because there is no
- * Composer process around to inject one. Plugins are disabled during
- * bootstrap for the same reason as the standalone `update`: we never
- * want this binary to wake up another `llm/skills` plugin instance.
+ * Composer itself via {@see Factory::create()} on a best-effort
+ * basis. When the current working directory has no `composer.json`
+ * the {@see ComposerProvider} reports itself inactive and the runner
+ * emits the standalone `[no donors available]` notice instead of
+ * dying with a bootstrap error.
  *
  * @internal
  */
@@ -47,13 +52,38 @@ final class Show extends Command
             return self::INVALID;
         }
 
-        try {
-            $composer = Factory::create($io, null, disablePlugins: true, disableScripts: true);
-        } catch (\Throwable $e) {
-            $io->writeError('<error>[llm/skills] Failed to bootstrap Composer: ' . $e->getMessage() . '</error>');
-            return self::FAILURE;
+        $composer = self::tryBootstrapComposer($io);
+        $provider = new ComposerProvider($composer);
+        $projectRoot = Path::create(\getcwd() ?: '.');
+
+        return (new ShowRunner())->run(
+            $projectRoot,
+            $provider,
+            $provider->rootExtras(),
+            $io,
+            $options,
+        );
+    }
+
+    /**
+     * Best-effort {@see Factory::create()}. See the twin in
+     * {@see \LLM\Skills\Console\Command\Sync} for the rationale.
+     */
+    private static function tryBootstrapComposer(ConsoleIO $io): ?Composer
+    {
+        if (!\is_file((\getcwd() ?: '.') . '/composer.json')) {
+            return null;
         }
 
-        return (new ShowRunner())->run($composer, $io, $options);
+        try {
+            return Factory::create($io, null, disablePlugins: true, disableScripts: true);
+        } catch (\Throwable $e) {
+            $io->writeError(
+                '<comment>[warn] Composer bootstrap failed, continuing without it: '
+                . $e->getMessage() . '</comment>',
+                verbosity: IOInterface::VERBOSE,
+            );
+            return null;
+        }
     }
 }

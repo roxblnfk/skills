@@ -4,18 +4,16 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Show;
 
-use Composer\Composer;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
-use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\DiscoveryResolver;
-use LLM\Skills\Discovery\DonorDiscovery;
 use LLM\Skills\Discovery\InstalledSkill;
 use LLM\Skills\Discovery\InstalledSkillScanner;
+use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
@@ -49,26 +47,36 @@ final readonly class InspectionBuilder
      */
     public function __construct(
         private SyncPlanner $planner = new SyncPlanner(),
-        private DonorDiscovery $donorDiscovery = new DonorDiscovery(),
         private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
         private InstalledSkillScanner $installedScanner = new InstalledSkillScanner(),
         private SyncEngine $engine = new SyncEngine(),
         private DriftDetector $drift = new DriftDetector(),
         private SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
-        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
         private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
     ) {}
 
     /**
-     * @throws MalformedProjectConfig when the root `extra.skills` block is invalid —
-     *         a project-level error is fatal, the caller surfaces it.
+     * @param Path $projectRoot consumer project root, supplied by the caller
+     * @param DonorProvider $provider source of donors (today
+     *        {@see \LLM\Skills\Discovery\Provider\ComposerProvider}); future
+     *        GitHub / npm / skills.sh providers plug in here
+     * @param ProjectConfig $project pre-resolved project config. The caller
+     *        ({@see \LLM\Skills\Show\ShowRunner}) loads it via
+     *        {@see ProjectConfigMapper::forProject()} so it can surface the
+     *        `skills.json` shadowing warning through IO; the builder itself
+     *        stays pure (no IO).
+     *
+     * @throws MalformedProjectConfig when planner-level path validation fails.
      */
-    public function build(Composer $composer, SyncOptions $options): InspectionReport
-    {
-        $project = $this->projectMapper->fromExtra($composer->getPackage()->getExtra());
+    public function build(
+        Path $projectRoot,
+        DonorProvider $provider,
+        ProjectConfig $project,
+        SyncOptions $options,
+    ): InspectionReport {
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $discovery = $this->donorDiscovery->discover($composer);
+        $discovery = $provider->discover($projectRoot);
 
         $discoveryActive = $options->discovery ?? $project->discovery;
         $resolution = $this->discoveryResolver->resolve(
@@ -78,8 +86,7 @@ final readonly class InspectionBuilder
         );
         $donors = [...$discovery->donors, ...$resolution->included];
 
-        $projectRoot = Path::create(\getcwd() ?: '.');
-        $directDeps = $this->collectDirectDependencies($composer);
+        $directDeps = $provider->directDependencies($projectRoot);
         $plan = $this->planner->plan(
             $donors,
             $project,
@@ -215,28 +222,6 @@ final readonly class InspectionBuilder
             // actually contribute to the approval decision.
             directDeps: $project->trustedReplace ? null : $directDeps,
         );
-    }
-
-    /**
-     * Names declared under `require` and `require-dev` of the consumer's
-     * root `composer.json`. Used to attribute trust to the "direct dep"
-     * source in the `show` output.
-     *
-     * @return list<non-empty-string>
-     */
-    private function collectDirectDependencies(Composer $composer): array
-    {
-        $root = $composer->getPackage();
-        $names = [];
-        foreach ([...$root->getRequires(), ...$root->getDevRequires()] as $name => $_link) {
-            if ($name === '' || !\str_contains($name, '/')) {
-                continue;
-            }
-            /** @var non-empty-string $name */
-            $names[] = $name;
-        }
-
-        return $names;
     }
 
     /**

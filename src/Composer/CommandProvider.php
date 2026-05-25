@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Composer;
 
 use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
+use LLM\Skills\Composer\Command\Init;
 use LLM\Skills\Composer\Command\Show;
 use LLM\Skills\Composer\Command\Sync;
 
@@ -19,6 +20,7 @@ final class CommandProvider implements CommandProviderCapability
         return [
             new Sync(),
             new Show(),
+            new Init(),
         ];
     }
 }

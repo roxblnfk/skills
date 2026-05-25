@@ -4,16 +4,35 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Config\Mapper;
 
+use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\ProjectConfig;
+use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Expect;
+use Testo\Lifecycle\AfterTest;
+use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 #[Test]
 final class ProjectConfigMapperTest
 {
+    private string $tmp;
+
+    #[BeforeTest]
+    public function setUpTmp(): void
+    {
+        $this->tmp = \sys_get_temp_dir() . '/llm-skills-mapper-' . \bin2hex(\random_bytes(6));
+        \mkdir($this->tmp, 0o777, true);
+    }
+
+    #[AfterTest]
+    public function tearDownTmp(): void
+    {
+        Filesystem::removeRecursive($this->tmp);
+    }
+
     public function nullExtraYieldsDefaults(): void
     {
         $cfg = (new ProjectConfigMapper())->fromExtra(null);
@@ -297,5 +316,120 @@ final class ProjectConfigMapperTest
             ->withMessageContaining('extra.skills.auto-sync');
 
         (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => 'yes']]);
+    }
+
+    // ── forProject(): decision tree between skills.json and inline ──────
+
+    public function forProjectFallsBackToInlineWhenSkillsJsonAbsent(): void
+    {
+        // No skills.json in $tmp; the mapper must use the inline block
+        // exactly as fromExtra() would, and report no shadowed keys.
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['target' => 'inline/skills']],
+        );
+
+        Assert::same($resolution->config->target, 'inline/skills');
+        Assert::same($resolution->ignoredInlineKeys, []);
+    }
+
+    public function forProjectLoadsSkillsJsonWhenPresent(): void
+    {
+        $this->writeSkillsJson(['target' => 'external/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['target' => 'inline/skills']],
+        );
+
+        Assert::same(
+            $resolution->config->target,
+            'external/skills',
+            'skills.json must win when both sources are present',
+        );
+    }
+
+    public function forProjectListsShadowedInlineProjectKeys(): void
+    {
+        // skills.json is present, so inline project keys are shadowed.
+        // The caller surfaces this list under -v.
+        $this->writeSkillsJson(['target' => 'external/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => [
+                'target' => 'inline/skills',
+                'aliases' => ['.claude/skills'],
+                'auto-sync' => true,
+            ]],
+        );
+
+        Assert::same($resolution->ignoredInlineKeys, ['target', 'aliases', 'auto-sync']);
+    }
+
+    public function forProjectDoesNotListSourceAsShadowed(): void
+    {
+        // `source` is a donor-side key — the same root package may
+        // legitimately ship its own skills via `source` while also
+        // being a consumer via skills.json. The warning must not
+        // accuse `source` of being shadowed.
+        $this->writeSkillsJson(['target' => 'external/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => [
+                'source' => 'resources/skills',
+                'target' => 'inline/skills',
+            ]],
+        );
+
+        Assert::same(
+            $resolution->ignoredInlineKeys,
+            ['target'],
+            'source is a donor key and must not appear in the shadowed-keys list',
+        );
+    }
+
+    public function forProjectEmitsEmptyShadowedListWhenInlineHasOnlyDonorKey(): void
+    {
+        // skills.json + inline `source` only → nothing is shadowed,
+        // because no project-level inline key competes with it.
+        $this->writeSkillsJson(['target' => 'external/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['source' => 'resources/skills']],
+        );
+
+        Assert::same($resolution->ignoredInlineKeys, []);
+    }
+
+    public function forProjectPropagatesExternalErrors(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{ bad json');
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json:');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectWithMissingSkillsJsonAndNullExtraReturnsDefaults(): void
+    {
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->target, ProjectConfig::DEFAULT_TARGET);
+        Assert::same($resolution->ignoredInlineKeys, []);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function writeSkillsJson(array $data): void
+    {
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            \json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
+        );
     }
 }

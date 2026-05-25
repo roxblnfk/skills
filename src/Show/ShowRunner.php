@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Show;
 
-use Composer\Composer;
 use Composer\IO\IOInterface;
+use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Discovery\Provider\DonorProvider;
 use Symfony\Component\Console\Command\Command;
 
 /**
  * Shared body of `skills:show` — independent of which entrypoint invoked it.
  *
  * Mirrors the role {@see \LLM\Skills\Sync\SyncRunner} plays for the
- * update command: built once, fed the same `(Composer, IOInterface,
- * SyncOptions)` triple, returns a Symfony exit code.
+ * update command: built once, fed the same project/provider context,
+ * returns a Symfony exit code.
  *
- * The runner is intentionally tiny — it composes
- * {@see InspectionBuilder} and {@see ReportFormatter} and routes the
- * resulting lines to IO. No business logic lives here.
+ * Project-config IO concerns (the `skills.json` shadowing warning,
+ * and the standalone "no donors available" notice) stay here so the
+ * builder remains IO-free.
  */
 final readonly class ShowRunner
 {
@@ -29,12 +31,48 @@ final readonly class ShowRunner
     public function __construct(
         private InspectionBuilder $builder = new InspectionBuilder(),
         private ReportFormatter $formatter = new ReportFormatter(),
+        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
     ) {}
 
-    public function run(Composer $composer, IOInterface $io, SyncOptions $options): int
-    {
+    /**
+     * @param Path $projectRoot consumer project root (the entrypoint's cwd)
+     * @param DonorProvider $provider source of donors (today
+     *        {@see \LLM\Skills\Discovery\Provider\ComposerProvider})
+     * @param mixed $extra raw `composer.json` `extra`, or `null` when no
+     *        `composer.json` is around (standalone bin run)
+     */
+    public function run(
+        Path $projectRoot,
+        DonorProvider $provider,
+        mixed $extra,
+        IOInterface $io,
+        SyncOptions $options,
+    ): int {
         try {
-            $report = $this->builder->build($composer, $options);
+            $resolution = $this->projectMapper->forProject($projectRoot, $extra);
+        } catch (MalformedProjectConfig $e) {
+            $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
+
+        if ($resolution->ignoredInlineKeys !== []) {
+            $io->writeError(
+                '<comment>[warn] skills.json present; the following extra.skills keys in '
+                . 'composer.json are ignored: ' . \implode(', ', $resolution->ignoredInlineKeys) . '</comment>',
+                verbosity: IOInterface::VERBOSE,
+            );
+        }
+
+        if (!$provider->isActive($projectRoot)) {
+            $io->write(
+                '<comment>[llm/skills] no donors available — no composer.json detected and no other '
+                . 'donor providers are configured.</comment>',
+            );
+            return Command::SUCCESS;
+        }
+
+        try {
+            $report = $this->builder->build($projectRoot, $provider, $resolution->config, $options);
         } catch (MalformedProjectConfig $e) {
             $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return Command::FAILURE;

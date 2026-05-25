@@ -46,6 +46,7 @@ if ('cli' !== PHP_SAPI) {
         new FactoryCommandLoader([
             'update' => static fn() => new \LLM\Skills\Console\Command\Sync(),
             'show' => static fn() => new \LLM\Skills\Console\Command\Show(),
+            'init' => static fn() => new \LLM\Skills\Console\Command\Init(),
         ]),
     );
     $application->setDefaultCommand('update', false);

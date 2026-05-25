@@ -76,10 +76,13 @@ Project-level settings (`extra.skills.target`, `trusted`, `discovery`) are still
 ```
 composer skills:update [<package>...] [options]   # alias: skills:u
 composer skills:show   [<package>...] [options]   # alias: skills:s
+composer skills:init   [options]                  # alias: skills:i
 ```
 
 `skills:update` copies skills into the target directory. `skills:show` is read-only — it lists
-every donor, the per-skill sync status, and what is being skipped and why.
+every donor, the per-skill sync status, and what is being skipped and why. `skills:init`
+bootstraps an external [`skills.json`](#external-config-skillsjson) at the project root and
+(when `composer.json` carries inline project keys) migrates them out.
 
 | Option                | Where  | Description                                                                                                                                                 |
 |-----------------------|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -103,6 +106,7 @@ composer skills:update --discovery          # also include packages without extr
 composer skills:update --alias=.claude/skills   # mirror target via a junction/symlink
 composer skills:update --dry-run            # preview, write nothing
 composer skills:show                        # inspect: per-skill status, what is skipped
+composer skills:init                        # create skills.json (migrating inline keys)
 ```
 
 ## Shipping skills (vendor side)
@@ -176,6 +180,75 @@ directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent
 
 A malformed `extra.skills` in the project is **fatal**. The same block in a *donor* package is
 skipped with a `-v` warning — one bad vendor never blocks the rest.
+
+
+## External config (`skills.json`)
+
+Project-level configuration can also live in a dedicated **`skills.json`** at the project root,
+side-by-side with `composer.json`. Same fields as `extra.skills`, but free from the noise of
+Composer's own config and with first-class JSON-schema support in editors.
+
+```jsonc
+// <project-root>/skills.json
+{
+  "$schema": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
+  "target": ".agents/skills",
+  "aliases": [".claude/skills", ".cursor/skills"],
+  "trusted": ["acme/*"],
+  "discovery": true,
+  "auto-sync": true
+}
+```
+
+### Precedence
+
+The plugin picks the project config from exactly one source:
+
+1. If `skills.json` exists at the project root → use it. Inline `extra.skills` project keys in
+   `composer.json` are ignored (a `-v` notice lists which ones were shadowed). Donor-side
+   `extra.skills.source` on the same package keeps working — it is not project config.
+2. Otherwise → fall back to `extra.skills` in `composer.json` (the 1.x contract, unchanged).
+
+There is no merging across the two sources. Once `skills.json` exists, it owns the project
+config in full. Donor discovery (the vendor walk through `composer.json`'s `require` /
+`require-dev`) is independent — `composer.json` keeps feeding the donor list either way.
+
+### Strict shape
+
+`skills.json` is **strict**:
+
+- Unknown top-level keys fail the run.
+- `$schema` is the only metadata key accepted (and silently stripped from the parsed config).
+- A nested `config-file` key is rejected — the file is the config, not a pointer to one.
+
+The PHP mapper is the authoritative validator at runtime; the
+[`resources/skills.schema.json`](resources/skills.schema.json) document mirrors it for IDE /
+editor support.
+
+### `skills:init` — bootstrap and migrate
+
+```bash
+composer skills:init                  # create skills.json (and migrate inline keys if any)
+composer skills:init --force          # overwrite an existing skills.json
+composer skills:init --path=PATH      # non-default location (won't be auto-discovered)
+```
+
+In a project with `composer.json`:
+
+- Reads the current `extra.skills` block (refusing if it is malformed — fix the bug, then init).
+- Writes the project-level keys into `skills.json` with a `$schema` pointer.
+- Removes the migrated keys from `extra.skills` via Composer's `JsonManipulator`, preserving
+  formatting, key order, and comments.
+- Leaves donor-side `extra.skills.source` (if any) untouched — a package can be both a donor
+  and a consumer.
+
+In a directory **without** `composer.json` (standalone mode), `skills:init` just writes a
+stub `skills.json` with the `$schema` pointer; nothing else is touched.
+
+`skills:init` refuses to overwrite an existing `skills.json` unless `--force` is passed. The
+canonical filename is `skills.json` at the project root — using `--path=PATH` to put the file
+elsewhere creates it, but subsequent `skills:update` / `skills:show` will not discover it (a
+notice is printed when this happens).
 
 
 ## Aliases
