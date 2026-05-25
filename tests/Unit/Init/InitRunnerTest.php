@@ -116,6 +116,30 @@ final class InitRunnerTest
         Assert::false(\is_file('/etc/skills.json'), 'must not touch an absolute path');
     }
 
+    public function existingDirectoryAtTargetIsRejectedWithClearError(): void
+    {
+        // A pre-existing directory at the target path is not "overwrite this
+        // file" territory — `file_put_contents` would later fail with a
+        // generic "failed to write" message. The runner now catches this up
+        // front and tells the user exactly what's wrong.
+        \mkdir($this->tmp . '/skills.json', 0o777, true);
+
+        $io = new BufferIO();
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            InitOptions::default(),
+        );
+
+        Assert::same($code, Command::FAILURE);
+        Assert::true(
+            \str_contains($io->getOutput(), 'not a regular file'),
+            'error must spell out the conflict; got: ' . $io->getOutput(),
+        );
+        // The directory must NOT have been touched.
+        Assert::true(\is_dir($this->tmp . '/skills.json'));
+    }
+
     public function escapingProjectRootIsRejected(): void
     {
         // `../escape.json` lexically resolves outside the project — the

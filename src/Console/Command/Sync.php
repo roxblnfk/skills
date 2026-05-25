@@ -8,6 +8,7 @@ use Composer\Composer;
 use Composer\Factory;
 use Composer\IO\ConsoleIO;
 use Internal\Path;
+use LLM\Skills\Composer\ComposerJsonExtraReader;
 use LLM\Skills\Console\SyncCliDefinition;
 use LLM\Skills\Discovery\Provider\ComposerProvider;
 use LLM\Skills\Sync\SyncRunner;
@@ -60,14 +61,24 @@ final class Sync extends Command
             return self::INVALID;
         }
 
+        $projectRoot = Path::create(\getcwd() ?: '.');
         $composer = self::tryBootstrapComposer($io);
         $provider = new ComposerProvider($composer);
-        $projectRoot = Path::create(\getcwd() ?: '.');
+
+        // When Composer bootstrap succeeded, the root package's getExtra()
+        // is the canonical source. When it failed but composer.json is
+        // present, we still want the legacy inline `extra.skills` fallback
+        // to work — read the file directly so the runner sees the same
+        // payload it would have under Composer.
+        /** @var mixed $extra */
+        $extra = $composer !== null
+            ? $composer->getPackage()->getExtra()
+            : (new ComposerJsonExtraReader())->read($projectRoot, $io);
 
         return (new SyncRunner())->run(
             $projectRoot,
             $provider,
-            $provider->rootExtras(),
+            $extra,
             $io,
             $options,
         );

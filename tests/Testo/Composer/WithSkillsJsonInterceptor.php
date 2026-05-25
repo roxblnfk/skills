@@ -35,7 +35,24 @@ final readonly class WithSkillsJsonInterceptor implements TestRunInterceptor
     {
         $path = Info::PROJECT_DIR . '/skills.json';
 
-        $previousContent = \is_file($path) ? \file_get_contents($path) : null;
+        // Distinguish three states for the post-test restore:
+        //   - file did not exist  → $previousContent = null  (delete in finally)
+        //   - file existed, read OK → $previousContent = string (write back)
+        //   - file existed, read failed → throw NOW, because finally would
+        //     otherwise see `false` and delete the original — corrupting the
+        //     sandbox on an unrelated IO failure.
+        $previousContent = null;
+        if (\is_file($path)) {
+            $read = \file_get_contents($path);
+            if ($read === false) {
+                throw new \RuntimeException(\sprintf(
+                    'WithSkillsJsonInterceptor: unable to read existing %s; refusing to '
+                    . 'overwrite to avoid losing the original on teardown.',
+                    $path,
+                ));
+            }
+            $previousContent = $read;
+        }
 
         \file_put_contents(
             $path,
@@ -48,7 +65,7 @@ final readonly class WithSkillsJsonInterceptor implements TestRunInterceptor
         try {
             return $next($info);
         } finally {
-            if ($previousContent === null || $previousContent === false) {
+            if ($previousContent === null) {
                 @\unlink($path);
             } else {
                 \file_put_contents($path, $previousContent);

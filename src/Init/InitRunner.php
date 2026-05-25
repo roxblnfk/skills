@@ -60,6 +60,19 @@ final readonly class InitRunner
             return Command::INVALID;
         }
 
+        // A pre-existing directory (or other non-file) at the target path
+        // cannot be overwritten by writing a file — let the user know
+        // explicitly rather than letting `file_put_contents` fail later
+        // with a generic message.
+        if (\file_exists($target) && !\is_file($target)) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] %s exists but is not a regular file; '
+                . 'cannot write skills.json there. Choose a different --path or remove it.</error>',
+                $options->path,
+            ));
+            return Command::FAILURE;
+        }
+
         if (\is_file($target) && !$options->force) {
             $io->writeError(\sprintf(
                 '<error>[llm/skills] %s already exists; pass --force to overwrite</error>',

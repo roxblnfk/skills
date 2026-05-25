@@ -9,6 +9,7 @@ use Composer\Factory;
 use Composer\IO\ConsoleIO;
 use Composer\IO\IOInterface;
 use Internal\Path;
+use LLM\Skills\Composer\ComposerJsonExtraReader;
 use LLM\Skills\Console\ShowCliDefinition;
 use LLM\Skills\Discovery\Provider\ComposerProvider;
 use LLM\Skills\Show\ShowRunner;
@@ -52,14 +53,21 @@ final class Show extends Command
             return self::INVALID;
         }
 
+        $projectRoot = Path::create(\getcwd() ?: '.');
         $composer = self::tryBootstrapComposer($io);
         $provider = new ComposerProvider($composer);
-        $projectRoot = Path::create(\getcwd() ?: '.');
+
+        // See the twin in Console\Command\Sync — keeps the inline
+        // `extra.skills` fallback usable when Composer bootstrap fails.
+        /** @var mixed $extra */
+        $extra = $composer !== null
+            ? $composer->getPackage()->getExtra()
+            : (new ComposerJsonExtraReader())->read($projectRoot, $io);
 
         return (new ShowRunner())->run(
             $projectRoot,
             $provider,
-            $provider->rootExtras(),
+            $extra,
             $io,
             $options,
         );
