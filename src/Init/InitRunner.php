@@ -92,7 +92,7 @@ final readonly class InitRunner
 
         // Canonical migration path. Non-default `--path` requires
         // post-processing (rename) since the migrator always writes
-        // to <root>/skills.json — see {@see self::handleNonDefaultPath()}.
+        // to <root>/skills.json — see {@see self::runNonDefaultPath()}.
         if ($options->path !== 'skills.json') {
             return $this->runNonDefaultPath($projectRoot, $io, $options, $target);
         }

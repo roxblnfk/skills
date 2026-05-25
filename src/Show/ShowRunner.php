@@ -144,9 +144,15 @@ final readonly class ShowRunner
             return;
         }
 
+        // Show is invoked from two entrypoints with different command
+        // names — `composer skills:update` / `composer skills:init`
+        // through the plugin, and `skills update` / `skills init`
+        // through the standalone bin. Mention both rather than
+        // hard-coding the Composer flavour.
         $io->write(\sprintf(
             '<comment>[notice] legacy inline config detected (extra.skills: %s). '
-            . 'Run `composer skills:update` (or `skills:init`) to migrate it into skills.json.</comment>',
+            . 'Run `composer skills:update` (or `skills update` from the standalone '
+            . 'binary) to migrate it into skills.json.</comment>',
             \implode(', ', $present),
         ));
     }

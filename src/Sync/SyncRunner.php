@@ -34,7 +34,9 @@ use Symfony\Component\Console\Command\Command;
  *   shipped as `bin/skills`; the Composer instance is bootstrapped
  *   manually via {@see \Composer\Factory::create()}. When that fails
  *   (e.g. no `composer.json` at cwd) the provider becomes inactive
- *   and the runner emits the `[no donors available]` notice.
+ *   and the runner emits the
+ *   `[llm/skills] no donor providers are active — nothing to sync.`
+ *   notice and exits 0.
  *
  * Whatever the source, the runner orchestrates the pipeline:
  *
