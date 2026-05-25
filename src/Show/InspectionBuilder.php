@@ -62,9 +62,9 @@ final readonly class InspectionBuilder
      *        GitHub / npm / skills.sh providers plug in here
      * @param ProjectConfig $project pre-resolved project config. The caller
      *        ({@see \LLM\Skills\Show\ShowRunner}) loads it via
-     *        {@see ProjectConfigMapper::forProject()} so it can surface the
-     *        `skills.json` shadowing warning through IO; the builder itself
-     *        stays pure (no IO).
+     *        {@see \LLM\Skills\Config\Mapper\ProjectConfigMapper::forProject()}
+     *        so it can surface the `skills.json` shadowing warning through IO;
+     *        the builder itself stays pure (no IO).
      *
      * @throws MalformedProjectConfig when planner-level path validation fails.
      */

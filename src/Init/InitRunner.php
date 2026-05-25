@@ -145,7 +145,14 @@ final readonly class InitRunner
 
         $io->write('<info>[init]</info> standalone mode (no composer.json detected)');
         $io->write(\sprintf('<info>[init]</info> created %s', $options->path));
-        $io->write('<info>[init]</info> note: subsequent skills commands will read this file directly');
+
+        // The "subsequent commands will read this file" promise only holds
+        // when the file lives at the canonical location. For a custom
+        // --path, the `maybeWarnNonDefaultPath()` notice below contradicts
+        // it — emit one or the other, never both.
+        if ($options->path === 'skills.json') {
+            $io->write('<info>[init]</info> note: subsequent skills commands will read this file directly');
+        }
 
         $this->maybeWarnNonDefaultPath($io, $options->path);
 
