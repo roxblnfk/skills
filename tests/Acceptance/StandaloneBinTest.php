@@ -16,18 +16,18 @@ use Testo\Test;
  * Acceptance tests for the standalone `bin/skills` binary running in
  * a directory without a `composer.json`.
  *
- * The spec (see `spec-config-file.md` §3.2 / §10) says that, with no
- * Composer install tree around, the utility must:
+ * Per `spec-config-file.md` §3.2 / §10, with no Composer install tree
+ * around the utility:
  *
- *  1. Treat the cwd as the project root.
- *  2. Read `skills.json` directly when it exists (or use defaults).
- *  3. Report "no donors available" and exit 0 instead of dying with a
- *     Composer bootstrap error.
+ *  1. Treats the cwd as the project root.
+ *  2. Reads `skills.json` directly when it exists (or uses defaults).
+ *  3. Reports that no donor providers are active and exits 0 — never
+ *     surfaces the `Failed to bootstrap Composer` error a naive
+ *     `Factory::create()` call would produce.
  *
- * Today the second leg of `update`/`show` still hard-requires
- * Composer bootstrap and so fails with `Failed to bootstrap Composer`.
- * These tests are the failing fixtures that drive the standalone-mode
- * fallback implementation.
+ * These tests pin the contract so a future refactor of the
+ * provider chain cannot accidentally regress standalone mode back to
+ * "Composer is mandatory".
  */
 #[Test]
 final class StandaloneBinTest
@@ -76,12 +76,30 @@ final class StandaloneBinTest
     {
         // The user needs to know why nothing was synced — without a
         // visible diagnostic, an empty target would look like a bug.
+        // The user-facing notice stays provider-neutral; specifics
+        // (which provider was inactive and why) flow through `-v`.
         $process = BinSkillsRunner::run(Path::create($this->tmp), 'update');
         $combined = $process->getOutput() . $process->getErrorOutput();
 
         Assert::true(
-            \str_contains($combined, 'no donors available'),
+            \str_contains($combined, 'no donor providers are active'),
             'output must explain why nothing was copied. Got: ' . $combined,
+        );
+    }
+
+    public function updateInEmptyDirectoryExplainsCauseUnderVerbose(): void
+    {
+        // The neutral notice tells *what*; the -v warning tells *why*
+        // (no composer.json at <cwd>). Without this line, a user
+        // staring at "no donor providers are active" would not know
+        // whether they hit the missing-file path or a bootstrap
+        // failure path.
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'update -v');
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::true(
+            \str_contains($combined, 'no composer.json'),
+            '-v output must name the actual cause. Got: ' . $combined,
         );
     }
 

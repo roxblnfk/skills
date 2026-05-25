@@ -86,7 +86,15 @@ final class Sync extends Command
      */
     private static function tryBootstrapComposer(ConsoleIO $io): ?Composer
     {
-        if (!\is_file((\getcwd() ?: '.') . '/composer.json')) {
+        $cwd = \getcwd() ?: '.';
+        if (!\is_file($cwd . '/composer.json')) {
+            $io->writeError(
+                \sprintf(
+                    '<comment>[warn] no composer.json at %s — Composer donor provider is inactive.</comment>',
+                    $cwd,
+                ),
+                verbosity: \Composer\IO\IOInterface::VERBOSE,
+            );
             return null;
         }
 

@@ -63,10 +63,12 @@ final readonly class ShowRunner
             );
         }
 
+        // See SyncRunner: notice is provider-neutral, specifics flow
+        // through `-v` warnings emitted at the entrypoint.
         if (!$provider->isActive($projectRoot)) {
             $io->write(
-                '<comment>[llm/skills] no donors available — no composer.json detected and no other '
-                . 'donor providers are configured.</comment>',
+                '<comment>[llm/skills] no donor providers are active — nothing to show. '
+                . 'Run with -v for details.</comment>',
             );
             return Command::SUCCESS;
         }

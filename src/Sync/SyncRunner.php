@@ -89,13 +89,17 @@ final readonly class SyncRunner
         $project = $configResolution->config;
         $this->emitShadowedKeysWarning($io, $configResolution->ignoredInlineKeys);
 
-        // No donor provider can contribute (e.g. standalone bin/skills
-        // ran outside any Composer project). Future providers will plug
-        // in here — for now, Composer absence means "nothing to sync".
+        // No donor provider can contribute. Reasons vary by provider —
+        // {@see \LLM\Skills\Discovery\Provider\ComposerProvider} is
+        // inactive when no Composer instance was supplied (no composer.json
+        // at cwd, or `Factory::create()` threw). The entrypoint emits a
+        // `-v` line naming the actual cause; this user-facing notice
+        // stays neutral so it stays accurate across all providers
+        // (today only Composer, eventually also GitHub / npm / skills.sh).
         if (!$provider->isActive($projectRoot)) {
             $io->write(
-                '<comment>[llm/skills] no donors available — no composer.json detected and no other '
-                . 'donor providers are configured.</comment>',
+                '<comment>[llm/skills] no donor providers are active — nothing to sync. '
+                . 'Run with -v for details.</comment>',
             );
             return Command::SUCCESS;
         }

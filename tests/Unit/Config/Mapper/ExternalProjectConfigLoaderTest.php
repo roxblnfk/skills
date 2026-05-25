@@ -71,8 +71,10 @@ final class ExternalProjectConfigLoaderTest
     public function emptyObjectDecodesAsEmptyArray(): void
     {
         // `{}` is a valid (if uninteresting) skills.json — it means "no
-        // project-level overrides, use defaults across the board".
-        $this->writeFile([]);
+        // project-level overrides, use defaults across the board". Written
+        // as the literal JSON object form because `json_encode([])`
+        // emits the array form `[]`, which the loader correctly rejects.
+        \file_put_contents($this->tmp . '/skills.json', '{}');
 
         $result = (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
 
@@ -102,13 +104,26 @@ final class ExternalProjectConfigLoaderTest
 
     public function listRootThrows(): void
     {
-        // A JSON array decodes to a non-empty list-shaped array; the
-        // loader distinguishes it from `{}` (which also decodes to `[]`)
-        // via `array_is_list`.
+        // A non-empty JSON array must be rejected — the contract is
+        // "root is a JSON object".
         \file_put_contents($this->tmp . '/skills.json', '[1, 2, 3]');
 
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('got a list');
+            ->withMessageContaining('root must be a JSON object');
+
+        (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
+    }
+
+    public function emptyListRootThrows(): void
+    {
+        // Edge case: `[]` and `{}` both decode to PHP `[]` under
+        // `json_decode(..., true)`. The loader must still tell them
+        // apart and reject the array form — that's what the
+        // `assoc=false` first-pass type check is for.
+        \file_put_contents($this->tmp . '/skills.json', '[]');
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('root must be a JSON object');
 
         (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
     }

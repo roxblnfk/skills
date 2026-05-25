@@ -83,9 +83,15 @@ final readonly class ExternalProjectConfigLoader
             ));
         }
 
+        // Decode once with `assoc=false` so we can distinguish an
+        // empty JSON object `{}` (→ stdClass) from an empty JSON
+        // array `[]` (→ PHP array). With `assoc=true` both decode to
+        // `[]` and the `array_is_list` check accepts the array as a
+        // valid empty object — exactly the contract violation we're
+        // guarding against.
         try {
-            /** @var mixed $decoded */
-            $decoded = \json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+            /** @var mixed $typed */
+            $typed = \json_decode($content, false, flags: \JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new MalformedProjectConfig(\sprintf(
                 'skills.json: invalid JSON — %s',
@@ -93,21 +99,20 @@ final readonly class ExternalProjectConfigLoader
             ));
         }
 
-        if (!\is_array($decoded)) {
+        if (!$typed instanceof \stdClass) {
             throw new MalformedProjectConfig('skills.json: root must be a JSON object');
         }
 
-        // A non-empty list (`[1, 2, 3]`) decodes to an array but is not
-        // an object — distinguish it from `{}` which decodes to `[]`.
-        if ($decoded !== [] && \array_is_list($decoded)) {
-            throw new MalformedProjectConfig('skills.json: root must be a JSON object, got a list');
-        }
+        /** @var array<string, mixed> $decoded */
+        $decoded = (array) $typed;
 
+        // Casting a stdClass to array always yields string keys, so no
+        // runtime is_string guard is needed.
         foreach ($decoded as $key => $_unused) {
-            if (!\is_string($key) || !\in_array($key, self::ALLOWED_KEYS, true)) {
+            if (!\in_array($key, self::ALLOWED_KEYS, true)) {
                 throw new MalformedProjectConfig(\sprintf(
                     'skills.json: unknown top-level key "%s"; allowed keys: %s',
-                    \is_string($key) ? $key : '(non-string)',
+                    $key,
                     \implode(', ', \array_filter(self::ALLOWED_KEYS, static fn(string $k): bool => $k !== '$schema')),
                 ));
             }
@@ -117,7 +122,6 @@ final readonly class ExternalProjectConfigLoader
         // code never has to know about it.
         unset($decoded['$schema']);
 
-        /** @var array<string, mixed> $decoded */
         return $decoded;
     }
 }
