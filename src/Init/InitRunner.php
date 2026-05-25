@@ -198,6 +198,14 @@ final readonly class InitRunner
                 ));
                 return Command::FAILURE;
             }
+            // POSIX `rename()` overwrites an existing destination
+            // transparently, but Windows refuses to. When the user
+            // passed `--force` and a file at the target survived the
+            // earlier refusal check, unlink it explicitly so `--force`
+            // is honoured the same way on both platforms.
+            if ($options->force && \is_file($target)) {
+                @\unlink($target);
+            }
             if (!@\rename($canonical, $target)) {
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] failed to relocate skills.json to %s</error>',

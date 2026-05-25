@@ -295,6 +295,51 @@ final class InitRunnerTest
         Assert::true(\str_contains($io->getOutput(), 'will not be discovered'));
     }
 
+    public function nonDefaultPathWithForceOverwritesExistingTargetAfterMigration(): void
+    {
+        // Cross-platform `--force` contract: the user-supplied target
+        // already exists, --force was passed, and composer.json has
+        // inline keys. After init: composer.json stripped, the
+        // pre-existing file at $target is overwritten by the migrated
+        // content. POSIX `rename()` would do this implicitly; Windows
+        // would otherwise refuse, leaving the new content stranded
+        // at the canonical path.
+        \mkdir($this->tmp . '/config', 0o777, true);
+        \file_put_contents($this->tmp . '/config/skills.json', '{"target":"stale"}');
+
+        $this->writeComposerJson([
+            'extra' => ['skills' => ['target' => 'fresh/skills']],
+        ]);
+
+        $io = new BufferIO();
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(path: 'config/skills.json', force: true),
+        );
+
+        Assert::same(
+            $code,
+            Command::SUCCESS,
+            'force-overwrite must succeed; got stderr: ' . $io->getOutput(),
+        );
+
+        // The pre-existing stale file is gone; the migrated content
+        // lives at the requested non-default path.
+        $skills = \json_decode(
+            (string) \file_get_contents($this->tmp . '/config/skills.json'),
+            true,
+            flags: \JSON_THROW_ON_ERROR,
+        );
+        Assert::same($skills['target'] ?? null, 'fresh/skills', 'target must reflect migrated value');
+
+        // Canonical location is empty (the rename moved the file out).
+        Assert::false(
+            \is_file($this->tmp . '/skills.json'),
+            'rename must move the canonical file to the user-supplied path',
+        );
+    }
+
     public function nonDefaultPathWithInlineKeysMigratesAndRenames(): void
     {
         // Composer-attached + non-canonical `--path`: the migrator always
