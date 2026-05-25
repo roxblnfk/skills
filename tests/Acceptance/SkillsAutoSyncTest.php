@@ -8,8 +8,10 @@ use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Tests\Testo\SandboxStateGuard;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
+use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
@@ -32,6 +34,13 @@ final class SkillsAutoSyncTest
     public function clearTargetDir(): void
     {
         Filesystem::removeRecursive(self::TARGET_DIR);
+        SandboxStateGuard::snapshot();
+    }
+
+    #[AfterTest]
+    public function restoreSandbox(): void
+    {
+        SandboxStateGuard::restore();
     }
 
     #[WithSandboxExtras([

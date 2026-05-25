@@ -200,18 +200,36 @@ Composer's own config and with first-class JSON-schema support in editors.
 }
 ```
 
-### Precedence
+### Precedence and auto-migration
 
-The plugin picks the project config from exactly one source:
+`skills.json` is the **only** long-lived project-config artifact. Inline `extra.skills` is a
+transitional state: the first time a write-mode command (`skills:update`, `skills:init`, or
+the `post-update-cmd` auto-sync hook) runs in a project that still has the inline block, the
+plugin moves the project-level keys out of `composer.json` and into a fresh `skills.json`.
+After that, `composer.json` is left alone forever.
 
-1. If `skills.json` exists at the project root → use it. Inline `extra.skills` project keys in
-   `composer.json` are ignored (a `-v` notice lists which ones were shadowed). Donor-side
-   `extra.skills.source` on the same package keeps working — it is not project config.
-2. Otherwise → fall back to `extra.skills` in `composer.json` (the 1.x contract, unchanged).
+**Write-mode commands** (`skills:update`, `skills:init`, `post-update-cmd`):
 
-There is no merging across the two sources. Once `skills.json` exists, it owns the project
-config in full. Donor discovery (the vendor walk through `composer.json`'s `require` /
-`require-dev`) is independent — `composer.json` keeps feeding the donor list either way.
+1. If `skills.json` exists at the project root → use it. `composer.json` is not touched.
+2. Otherwise, if `extra.skills` has project keys → auto-migrate: write `skills.json`, strip
+   the keys from `composer.json` via `JsonManipulator` (formatting preserved, donor-side
+   `extra.skills.source` stays put), then proceed with the freshly-written config. A
+   `[migrate] moved extra.skills → skills.json (...)` line is printed.
+3. Otherwise → defaults.
+
+**Read-only commands** (`skills:show`, `post-install-cmd`):
+
+1. If `skills.json` exists → use it. `composer.json` is not touched.
+2. Otherwise, read inline `extra.skills` (legacy 1.x behaviour) and emit a one-line
+   `[notice]` telling the user to run `skills:update` for the migration.
+
+The asymmetry is deliberate. `composer install` is a fetch step; a silent `composer.json`
+rewrite there would be a surprise. The other surfaces (`skills:update` and explicit
+`skills:init` runs) are write-mode by nature, so cleaning up the legacy artifact along the
+way is in character.
+
+There is no `--no-migrate` flag. If you need the old read-only behaviour for one run, use
+`skills:show` or `composer install --no-scripts`.
 
 ### Strict shape
 
@@ -225,30 +243,31 @@ The PHP mapper is the authoritative validator at runtime; the
 [`resources/skills.schema.json`](resources/skills.schema.json) document mirrors it for IDE /
 editor support.
 
-### `skills:init` — bootstrap and migrate
+### `skills:init` — explicit fast-path
 
 ```bash
-composer skills:init                  # create skills.json (and migrate inline keys if any)
+composer skills:init                  # migrate eagerly (same effect as a future skills:update)
 composer skills:init --force          # overwrite an existing skills.json
 composer skills:init --path=PATH      # non-default location (won't be auto-discovered)
 ```
 
-In a project with `composer.json`:
+`skills:init` is the explicit version of the migration that `skills:update` runs implicitly.
+It exists for two cases:
 
-- Reads the current `extra.skills` block (refusing if it is malformed — fix the bug, then init).
-- Writes the project-level keys into `skills.json` with a `$schema` pointer.
-- Removes the migrated keys from `extra.skills` via Composer's `JsonManipulator`, preserving
-  formatting, key order, and comments.
-- Leaves donor-side `extra.skills.source` (if any) untouched — a package can be both a donor
-  and a consumer.
+- Pre-`skills:update` setup — bootstrap `skills.json` before the first sync.
+- Standalone projects (no `composer.json` at cwd) — write a stub `skills.json` with the
+  `$schema` pointer so editors can pick up the schema; nothing else is touched.
 
-In a directory **without** `composer.json` (standalone mode), `skills:init` just writes a
-stub `skills.json` with the `$schema` pointer; nothing else is touched.
+Refusal semantics:
 
-`skills:init` refuses to overwrite an existing `skills.json` unless `--force` is passed. The
-canonical filename is `skills.json` at the project root — using `--path=PATH` to put the file
-elsewhere creates it, but subsequent `skills:update` / `skills:show` will not discover it (a
-notice is printed when this happens).
+- Refuses to overwrite an existing `skills.json` without `--force`.
+- Refuses if the inline `extra.skills` block is malformed — fix `composer.json` first, then
+  rerun.
+- Refuses if `--path` points at an existing non-file (a directory etc.) with a clear error.
+
+`--path=PATH` honours the project-root containment rule. Subsequent commands only
+auto-discover `skills.json` at the project root, so a non-default `--path` also emits a
+notice telling the user to move the file.
 
 
 ## Aliases

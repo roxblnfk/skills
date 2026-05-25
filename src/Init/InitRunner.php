@@ -5,48 +5,48 @@ declare(strict_types=1);
 namespace LLM\Skills\Init;
 
 use Composer\IO\IOInterface;
-use Composer\Json\JsonManipulator;
 use Internal\Path;
-use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\InitOptions;
-use LLM\Skills\Config\Mapper\ProjectConfigMapper;
+use LLM\Skills\Config\Mapper\MigrationStatus;
+use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use Symfony\Component\Console\Command\Command;
 
 /**
  * Body of the `skills:init` command — independent of which entrypoint
  * invoked it.
  *
- * Detects whether `composer.json` exists at the project root and runs
- * one of two flows:
+ * Composer-attached projects: delegate to {@see ProjectConfigMigrator}.
+ * Same code path the auto-migration in `skills:update` uses; running
+ * `skills:init` explicitly is just the fast way to perform the
+ * migration without doing a full sync.
  *
- * - **Composer-attached** — read the inline `extra.skills` block,
- *   partition its keys into project vs donor, write the project keys
- *   into a fresh `skills.json`, and rewrite `composer.json` to drop the
- *   migrated project keys (donor `source` and any unrelated `extra`
- *   keys are left in place).
- * - **Standalone** — write a stub `skills.json` (only `$schema`) and
- *   touch nothing else.
+ * Standalone projects (no `composer.json` at cwd): write a stub
+ * `skills.json` containing only the `$schema` pointer so the user has
+ * a starting point.
  *
- * The flow is **atomic on success**: validation happens before any
- * filesystem write, and the two writes (skills.json, composer.json)
- * run in fixed order — `skills.json` first, so a crash before the
- * second write leaves the new file plus the original `composer.json`
- * intact. A re-run with `--force` recovers from any partial state.
+ * The `--path` flag lets the user pick a non-canonical location for
+ * the generated file. Subsequent commands only look at the canonical
+ * `skills.json` at the project root, so a non-default `--path` also
+ * emits a notice — it's a "create, then move it yourself" affordance.
+ *
+ * The migrator handles the composer-attached refusal logic
+ * implicitly (skills.json already exists → no-op); InitRunner adds
+ * the user-facing refusal-without-force semantics on top.
  */
 final readonly class InitRunner
 {
     /**
-     * URL of the published JSON schema. Emitted into the generated file's
-     * `$schema` field so editors that follow the link can offer
-     * validation / autocompletion.
+     * URL of the published JSON schema. Kept as a class constant for
+     * the standalone-stub path (the migrator owns the same value for
+     * the migration path).
      */
-    public const SCHEMA_URL = 'https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json';
+    public const SCHEMA_URL = ProjectConfigMigrator::SCHEMA_URL;
 
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
     ) {}
 
     public function run(Path $projectRoot, IOInterface $io, InitOptions $options): int
@@ -60,10 +60,6 @@ final readonly class InitRunner
             return Command::INVALID;
         }
 
-        // A pre-existing directory (or other non-file) at the target path
-        // cannot be overwritten by writing a file — let the user know
-        // explicitly rather than letting `file_put_contents` fail later
-        // with a generic message.
         if (\file_exists($target) && !\is_file($target)) {
             $io->writeError(\sprintf(
                 '<error>[llm/skills] %s exists but is not a regular file; '
@@ -81,21 +77,69 @@ final readonly class InitRunner
             return Command::FAILURE;
         }
 
+        // `--force` re-runs in the canonical location are handled by
+        // unlinking the existing file first so the migrator's
+        // "skills.json already exists → skip" branch does not short-
+        // circuit the rewrite the user explicitly asked for.
+        if ($options->force && $options->path === 'skills.json' && \is_file($target)) {
+            @\unlink($target);
+        }
+
         $composerJsonPath = (string) $projectRoot->join('composer.json');
         if (!\is_file($composerJsonPath)) {
             return $this->runStandalone($io, $options, $target);
         }
 
-        return $this->runComposerAttached($projectRoot, $composerJsonPath, $io, $options, $target);
+        // Canonical migration path. Non-default `--path` requires
+        // post-processing (rename) since the migrator always writes
+        // to <root>/skills.json — see {@see self::handleNonDefaultPath()}.
+        if ($options->path !== 'skills.json') {
+            return $this->runNonDefaultPath($projectRoot, $io, $options, $target);
+        }
+
+        $result = $this->migrator->migrate($projectRoot, $io);
+
+        switch ($result->status) {
+            case MigrationStatus::Failed:
+                return Command::FAILURE;
+
+            case MigrationStatus::Skipped:
+                // Either skills.json already exists (handled above when
+                // --force not set) or there are no inline keys to
+                // migrate. Either way, ensure a stub exists so the
+                // user can start adding things.
+                if (!\is_file($target)) {
+                    if (!$this->writeStub($target, $io)) {
+                        return Command::FAILURE;
+                    }
+                    $io->write(\sprintf(
+                        '<info>[init]</info> created %s (no project keys to migrate; stub created)',
+                        $options->path,
+                    ));
+                    $io->write('<info>[init]</info> note: skills:update will read project config from skills.json');
+                }
+                return Command::SUCCESS;
+
+            case MigrationStatus::Migrated:
+                $io->write(\sprintf(
+                    '<info>[init]</info> created %s (migrated: %s)',
+                    $options->path,
+                    \implode(', ', $result->migratedKeys),
+                ));
+                $io->write(
+                    '<info>[init]</info> composer.json updated: removed migrated project keys from extra.skills',
+                );
+                $io->write('<info>[init]</info> note: skills:update will read project config from skills.json');
+                return Command::SUCCESS;
+        }
     }
 
     /**
-     * @param non-empty-string $target absolute path to the skills.json being created
+     * @param non-empty-string $target
      */
     private function runStandalone(IOInterface $io, InitOptions $options, string $target): int
     {
-        $content = $this->renderSkillsJson([]);
-        if (!$this->writeFile($target, $content, $io)) {
+        if (!$this->writeStub($target, $io)) {
             return Command::FAILURE;
         }
 
@@ -109,117 +153,84 @@ final readonly class InitRunner
     }
 
     /**
-     * @param non-empty-string $composerJsonPath
-     * @param non-empty-string $target absolute path to the skills.json being created
+     * Composer-attached + non-canonical `--path`. The migrator always
+     * writes to `skills.json` at the project root, so we let it do
+     * its job and then move the file to the requested location.
+     * Always followed by the "won't be auto-discovered" notice.
+     *
+     * @param non-empty-string $target
      */
-    private function runComposerAttached(
+    private function runNonDefaultPath(
         Path $projectRoot,
-        string $composerJsonPath,
         IOInterface $io,
         InitOptions $options,
         string $target,
     ): int {
-        $original = \file_get_contents($composerJsonPath);
-        if ($original === false) {
-            $io->writeError(\sprintf(
-                '<error>[llm/skills] failed to read composer.json at %s</error>',
-                $composerJsonPath,
-            ));
+        $canonical = (string) $projectRoot->join('skills.json');
+        $canonicalExisted = \is_file($canonical);
+
+        $result = $this->migrator->migrate($projectRoot, $io);
+
+        if ($result->status === MigrationStatus::Failed) {
             return Command::FAILURE;
         }
 
-        try {
-            /** @var mixed $decoded */
-            $decoded = \json_decode($original, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            $io->writeError(\sprintf(
-                '<error>[llm/skills] composer.json is not valid JSON: %s</error>',
-                $e->getMessage(),
-            ));
-            return Command::FAILURE;
-        }
-
-        if (!\is_array($decoded)) {
-            $io->writeError('<error>[llm/skills] composer.json must be a JSON object</error>');
-            return Command::FAILURE;
-        }
-
-        /** @var array<string, mixed> $extra */
-        $extra = \is_array($decoded['extra'] ?? null) ? $decoded['extra'] : [];
-        /** @var array<string, mixed> $skills */
-        $skills = \is_array($extra['skills'] ?? null) ? $extra['skills'] : [];
-
-        // Pre-flight: confirm the inline block is well-formed. Migrating
-        // a malformed config silently would just relocate the bug into
-        // skills.json where it would surface on the next sync — fail loud
-        // up front instead.
-        try {
-            $this->projectMapper->fromExtra($extra);
-        } catch (MalformedProjectConfig $e) {
-            $io->writeError(\sprintf(
-                '<error>[llm/skills] cannot migrate: inline extra.skills is malformed — %s</error>',
-                $e->getMessage(),
-            ));
-            return Command::FAILURE;
-        }
-
-        $migrated = $this->extractProjectKeys($skills);
-
-        // Validate that the future skills.json itself maps cleanly — a
-        // second safety net in case extractProjectKeys reshapes anything
-        // (it currently does not, but the cost of running it is trivial).
-        try {
-            $this->projectMapper->fromExtra(['skills' => $migrated]);
-        } catch (MalformedProjectConfig $e) {
-            $io->writeError(\sprintf(
-                '<error>[llm/skills] migrated content is not a valid skills.json: %s</error>',
-                $e->getMessage(),
-            ));
-            return Command::FAILURE;
-        }
-
-        $content = $this->renderSkillsJson($migrated);
-
-        // Write skills.json first. If composer.json rewrite then fails,
-        // re-running with --force fixes the partial state.
-        if (!$this->writeFile($target, $content, $io)) {
-            return Command::FAILURE;
-        }
-
-        $migratedKeys = \array_keys($migrated);
-        if ($migratedKeys !== []) {
-            $manipulator = new JsonManipulator($original);
-            foreach ($migratedKeys as $key) {
-                if (!$manipulator->removeSubNode('extra', 'skills.' . $key)) {
-                    $io->writeError(\sprintf(
-                        '<error>[llm/skills] failed to remove extra.skills.%s from composer.json '
-                        . '(skills.json was written; re-run with --force after fixing composer.json)</error>',
-                        $key,
-                    ));
-                    return Command::FAILURE;
-                }
-            }
-
-            $newComposer = $manipulator->getContents();
-            if (\file_put_contents($composerJsonPath, $newComposer) === false) {
+        // Either the migrator wrote skills.json or it was already
+        // there. In the latter case we still need a file at $target;
+        // create a stub for it.
+        if ($result->status === MigrationStatus::Migrated) {
+            // The migrator always lands its output at the canonical
+            // path; ensure the parent of the user-chosen path exists
+            // before renaming, otherwise the rename will silently fail
+            // on a non-existent subdirectory.
+            $dir = \dirname($target);
+            if (!\is_dir($dir) && !@\mkdir($dir, 0o777, true) && !\is_dir($dir)) {
                 $io->writeError(\sprintf(
-                    '<error>[llm/skills] failed to write composer.json at %s</error>',
-                    $composerJsonPath,
+                    '<error>[llm/skills] failed to create directory %s</error>',
+                    $dir,
                 ));
                 return Command::FAILURE;
             }
+            if (!@\rename($canonical, $target)) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] failed to relocate skills.json to %s</error>',
+                    $options->path,
+                ));
+                return Command::FAILURE;
+            }
+            $io->write(\sprintf(
+                '<info>[init]</info> created %s (migrated: %s)',
+                $options->path,
+                \implode(', ', $result->migratedKeys),
+            ));
+            $io->write(
+                '<info>[init]</info> composer.json updated: removed migrated project keys from extra.skills',
+            );
+        } else {
+            // Skipped → stub at $target. If skills.json at the canonical
+            // location was created by an earlier explicit run we leave
+            // it; otherwise nothing else to clean up.
+            if (!$canonicalExisted && \is_file($canonical)) {
+                @\unlink($canonical);
+            }
+            if (!$this->writeStub($target, $io)) {
+                return Command::FAILURE;
+            }
+            $io->write(\sprintf(
+                '<info>[init]</info> created %s (no project keys to migrate; stub created)',
+                $options->path,
+            ));
         }
 
-        $this->emitComposerAttachedReport($io, $options->path, $migratedKeys);
         $this->maybeWarnNonDefaultPath($io, $options->path);
 
         return Command::SUCCESS;
     }
 
     /**
-     * @param non-empty-string $target absolute filesystem path
+     * @param non-empty-string $target
      */
-    private function writeFile(string $target, string $content, IOInterface $io): bool
+    private function writeStub(string $target, IOInterface $io): bool
     {
         $dir = \dirname($target);
         if (!\is_dir($dir) && !@\mkdir($dir, 0o777, true) && !\is_dir($dir)) {
@@ -230,6 +241,7 @@ final readonly class InitRunner
             return false;
         }
 
+        $content = ProjectConfigMigrator::renderSkillsJson([]);
         if (\file_put_contents($target, $content) === false) {
             $io->writeError(\sprintf(
                 '<error>[llm/skills] failed to write %s</error>',
@@ -242,15 +254,6 @@ final readonly class InitRunner
     }
 
     /**
-     * Resolve `$raw` against the project root and verify the result stays
-     * inside it.
-     *
-     * Reuses the {@see Path::match()} containment idiom that
-     * {@see \LLM\Skills\Sync\SyncPlanner::assertWithinProject()} uses so
-     * semantics stay aligned. `null` means the input is not acceptable
-     * (absolute path or `..`-escape) — caller turns that into a fatal
-     * error.
-     *
      * @return non-empty-string|null absolute filesystem path or `null` if input is invalid
      */
     private function resolveTargetPath(Path $projectRoot, string $raw): ?string
@@ -272,84 +275,9 @@ final readonly class InitRunner
     }
 
     /**
-     * Extract the project-level keys (the ones documented in
-     * {@see ProjectConfigMapper::PROJECT_KEYS}) from the inline
-     * `extra.skills` block. Donor `source` and any unrelated keys are
-     * deliberately dropped from the result.
-     *
-     * @param array<array-key, mixed> $skills the inline `extra.skills` value
-     *
-     * @return array<non-empty-string, mixed> ordered per {@see ProjectConfigMapper::PROJECT_KEYS}
-     *
-     * @psalm-pure
-     */
-    private function extractProjectKeys(array $skills): array
-    {
-        $out = [];
-        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
-            if (\array_key_exists($key, $skills)) {
-                /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
-                $out[$key] = $skills[$key];
-            }
-        }
-
-        return $out;
-    }
-
-    /**
-     * Emit the file content for a new `skills.json`. Defaults are NOT
-     * written — only the keys the user actually customised. Always
-     * starts with a `$schema` pointer so editors can validate the file.
-     *
-     * @param array<string, mixed> $migrated project keys in {@see ProjectConfigMapper::PROJECT_KEYS} order
-     *
-     * @psalm-pure
-     */
-    private function renderSkillsJson(array $migrated): string
-    {
-        $payload = ['$schema' => self::SCHEMA_URL] + $migrated;
-
-        $json = \json_encode(
-            $payload,
-            \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
-        );
-        if ($json === false) {
-            throw new \RuntimeException('Failed to encode skills.json payload');
-        }
-
-        return $json . "\n";
-    }
-
-    /**
-     * @param list<non-empty-string> $migratedKeys
-     */
-    private function emitComposerAttachedReport(IOInterface $io, string $path, array $migratedKeys): void
-    {
-        if ($migratedKeys === []) {
-            $io->write(\sprintf(
-                '<info>[init]</info> created %s (no project keys to migrate; stub created)',
-                $path,
-            ));
-            $io->write('<info>[init]</info> note: skills:update will now read project config from skills.json');
-            return;
-        }
-
-        $io->write(\sprintf(
-            '<info>[init]</info> created %s (migrated: %s)',
-            $path,
-            \implode(', ', $migratedKeys),
-        ));
-        $io->write(
-            '<info>[init]</info> composer.json updated: removed migrated project keys from extra.skills',
-        );
-        $io->write('<info>[init]</info> note: skills:update will now read project config from skills.json');
-    }
-
-    /**
-     * Warn the user when `--path` is anything other than the canonical
-     * `skills.json`. The loader only looks at that exact filename at the
-     * project root, so a custom location is created but won't be picked
-     * up by subsequent commands.
+     * The loader only auto-discovers `skills.json` at the project root.
+     * A custom location is created but won't be picked up by subsequent
+     * commands — surface that explicitly so the user is not surprised.
      */
     private function maybeWarnNonDefaultPath(IOInterface $io, string $path): void
     {

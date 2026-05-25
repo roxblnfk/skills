@@ -7,7 +7,9 @@ namespace LLM\Skills\Sync;
 use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
+use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
@@ -62,6 +64,7 @@ final readonly class SyncRunner
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
         private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
         private SymlinkLinker $symlinkLinker = new SymlinkLinker(),
+        private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
     ) {}
 
     /**
@@ -79,6 +82,33 @@ final readonly class SyncRunner
         IOInterface $io,
         SyncOptions $options,
     ): int {
+        // Auto-migration is part of the write-mode contract: any
+        // `skills:update` (or `post-update-cmd` auto-sync invocation)
+        // moves a legacy inline extra.skills block into the canonical
+        // skills.json before doing anything else. Skipped silently
+        // when there is no migration to do (skills.json exists, or no
+        // inline keys, or no composer.json at all). The
+        // `$options->autoMigrate=false` opt-out is used by the
+        // `post-install-cmd` hook, which must not rewrite
+        // `composer.json` mid-install.
+        if ($options->autoMigrate) {
+            $migration = $this->migrator->migrate($projectRoot, $io);
+            if ($migration->status === MigrationStatus::Failed) {
+                return Command::FAILURE;
+            }
+            if ($migration->status === MigrationStatus::Migrated) {
+                $io->write(\sprintf(
+                    '<info>[migrate]</info> moved extra.skills → skills.json (%s)',
+                    \implode(', ', $migration->migratedKeys),
+                ));
+                // The fresh skills.json is now the source of truth;
+                // the stale in-memory $extra (still containing the
+                // migrated keys) must be discarded so forProject()
+                // reads from disk.
+                $extra = null;
+            }
+        }
+
         try {
             $configResolution = $this->projectMapper->forProject($projectRoot, $extra);
         } catch (MalformedProjectConfig $e) {

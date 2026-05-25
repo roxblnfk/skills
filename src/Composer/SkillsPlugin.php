@@ -93,10 +93,26 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
     }
 
     /**
-     * Auto-sync hook. Runs `skills:update` with default options when the
-     * project opts in via `extra.skills.auto-sync: true`. Any failure is
-     * surfaced through the {@see IOInterface} but never thrown — a broken
-     * sync must not abort the surrounding `composer install` / `update`.
+     * Auto-sync hook. Runs `skills:update` with default options when
+     * the project opts in via `extra.skills.auto-sync: true`. Any
+     * failure is surfaced through the {@see IOInterface} but never
+     * thrown — a broken sync must not abort the surrounding
+     * `composer install` / `update`.
+     *
+     * The two events are handled with slightly different policy:
+     *
+     * - **`post-install-cmd`** is a fetch-only step from the user's
+     *   point of view; an unexpected `composer.json` rewrite during
+     *   `composer install` would be a surprise. The hook therefore
+     *   passes `autoMigrate: false` so any legacy inline
+     *   `extra.skills` block is read but not relocated.
+     * - **`post-update-cmd`** runs when the user is actively
+     *   reshuffling dependencies. A `composer.json` write is in
+     *   character with that command, so the migration goes through.
+     *
+     * Either way, the explicit `composer skills:update` is the
+     * unambiguous trigger for the migration; the auto-sync hook
+     * just opportunistically takes the same code path on `update`.
      */
     public function onPostInstallOrUpdate(ScriptEvent $event): void
     {
@@ -119,13 +135,25 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             return;
         }
 
+        $autoMigrate = $event->getName() === ScriptEvents::POST_UPDATE_CMD;
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: null,
+            interactive: false,
+            dryRun: false,
+            discovery: null,
+            aliasOverrides: null,
+            autoMigrate: $autoMigrate,
+        );
+
         $provider = new ComposerProvider($this->composer);
         (new SyncRunner())->run(
             $projectRoot,
             $provider,
             $provider->rootExtras(),
             $this->io,
-            SyncOptions::default(),
+            $options,
         );
     }
 }

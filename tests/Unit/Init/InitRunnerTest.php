@@ -295,6 +295,59 @@ final class InitRunnerTest
         Assert::true(\str_contains($io->getOutput(), 'will not be discovered'));
     }
 
+    public function nonDefaultPathWithInlineKeysMigratesAndRenames(): void
+    {
+        // Composer-attached + non-canonical `--path`: the migrator always
+        // writes to <root>/skills.json; the runner then renames the file
+        // to the requested location. End state: composer.json stripped,
+        // file at the user-chosen path, no leftover canonical skills.json.
+        $this->writeComposerJson([
+            'name' => 'demo/non-canonical',
+            'extra' => [
+                'skills' => [
+                    'target' => 'custom/skills',
+                    'trusted' => ['acme/*'],
+                ],
+            ],
+        ]);
+
+        $io = new BufferIO();
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(path: 'config/skills.json'),
+        );
+
+        Assert::same($code, Command::SUCCESS);
+        Assert::true(\is_file($this->tmp . '/config/skills.json'));
+        Assert::false(
+            \is_file($this->tmp . '/skills.json'),
+            'canonical skills.json must have been renamed away',
+        );
+
+        // composer.json was stripped during the migration step.
+        $composer = $this->readComposerJsonRaw();
+        Assert::false(\array_key_exists('target', $composer['extra']['skills'] ?? []));
+        Assert::false(\array_key_exists('trusted', $composer['extra']['skills'] ?? []));
+
+        // Non-default path always carries the auto-discovery warning.
+        Assert::true(\str_contains($io->getOutput(), 'will not be discovered'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function readComposerJsonRaw(): array
+    {
+        /** @var array<string, mixed> $decoded */
+        $decoded = \json_decode(
+            (string) \file_get_contents($this->tmp . '/composer.json'),
+            true,
+            flags: \JSON_THROW_ON_ERROR,
+        );
+        return $decoded;
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -27,6 +27,10 @@ final readonly class SyncOptions
      *         configured aliases", a list (including the empty one) means "the CLI list replaces project
      *         config entirely". Symmetric with {@see $targetOverride}: passing `--alias` at all is an
      *         explicit takeover, never a merge.
+     * @param bool $autoMigrate when `true` (default), the runner will move a legacy inline
+     *         `extra.skills` block into `skills.json` before doing the sync. Set to `false` by
+     *         read-mode-adjacent callers (today: the `post-install-cmd` auto-sync hook) that
+     *         must not rewrite the user's `composer.json` mid-install.
      *
      * @psalm-mutation-free
      */
@@ -38,6 +42,7 @@ final readonly class SyncOptions
         public bool $dryRun = false,
         public ?bool $discovery = null,
         public ?array $aliasOverrides = null,
+        public bool $autoMigrate = true,
     ) {}
 
     /**

@@ -70,6 +70,10 @@ final readonly class ShowRunner
                 '<comment>[llm/skills] no donor providers are active — nothing to show. '
                 . 'Run with -v for details.</comment>',
             );
+            // Read-only command: never rewrites composer.json. If the
+            // user is still on the legacy inline config, point them at
+            // the command that will migrate it.
+            $this->maybeNotifyLegacyConfig($projectRoot, $io);
             return Command::SUCCESS;
         }
 
@@ -84,6 +88,66 @@ final readonly class ShowRunner
             $io->write($line);
         }
 
+        // Trailing diagnostic — same channel as the existing `[hint]`
+        // line emitted by ReportFormatter. Belongs after the report so
+        // the user sees the data first and the meta-notice after.
+        $this->maybeNotifyLegacyConfig($projectRoot, $io);
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * When `skills.json` is absent but inline `extra.skills` carries
+     * project keys, emit a one-line hint pointing the user at
+     * `skills:update` (which would migrate the block). Quiet on
+     * projects that already migrated, or that never had inline
+     * config in the first place.
+     */
+    private function maybeNotifyLegacyConfig(Path $projectRoot, IOInterface $io): void
+    {
+        $skillsJsonPath = (string) $projectRoot->join('skills.json');
+        if (\is_file($skillsJsonPath)) {
+            return;
+        }
+
+        $composerJsonPath = (string) $projectRoot->join('composer.json');
+        if (!\is_file($composerJsonPath)) {
+            return;
+        }
+
+        $content = \file_get_contents($composerJsonPath);
+        if ($content === false) {
+            return;
+        }
+
+        try {
+            /** @var mixed $decoded */
+            $decoded = \json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return;
+        }
+        if (!\is_array($decoded)) {
+            return;
+        }
+        /** @var array<string, mixed> $extra */
+        $extra = \is_array($decoded['extra'] ?? null) ? $decoded['extra'] : [];
+        /** @var array<string, mixed> $skills */
+        $skills = \is_array($extra['skills'] ?? null) ? $extra['skills'] : [];
+
+        $present = [];
+        foreach (\LLM\Skills\Config\Mapper\ProjectConfigMapper::PROJECT_KEYS as $key) {
+            if (\array_key_exists($key, $skills)) {
+                $present[] = $key;
+            }
+        }
+        if ($present === []) {
+            return;
+        }
+
+        $io->write(\sprintf(
+            '<comment>[notice] legacy inline config detected (extra.skills: %s). '
+            . 'Run `composer skills:update` (or `skills:init`) to migrate it into skills.json.</comment>',
+            \implode(', ', $present),
+        ));
     }
 }
