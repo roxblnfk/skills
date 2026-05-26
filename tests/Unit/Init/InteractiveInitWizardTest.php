@@ -195,6 +195,33 @@ final class InteractiveInitWizardTest
         Assert::same($result['trusted'] ?? null, ['acme/*', 'vendor/pkg']);
     }
 
+    public function trustedNoneTokenClearsExistingList(): void
+    {
+        // With an existing trusted list, typing `<none>` at the prompt
+        // means "clear it" — not "keep current". Empty Enter still
+        // means "keep current" (covered by existingDefaultsAreShownInPrompts).
+        // The two paths must be distinguishable for the wizard to be
+        // useful as an editor of pre-existing skills.json values.
+        $io = $this->ioWithAnswers([
+            '',         // target
+            '',         // aliases
+            '<none>',   // trusted → clear
+            '',
+            '',
+            '',
+            'yes',
+        ]);
+
+        $result = (new InteractiveInitWizard())->run($io, [
+            'trusted' => ['acme/*', 'vendor/pkg'],
+        ]);
+
+        Assert::false(
+            \array_key_exists('trusted', $result ?? []),
+            'cleared trusted must not land in the result (empty list is the default)',
+        );
+    }
+
     public function booleanPromptsCapturedCorrectly(): void
     {
         // Only non-default values land in the result map (defaults are

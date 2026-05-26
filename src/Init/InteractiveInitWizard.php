@@ -320,7 +320,8 @@ final readonly class InteractiveInitWizard
         $io->write('     project. Patterns: <comment>vendor/package</comment> (exact) or');
         $io->write('     <comment>vendor/*</comment> (whole vendor). Built-in trust and direct');
         $io->write('     dependencies are implicitly trusted — only list what those');
-        $io->write('     two sources do not already cover.');
+        $io->write('     two sources do not already cover. Type <comment>&lt;none&gt;</comment>');
+        $io->write('     to clear the list.');
 
         $defaultStr = $current === [] ? '<none>' : \implode(',', $current);
         /** @var mixed $answer */
@@ -329,9 +330,20 @@ final readonly class InteractiveInitWizard
             $defaultStr,
         );
         $answer = \is_string($answer) ? \trim($answer) : '';
-        if ($answer === '' || $answer === '<none>') {
+
+        // Three branches:
+        // - empty answer       → user pressed Enter; keep current list as-is.
+        // - literal "<none>"   → user explicitly cleared. When the default was
+        //                       already "<none>" (empty current), this collapses
+        //                       to the same empty result naturally.
+        // - everything else    → parse comma-separated tokens.
+        if ($answer === '') {
             $io->write('');
             return $current;
+        }
+        if ($answer === '<none>') {
+            $io->write('');
+            return [];
         }
 
         $out = [];
