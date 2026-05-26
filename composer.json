@@ -64,9 +64,7 @@
         }
     },
     "extra": {
-        "class": "LLM\\Skills\\Composer\\SkillsPlugin",
-        "skills": {
-        }
+        "class": "LLM\\Skills\\Composer\\SkillsPlugin"
     },
     "config": {
         "sort-packages": true,
