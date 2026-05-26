@@ -154,9 +154,9 @@ final readonly class RemoteProvider implements DonorProvider
             try {
                 $donor = $this->vendorMapper->fromExtra($packageName, $path, $extra);
                 $provenance = $ref->provenance ?? 'remote';
-                // Spec §8.3: `remote[]` entries are user-declared and
-                // therefore implicit-trusted, regardless of `from` value.
-                // The planner's trust list applies to local-provider
+                // `remote[]` entries are user-declared and therefore
+                // implicit-trusted, regardless of `from` value. The
+                // planner's trust list applies to local-provider
                 // transitive discoveries only.
                 $donors[] = $donor->withProvenance($provenance)->asImplicitlyTrusted();
             } catch (MalformedVendorConfig $e) {
@@ -194,7 +194,7 @@ final readonly class RemoteProvider implements DonorProvider
      * through {@see \LLM\Skills\Config\VendorConfig::$implicitTrust}
      * instead — set in {@see self::discover()} on every donor this
      * provider emits — which the planner checks before consulting
-     * the trust list (spec §8.3).
+     * the trust list.
      *
      * @psalm-suppress MissingPureAnnotation
      *         the inferred-pure body is incidental; the interface contract is impure

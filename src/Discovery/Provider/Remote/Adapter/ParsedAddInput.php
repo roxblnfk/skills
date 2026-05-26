@@ -17,10 +17,10 @@ namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
  * - `host`     — registry / API host override (`null` ⇒ use
  *                adapter default).
  * - `ref`      — explicit ref the user typed (`null` ⇒ adapter
- *                runs the §4.3 cascade at sync time).
+ *                runs the ref cascade at sync time).
  *
- * Constructed by the adapter and consumed by the `skills:add` runner
- * (Phase 4). Kept separate from {@see \LLM\Skills\Config\RemoteEntry}
+ * Constructed by the adapter and consumed by the `skills:add` runner.
+ * Kept separate from {@see \LLM\Skills\Config\RemoteEntry}
  * because the latter is the **stored** shape (carries adapter-specific
  * extras and is loaded by the mapper) while this is the **parsed-CLI**
  * shape that feeds the writer.

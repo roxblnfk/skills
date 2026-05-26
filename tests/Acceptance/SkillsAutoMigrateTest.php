@@ -19,7 +19,7 @@ use Testo\Test;
  * Acceptance coverage for the automatic migration of legacy inline
  * `extra.skills` into `skills.json`.
  *
- * Contract (see `spec-config-file.md` §3):
+ * Contract:
  *
  * - Write-mode commands (`skills:update`, `post-update-cmd` autosync)
  *   migrate on first contact.

@@ -23,7 +23,8 @@ use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
  *    `https://github.com/owner/repo` into a {@see ParsedAddInput}.
  * 2. **Resolve** ({@see self::resolve()}) — read the entry's `ref`
  *    field (or absence) and produce a concrete archive URL + a
- *    concrete ref string, walking the §4.3 cascade when needed.
+ *    concrete ref string, walking the ref cascade (highest stable tag
+ *    → highest prerelease → default branch HEAD) when needed.
  * 3. **API base** — handle the host vs API URL mapping:
  *    `https://github.com` ⇒ `https://api.github.com`; GHE uses
  *    `<host>/api/v3`.
@@ -88,7 +89,7 @@ final readonly class GithubAdapter implements HostAdapter
      * - `https://github.com/owner/repo.git` — `.git` suffix tolerated.
      *
      * `$refOverride` and the embedded `@ref` cannot both be set —
-     * conflicting ref sources are an error per spec §6.1.
+     * conflicting ref sources are rejected with an error.
      *
      * @psalm-suppress PossiblyUndefinedArrayOffset preg_match capture groups are populated when the match succeeds
      *

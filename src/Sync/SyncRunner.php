@@ -150,7 +150,7 @@ final readonly class SyncRunner
         );
         $donors = [...$discovery->donors, ...$discoveryResolution->included];
 
-        // Spec §6.2: `--from=<id>` narrows the sync to a single
+        // `--from=<id>` narrows the sync to a single
         // provider's donors. Provenance is tagged at the source
         // (`composer` for ComposerProvider, the entry's `from` for
         // RemoteProvider) so a simple equality filter is enough.
@@ -235,16 +235,14 @@ final readonly class SyncRunner
         $this->emitTrailingDiagnostics($io, $plan, $discoveryResolution->excluded);
 
         // Alias errors fail the run loudly — silent partial success would
-        // mask broken `.claude/skills` / `.cursor/skills` aliases on CI,
-        // which is exactly the footgun §4.2 of the multitarget spec
-        // exists to prevent.
+        // mask broken `.claude/skills` / `.cursor/skills` aliases on CI.
         return $aliasFailed ? Command::FAILURE : Command::SUCCESS;
     }
 
     /**
      * Process every alias declared in the plan through {@see SymlinkLinker}.
      * Returns `true` if any alias errored — the caller turns that into a
-     * non-zero exit code per §4.2 of the multitarget spec.
+     * non-zero exit code.
      */
     private function processAliases(IOInterface $io, SyncPlan $plan, bool $dryRun): bool
     {

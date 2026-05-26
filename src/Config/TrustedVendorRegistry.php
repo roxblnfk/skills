@@ -8,8 +8,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Info;
 
 /**
- * Loader for the per-provider built-in trust files described in
- * spec §8.
+ * Loader for the per-provider built-in trust files.
  *
  * Each provider that supports transitive donor discovery (today only
  * Composer; later npm, go) ships an opinionated list of trusted

@@ -13,13 +13,13 @@ use Testo\Codecov\Covers;
 use Testo\Test;
 
 /**
- * Unit coverage for the cache-path layout described in spec §7.
+ * Unit coverage for the cache-path layout.
  *
  * The paths are deterministic, human-readable enough to grep through
- * a vendor/ tree, and stable across the spec-described inputs. These
- * tests pin the layout so that a future refactor of {@see CachePathBuilder}
- * cannot silently shift cached archives to a new location (which
- * would amount to a one-time mass cache miss for every consumer).
+ * a vendor/ tree, and stable across inputs. These tests pin the
+ * layout so that a future refactor of {@see CachePathBuilder} cannot
+ * silently shift cached archives to a new location (which would
+ * amount to a one-time mass cache miss for every consumer).
  */
 #[Test]
 #[Covers(CachePathBuilder::class)]
@@ -108,7 +108,7 @@ final class CachePathBuilderTest
     public function buildForEntryUrlOnlyAdapterUsesHashedSegment(): void
     {
         // The `zip` adapter has no `package`; the cache key falls back
-        // to a URL hash, matching the URL-only layout in spec §7.
+        // to a URL hash, matching the URL-only layout.
         $b = new CachePathBuilder();
         $entry = new RemoteEntry(
             from: ProviderId::ZIP,

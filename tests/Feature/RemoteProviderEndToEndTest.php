@@ -115,7 +115,7 @@ final class RemoteProviderEndToEndTest
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->packageName, 'acme/skills');
         Assert::same($result->donors[0]->provenance, 'github');
-        // Spec §8.3: every `remote[]` donor is implicit-trusted, so
+        // Every `remote[]` donor is implicit-trusted, so
         // {@see \LLM\Skills\Sync\SyncPlanner} approves it without
         // consulting the trust list or the direct-dep short-circuit.
         Assert::true($result->donors[0]->implicitTrust);

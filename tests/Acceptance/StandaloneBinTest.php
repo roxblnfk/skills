@@ -16,8 +16,7 @@ use Testo\Test;
  * Acceptance tests for the standalone `bin/skills` binary running in
  * a directory without a `composer.json`.
  *
- * Per `spec-config-file.md` §3.2 / §10, with no Composer install tree
- * around the utility:
+ * With no Composer install tree around the utility, the binary:
  *
  *  1. Treats the cwd as the project root.
  *  2. Reads `skills.json` directly when it exists (or uses defaults).

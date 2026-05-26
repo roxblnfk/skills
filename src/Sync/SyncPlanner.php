@@ -33,8 +33,8 @@ use LLM\Skills\Config\VendorConfig;
  *   asked for by name.
  * - A donor flagged {@see VendorConfig::$implicitTrust} is user-declared at
  *   the source level (today: every `remote[]` entry, regardless of `from`).
- *   The trust list applies to local-provider transitive discoveries only
- *   (spec §8.3), so the planner skips it for these donors.
+ *   The trust list applies to local-provider transitive discoveries only,
+ *   so the planner skips it for these donors.
  * - A package declared as a direct dependency in the consumer's root
  *   `composer.json` (under `require` or `require-dev`) is implicitly
  *   trusted — the user already owns the decision to depend on it. This
@@ -75,10 +75,10 @@ final readonly class SyncPlanner
                 ? []
                 : \array_fill_keys($directDependencies, true);
             foreach ($filtered as $donor) {
-                // Spec §8.3: a donor flagged `implicitTrust` is
-                // user-declared (today: every `remote[]` entry); the
-                // trust list applies only to local-provider transitive
-                // discoveries, so we skip the check entirely.
+                // A donor flagged `implicitTrust` is user-declared
+                // (today: every `remote[]` entry); the trust list
+                // applies only to local-provider transitive discoveries,
+                // so we skip the check entirely.
                 if (
                     $donor->implicitTrust
                     || isset($directSet[$donor->packageName])

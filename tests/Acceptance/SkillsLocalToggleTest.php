@@ -15,7 +15,7 @@ use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 /**
- * Acceptance coverage for the spec §3.2 `local.composer` toggle:
+ * Acceptance coverage for the `local.composer` toggle in `skills.json`:
  *
  * - `local.composer == false` disables the Composer donor provider
  *   even when a valid `composer.json` is around — the runner falls

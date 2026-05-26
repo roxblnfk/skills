@@ -18,10 +18,10 @@ use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
  *    `vendor/llm-skills/cache/url/<sha256(url)-prefix>/<ref-segment>/`.
  *    The fetcher receives a bare {@see RemoteDonorRef} (URL + ref) and
  *    has no access to the originating `from` / `host` / `package`
- *    triple, so it cannot use the human-readable spec §7 layout
- *    that {@see CachePathBuilder::buildForEntry()} produces; the
- *    URL already encodes from/host/ref uniquely, so a URL-hash
- *    keyed cache is functionally equivalent.
+ *    triple, so it cannot use the human-readable layout that
+ *    {@see CachePathBuilder::buildForEntry()} produces; the URL
+ *    already encodes from/host/ref uniquely, so a URL-hash keyed
+ *    cache is functionally equivalent.
  * 2. If the path already exists, return it — the cache is content-
  *    addressed-by-ref, so a hit means we have the right files.
  * 3. Otherwise, GET the URL via {@see HttpClient}, write the bytes
@@ -32,9 +32,9 @@ use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
  *
  * The fetcher's contract is "given a {@see RemoteDonorRef}, return
  * the path to an extracted Composer-package-shaped directory".
- * Per spec §9.1 any failure (network, corrupt zip, ZipArchive missing,
- * write error) becomes a {@see RemoteFetchException} that the
- * provider turns into a per-ref warning.
+ * Any failure (network, corrupt zip, ZipArchive missing, write error)
+ * becomes a {@see RemoteFetchException} that the provider turns into
+ * a per-ref warning.
  *
  * The project root is bound to the fetcher at construction time
  * (`$projectRoot`) — `fetch()` does not take it as an argument.

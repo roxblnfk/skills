@@ -30,8 +30,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * After the runner returns SUCCESS, the entrypoint optionally
  * triggers a single-entry sync (via {@see SyncRunner}) so the new
  * skills land in the target immediately — matching the
- * `composer require` "edit + install" ergonomics described in spec
- * §6.1 step 6.
+ * `composer require` "edit + install" ergonomics.
  *
  * @internal
  */
@@ -66,8 +65,8 @@ final class Add extends BaseCommand
             return $exit;
         }
 
-        // Spec §6.1 step 6: drop straight into a sync so the newly
-        // registered remote donor's skills land in the target. We
+        // Drop straight into a sync so the newly registered remote
+        // donor's skills land in the target immediately. We
         // intentionally use the full provider chain (local +
         // remote) so the user sees the same view they'd see if they
         // ran `skills:update` themselves.

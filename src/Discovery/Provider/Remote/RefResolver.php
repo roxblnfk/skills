@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Discovery\Provider\Remote;
 
 /**
- * Pure helpers for the spec §4 ref-resolution rules.
+ * Pure helpers for the ref-resolution rules used by remote adapters.
  *
  * Three responsibilities:
  *
@@ -14,18 +14,18 @@ namespace LLM\Skills\Discovery\Provider\Remote;
  *   like `-rc.1` / `-beta` / `-alpha`).
  * - **Pick the best tag** from a list — highest stable, falling
  *   back to highest semver overall, falling back to the default
- *   branch HEAD (the §4.3 cascade).
+ *   branch HEAD (the cascade).
  * - **Apply caret constraints** — match `^X.Y.Z` (the only
- *   constraint flavour the spec mandates) against a tag list.
+ *   constraint flavour supported) against a tag list.
  *
  * Composer ships a full semver implementation in
  * `composer/semver`, but the resolver here intentionally rolls a
- * narrow subset: only the pieces spec §4 actually requires, no
+ * narrow subset: only the pieces this plugin actually requires, no
  * `*` / `~` / `>=` / `<` / `||` parsing, no per-major caret
  * edge cases below 1.0.0. Keeping this minimal means the resolver
  * stays pure, testable from a fixture list of tag strings, and
  * impossible to misuse by passing weird Composer constraints
- * that the spec does not promise to support.
+ * we do not promise to support.
  *
  * @psalm-immutable
  */
@@ -35,21 +35,21 @@ final readonly class RefResolver
      * Tags shaped like `X.Y.Z` or `vX.Y.Z` with no suffix. The
      * three-component requirement is deliberate: `v1` / `v1.0`
      * tags are not "stable semver" by this definition — they would
-     * make caret formation in `skills:add` (§4.2) ambiguous
-     * (is `^1` shorthand for `^1.0.0`?). The spec keeps caret
-     * formation tied to three-component tags only.
+     * make caret formation in `skills:add` ambiguous (is `^1`
+     * shorthand for `^1.0.0`?). Caret formation is tied to
+     * three-component tags only.
      */
     private const STABLE_TAG_REGEX = '/^v?(\d+)\.(\d+)\.(\d+)$/';
 
-    /** Any semver-shape, including prereleases. Cascade step 2. */
+    /** Any semver-shape, including prereleases. Used by the cascade's fallback step. */
     private const ANY_SEMVER_TAG_REGEX = '/^v?(\d+)\.(\d+)\.(\d+)(?:-[\w.+-]+)?$/';
 
     /** Caret constraint: `^A`, `^A.B`, or `^A.B.C`. */
     private const CARET_CONSTRAINT_REGEX = '/^\^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/';
 
     /**
-     * Whether `$tag` is a "stable semver" tag per the spec §4.1
-     * definition (three-component, no prerelease suffix).
+     * Whether `$tag` is a "stable semver" tag (three-component,
+     * no prerelease suffix).
      *
      * @psalm-pure
      */
@@ -142,8 +142,9 @@ final readonly class RefResolver
      * - `^v1.2.3` is treated identically to `^1.2.3`
      *
      * Pre-1.0 caret semantics (`^0.2.3` meaning `< 0.3.0`) are
-     * intentionally not implemented — the spec only promises this
-     * for major>=1. Pre-1.0 inputs return null rather than guessing.
+     * intentionally not implemented — caret support is only
+     * promised for major>=1. Pre-1.0 inputs return null rather
+     * than guessing.
      *
      * @param list<non-empty-string> $tags
      *
@@ -162,7 +163,7 @@ final readonly class RefResolver
         $patch = isset($m[3]) && $m[3] !== '' ? (int) $m[3] : 0;
 
         if ($major < 1) {
-            // Pre-1.0 caret semantics differ — out of scope per spec §4.
+            // Pre-1.0 caret semantics differ — out of scope.
             return null;
         }
 
@@ -194,9 +195,9 @@ final readonly class RefResolver
 
     /**
      * Format a stable tag as a `^X.Y.Z` constraint for storage in
-     * `skills.json` per spec §4.2. Strips an optional leading `v`
-     * to keep the constraint shape canonical — Composer-style
-     * constraints don't carry the prefix.
+     * `skills.json`. Strips an optional leading `v` to keep the
+     * constraint shape canonical — Composer-style constraints
+     * don't carry the prefix.
      *
      * Returns `null` if the input is not a stable tag, signalling
      * the caller that no auto-caret can be derived (cascade falls
@@ -284,10 +285,10 @@ final readonly class RefResolver
         if ($core !== 0) {
             return $core;
         }
-        // Stable (empty prerelease) outranks any prerelease — semver
-        // §11 invariant. Among prereleases we fall back to lexical
-        // ordering as a "good enough" tiebreaker; the spec does not
-        // require full §11 dotted-identifier comparison.
+        // Stable (empty prerelease) outranks any prerelease — the
+        // standard SemVer precedence rule. Among prereleases we fall
+        // back to lexical ordering as a "good enough" tiebreaker;
+        // full dotted-identifier comparison is not needed here.
         if ($a[3] === '' && $b[3] !== '') {
             return 1;
         }

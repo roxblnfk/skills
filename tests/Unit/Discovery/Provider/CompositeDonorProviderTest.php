@@ -103,9 +103,9 @@ final class CompositeDonorProviderTest
 
     public function laterChildWinsOnDuplicatePackageName(): void
     {
-        // Spec §6.5: remote wins on collisions with local. The composite
-        // does not know "local vs remote" — the entrypoint orders
-        // children so that remote is last; the composite's only rule is
+        // Remote wins on collisions with local. The composite does
+        // not know "local vs remote" — the entrypoint orders children
+        // so that remote is last; the composite's only rule is
         // "later wins". Older entries become `-v` warnings.
         $local = self::provider(
             active: true,

@@ -80,8 +80,8 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
                 $resolved = $adapter->resolve($entry);
                 // Tag the ref with the entry's adapter id so the
                 // downstream provenance carries through to VendorConfig
-                // (spec §6.2 --from filter). The adapter itself does
-                // not know its own id at resolve time; the source does.
+                // (powering the `--from` CLI filter). The adapter itself
+                // does not know its own id at resolve time; the source does.
                 yield new RemoteDonorRef(
                     url: $resolved->url,
                     ref: $resolved->ref,

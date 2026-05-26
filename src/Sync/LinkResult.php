@@ -20,7 +20,7 @@ use Internal\Path;
  * - {@see LinkStatus::Created}        — a new junction/symlink was put in place.
  * - {@see LinkStatus::AlreadyCorrect} — the alias path already pointed at the target; no-op.
  * - {@see LinkStatus::WouldCreate}    — dry-run; nothing was written, but the linker would have created it.
- * - {@see LinkStatus::Failed}         — any error from §4.2 of the multitarget spec. `$reason` is non-null.
+ * - {@see LinkStatus::Failed}         — a state-matrix rejection (alias path occupied, points elsewhere, cross-volume on Windows, etc.). `$reason` is non-null.
  *
  * @psalm-immutable
  */

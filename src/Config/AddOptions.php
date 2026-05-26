@@ -23,7 +23,8 @@ final readonly class AddOptions
      * @param non-empty-string|null $host registry / API host override (private Packagist,
      *         GHE, self-hosted GitLab)
      * @param non-empty-string|null $ref version pin override; null means "let the
-     *         adapter run the §4.3 cascade and write per §4.2"
+     *         adapter pick the latest stable tag (or default branch HEAD) and
+     *         store a `^X.Y.Z` caret only when a stable semver tag was chosen"
      * @param bool $sync when true (default), run a single-entry sync after the add so
      *         the new skills land in the target immediately — matches `composer require`'s
      *         "edit + install" ergonomics. When false, only the manifest is updated.

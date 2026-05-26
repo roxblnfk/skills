@@ -30,9 +30,9 @@ final readonly class VendorConfig
      *         (the package does not declare `extra.skills`); `false` for declared donors
      * @param non-empty-string $provenance which provider produced this donor — defaults
      *         to {@see ProviderId::COMPOSER} for back-compat. Used by
-     *         `skills:update --from=<id>` (spec §6.2) to filter the donor list.
+     *         `skills:update --from=<id>` to filter the donor list.
      * @param bool $implicitTrust the user explicitly declared this donor — the trust
-     *         list is not consulted (spec §8.3). Set by {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider}
+     *         list is not consulted. Set by {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider}
      *         for every `remote[]` entry, regardless of `from` value. Local providers
      *         keep this `false` and let {@see \LLM\Skills\Sync\SyncPlanner} run the
      *         per-registry trust check.
@@ -82,7 +82,7 @@ final readonly class VendorConfig
      * Return a copy of this donor flagged as implicit-trusted. The
      * `remote[]` provider calls this on every donor it produces so
      * the planner does not consult the trust list for them
-     * (spec §8.3 — user-declared = trusted).
+     * (user-declared = trusted).
      *
      * @psalm-mutation-free
      */

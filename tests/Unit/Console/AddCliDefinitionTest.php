@@ -14,8 +14,8 @@ use Testo\Test;
 
 /**
  * Verifies that {@see AddCliDefinition} produces the right
- * {@see \LLM\Skills\Config\AddOptions} for every CLI shape spec §6.1
- * describes.
+ * {@see \LLM\Skills\Config\AddOptions} for every CLI shape
+ * `skills:add` accepts.
  *
  * The pattern is the same one used for the sync CLI: configure a real
  * Symfony Command, feed it an {@see ArrayInput}, then run
@@ -53,7 +53,7 @@ final class AddCliDefinitionTest
     public function noSyncFlagFlipsSyncToFalse(): void
     {
         // `--no-sync` is the only way to suppress the follow-up
-        // sync. Spec §6.1 step 6 makes the sync the default.
+        // sync; the auto-sync is the default behaviour.
         $opts = $this->build(['input' => 'acme/skills', '--no-sync' => true]);
 
         Assert::false($opts->sync);

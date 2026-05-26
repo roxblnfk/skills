@@ -23,7 +23,7 @@ final class RefResolverTest
 
     public function prereleaseIsNotStable(): void
     {
-        // Spec §4.1: stable means three-component with no suffix.
+        // Stable means three-component with no suffix.
         $r = new RefResolver();
         Assert::false($r->isStable('1.2.3-rc.1'));
         Assert::false($r->isStable('v1.2.3-beta'));
@@ -76,7 +76,7 @@ final class RefResolverTest
 
     public function pickHighestAnyPreferStableOverPrereleaseOfSameVersion(): void
     {
-        // SemVer §11 invariant: 1.0.0 > 1.0.0-rc.1.
+        // SemVer precedence rule: 1.0.0 > 1.0.0-rc.1.
         $r = new RefResolver();
 
         Assert::same($r->pickHighestAny(['1.0.0', '1.0.0-rc.1', '1.0.0-rc.2']), '1.0.0');
@@ -120,8 +120,8 @@ final class RefResolverTest
 
     public function caretIgnoresPrereleases(): void
     {
-        // §4.2 reserved caret for stable tags. Prereleases inside a
-        // valid range don't count toward a `^` match.
+        // Caret matching is reserved for stable tags. Prereleases
+        // inside a valid range don't count toward a `^` match.
         $r = new RefResolver();
 
         Assert::same(
@@ -159,7 +159,7 @@ final class RefResolverTest
     public function caretPre1MajorReturnsNull(): void
     {
         // Pre-1.0 caret has different semantics (0.x is treated as
-        // major+patch); spec doesn't promise to support it.
+        // major+patch); the resolver doesn't promise to support it.
         $r = new RefResolver();
 
         Assert::same($r->resolveCaret('^0.2.3', ['0.2.3', '0.2.5', '0.3.0']), null);
@@ -183,9 +183,9 @@ final class RefResolverTest
 
     public function formatCaretReturnsNullForPrereleaseOrNonSemver(): void
     {
-        // §4.2: caret formation only happens for stable tags. A
-        // prerelease or non-semver tag tells `skills:add` to omit the
-        // `ref` field entirely.
+        // Caret formation only happens for stable tags. A prerelease
+        // or non-semver tag tells `skills:add` to omit the `ref`
+        // field entirely.
         $r = new RefResolver();
 
         Assert::same($r->formatCaret('v1.2.3-rc.1'), null);

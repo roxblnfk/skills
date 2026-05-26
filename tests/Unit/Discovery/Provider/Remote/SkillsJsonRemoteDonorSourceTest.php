@@ -145,11 +145,11 @@ final class SkillsJsonRemoteDonorSourceTest
 
     public function yieldedRefIsTaggedWithAdapterProvenance(): void
     {
-        // Spec §6.2 --from filter: the source carries each entry's
-        // `from` value through to the yielded RemoteDonorRef so that
-        // downstream VendorConfig.provenance can be set by the
-        // RemoteProvider. The adapter itself does not know its own
-        // id at resolve time — the source backfills it here.
+        // For the `--from` CLI filter to work, the source carries each
+        // entry's `from` value through to the yielded RemoteDonorRef
+        // so that downstream VendorConfig.provenance can be set by the
+        // RemoteProvider. The adapter itself does not know its own id
+        // at resolve time — the source backfills it here.
         $this->writeSkillsJson([
             'remote' => [
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],

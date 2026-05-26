@@ -15,8 +15,7 @@ use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 /**
- * Acceptance coverage for the spec §6.2 `--from=<id>` filter on
- * `skills:update`.
+ * Acceptance coverage for the `--from=<id>` filter on `skills:update`.
  *
  * Sanity tests against the existing sandbox donor packages. We don't
  * have a remote provider hooked up here (Phase 7 ships the HTTP

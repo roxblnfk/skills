@@ -57,8 +57,8 @@ final class GithubAdapterTest
 
     public function refOverrideTakesPrecedenceOverEmbedded(): void
     {
-        // Spec §6.1 lets `--ref` win when it equals the embedded ref;
-        // they only conflict when they disagree.
+        // `--ref` is allowed to win when it equals the embedded ref;
+        // the two only conflict when they disagree.
         $adapter = self::adapter();
 
         $parsed = $adapter->parseAddInput('acme/skills@v1.2.3', refOverride: 'v1.2.3');

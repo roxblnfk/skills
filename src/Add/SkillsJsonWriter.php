@@ -11,7 +11,7 @@ use LLM\Skills\Config\RemoteEntry;
 
 /**
  * Mutates the project's `skills.json` to insert or update a single
- * `remote[]` entry per spec §6.1.
+ * `remote[]` entry on behalf of `skills:add`.
  *
  * Three guarantees:
  *
@@ -163,7 +163,7 @@ final readonly class SkillsJsonWriter
 
     /**
      * Render an entry as the JSON-serialisable map for storage. Key
-     * order is fixed per spec §3.5: `from` → `host` (if present) →
+     * order is fixed for stable diffs: `from` → `host` (if present) →
      * `package` or `url` → `ref` (if present) → extras.
      *
      * @param RemoteEntry|array<string, mixed> $entry

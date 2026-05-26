@@ -60,8 +60,8 @@ final class AddCliDefinition
                 null,
                 InputOption::VALUE_REQUIRED,
                 'Pin a specific tag, branch, SHA, or Composer-style constraint. '
-                . 'Without this flag, the adapter resolves the latest stable per '
-                . 'spec §4.',
+                . 'Without this flag, the adapter resolves the latest stable tag, '
+                . 'falling back to the default branch HEAD if no stable tag exists.',
             )
             ->addOption(
                 'no-sync',

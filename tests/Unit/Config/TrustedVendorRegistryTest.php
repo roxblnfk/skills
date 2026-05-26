@@ -14,8 +14,7 @@ use Testo\Test;
 /**
  * Unit coverage for {@see TrustedVendorRegistry}.
  *
- * Spec §8: per-ecosystem trust file, loaded by provider id. The
- * registry must:
+ * Per-ecosystem trust file, loaded by provider id. The registry must:
  *
  * - Return a populated list for the bundled `composer` file.
  * - Return {@see TrustedVendors::empty()} for an unregistered
@@ -43,8 +42,8 @@ final class TrustedVendorRegistryTest
 
     public function unknownProviderIdReturnsEmpty(): void
     {
-        // Spec §8.5: "no provider-id, no built-in trust — the
-        // registry must be opted-in explicitly". An id with no
+        // No provider-id mapping means no built-in trust — the
+        // registry must be opted-in explicitly. An id with no
         // mapping returns an empty list, not an error.
         $vendors = (new TrustedVendorRegistry())->loadForProvider('totally-unknown');
 
@@ -53,7 +52,7 @@ final class TrustedVendorRegistryTest
 
     public function npmProviderReturnsEmptyUntilFileShips(): void
     {
-        // npm is locked vocabulary (spec §5.2) but does NOT have a
+        // npm is locked vocabulary in ProviderId but does NOT have a
         // bundled trust file in v1. The registry maps it to "no
         // built-in trust" — same effect as a typo. Pins the
         // forward-compat contract: shipping trusted-npm.txt becomes

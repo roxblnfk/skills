@@ -13,8 +13,9 @@ use Composer\Util\HttpDownloader;
  * Wrapping Composer's downloader gives us three things for free:
  *
  * - **Credentials** — `auth.json` / `COMPOSER_AUTH` GitHub tokens and
- *   bearer tokens land in the request automatically. Spec §5.3 makes
- *   this the single source of truth for remote-fetch authentication.
+ *   bearer tokens land in the request automatically. This makes
+ *   Composer's auth machinery the single source of truth for
+ *   remote-fetch authentication.
  * - **HTTPS / SSL handling** — Composer already handles certificate
  *   verification, system root CAs, and proxy environment variables.
  * - **Retry / TLS fallback** — Composer's downloader handles 5xx

@@ -8,12 +8,12 @@ namespace LLM\Skills\Config;
  * One entry of the `remote[]` list in `skills.json`.
  *
  * Each entry tells the remote provider what to fetch and where from:
- * `from` is the adapter id (spec §5.2 vocabulary), `package` or `url`
- * is the identifier inside that adapter's namespace, `host` overrides
- * the adapter's default registry (private Packagist / GitHub
- * Enterprise / self-hosted GitLab / …), `ref` is an adapter-specific
- * version pin (§4), and `extras` carries adapter-specific optional
- * keys (e.g. `sha256` on `zip`).
+ * `from` is the adapter id (a value from {@see \LLM\Skills\Discovery\Provider\ProviderId}),
+ * `package` or `url` is the identifier inside that adapter's namespace,
+ * `host` overrides the adapter's default registry (private Packagist /
+ * GitHub Enterprise / self-hosted GitLab / …), `ref` is an
+ * adapter-specific version pin, and `extras` carries adapter-specific
+ * optional keys (e.g. `sha256` on `zip`).
  *
  * Exactly one of `package` and `url` is set — the mapper enforces this
  * up-front; downstream code can rely on {@see self::identifier()}
@@ -33,8 +33,8 @@ final readonly class RemoteEntry
      * @param non-empty-string|null $host explicit registry / API host override; absent means
      *         "use the adapter's default" (e.g. `https://api.github.com` for github).
      * @param non-empty-string|null $ref adapter-specific version pin (`^1.2.3`, `v1.2.3`,
-     *         `main`, full SHA, …). Absent means the adapter resolves the latest stable
-     *         per the §4.3 cascade.
+     *         `main`, full SHA, …). Absent means the adapter picks the latest stable
+     *         tag, falling back to the default branch HEAD.
      * @param array<string, mixed> $extras adapter-specific extra keys preserved verbatim
      *         (e.g. `{"sha256": "…"}` on `zip`). Empty map when the entry has no extras.
      *
@@ -65,9 +65,9 @@ final readonly class RemoteEntry
     }
 
     /**
-     * Composite uniqueness key per spec §3.4: `(from, host, package|url)`.
+     * Composite uniqueness key: `(from, host, package|url)`.
      * Used by the mapper to reject duplicate entries and by `skills:add`
-     * (Phase 4) to detect upsert vs insert.
+     * to detect upsert vs insert.
      *
      * `host` is rendered as the empty string when absent — the adapter's
      * default-host fill-in happens at resolve time, not at config-load

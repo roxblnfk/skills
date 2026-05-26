@@ -16,8 +16,8 @@ namespace LLM\Skills\Discovery\Provider;
  * - The `--from=<id>` CLI flag on `skills:update` (Phase 5).
  *
  * The vocabulary is locked up front so the format can accommodate future
- * adapters without a schema migration. Spec §5.2 is the source of truth
- * for the table of identifiers.
+ * adapters without a schema migration. The constants below are the
+ * source of truth for the table of identifiers.
  *
  * @psalm-immutable
  */

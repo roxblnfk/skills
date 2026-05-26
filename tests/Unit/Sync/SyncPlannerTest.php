@@ -584,7 +584,7 @@ final class SyncPlannerTest
 
     public function implicitTrustDonorIsApprovedWithoutAnyTrustPattern(): void
     {
-        // Spec §8.3: a `remote[]` donor carries `implicitTrust = true` and
+        // A `remote[]` donor carries `implicitTrust = true` and
         // the planner must approve it without consulting the trust list or
         // the direct-dependency short-circuit. Reproduces copilot review
         // #1 on PR #15: with an empty trust list and no direct deps, the

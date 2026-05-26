@@ -80,9 +80,8 @@ final class SkillsJsonWriterTest
 
     public function upsertReplacesEntryWithSameCompositeKey(): void
     {
-        // Spec §3.4 + §6.1: same (from, host, package) ⇒ overwrite
-        // in place, not append. The new entry's optional fields
-        // (ref, extras) supersede the old.
+        // Same (from, host, package) ⇒ overwrite in place, not append.
+        // The new entry's optional fields (ref, extras) supersede the old.
         $this->writeSkillsJson([
             'remote' => [
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
@@ -161,7 +160,7 @@ final class SkillsJsonWriterTest
 
     public function writtenEntryHasFixedKeyOrder(): void
     {
-        // Spec §3.5: from → host → package → ref → extras.
+        // Fixed key order: from → host → package → ref → extras.
         (new SkillsJsonWriter())->upsertRemote(
             Path::create($this->tmp),
             new RemoteEntry(

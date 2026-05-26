@@ -41,9 +41,9 @@ final class InitRunnerTest
 
     public function standaloneModeCreatesStubWithSchemaAndProviderDefaults(): void
     {
-        // Spec §6.3: the stub advertises the `local` and `remote`
-        // knobs explicitly, even when their values match the defaults,
-        // so users discover them without reading docs.
+        // The stub advertises the `local` and `remote` knobs explicitly,
+        // even when their values match the defaults, so users discover
+        // them without reading docs.
         $io = new BufferIO();
         $code = (new InitRunner())->run(
             Path::create($this->tmp),

@@ -23,7 +23,7 @@ use Internal\Path;
  *   rather than silently degrading to a copy.
  * - **POSIX**: standard {@see \symlink()}.
  *
- * §4.2 state matrix — applied to the alias path *before* creating
+ * State matrix — applied to the alias path *before* creating
  * anything:
  *
  * | Existing state                  | Action                          |
@@ -74,7 +74,7 @@ final readonly class SymlinkLinker
 
         // The target may legitimately not exist yet in dry-run mode (the
         // copy phase did not create it because we are not writing). Fall
-        // back to the literal path so the §4.2 state matrix can still
+        // back to the literal path so the state matrix can still
         // report collisions — the only thing it really needs the target
         // path for is the "link already points at $target?" comparison.
         $resolved = \realpath($targetStr);

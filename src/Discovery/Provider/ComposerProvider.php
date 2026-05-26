@@ -30,7 +30,7 @@ final readonly class ComposerProvider implements DonorProvider
 {
     /**
      * @param bool $enabled honours the `local.composer` toggle from
-     *         `skills.json` (spec §3.2). When `false`, the provider
+     *         `skills.json`. When `false`, the provider
      *         reports {@see self::isActive()} `=== false` even with a
      *         live Composer instance — the user explicitly turned this
      *         ecosystem off. Default `true` preserves the pre-`local`

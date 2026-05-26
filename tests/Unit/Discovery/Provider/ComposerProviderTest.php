@@ -12,7 +12,7 @@ use Testo\Test;
 
 /**
  * Unit coverage for {@see ComposerProvider} — focused on the
- * `enabled` toggle introduced for spec §3.2 `local.composer`. The
+ * `enabled` toggle that mirrors `local.composer` in `skills.json`. The
  * Composer-dependent code path is exercised end-to-end by the
  * acceptance suite (which actually has a Composer instance); here we
  * only pin down the toggle behaviour.

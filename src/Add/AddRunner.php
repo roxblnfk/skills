@@ -23,7 +23,7 @@ use Symfony\Component\Console\Command\Command;
  * Shared body of `skills:add` — independent of which entrypoint
  * invoked it.
  *
- * The flow follows spec §6.1 step-for-step:
+ * The flow:
  *
  * 1. **Adapter dispatch** — pick the {@see HostAdapter} from
  *    {@see AddOptions::$from} (explicit) or by inferring from the
@@ -32,9 +32,9 @@ use Symfony\Component\Console\Command\Command;
  *    {@see ParsedAddInput} (package / host / ref).
  * 3. **Resolve ref** — fetch the adapter's version listing once to
  *    determine the concrete tag / branch / SHA the cascade would
- *    pick (§4.3). The result drives both what's stored and what's
- *    downloaded.
- * 4. **Store ref policy (§4.2)** — explicit user-typed ref wins
+ *    pick (explicit ref → highest stable tag → default branch HEAD).
+ *    The result drives both what's stored and what's downloaded.
+ * 4. **Store ref policy** — explicit user-typed ref wins
  *    verbatim; auto-cascade onto a stable semver tag stores
  *    `^X.Y.Z`; everything else stores no ref.
  * 5. **Fetch + validate** — download the archive into the cache
@@ -225,7 +225,7 @@ final readonly class AddRunner
     }
 
     /**
-     * Apply spec §4.2:
+     * Decide what to persist in `skills.json` as the entry's `ref`:
      *
      * - User-typed ref → write verbatim.
      * - No user ref + adapter resolved a stable semver → `^X.Y.Z`.

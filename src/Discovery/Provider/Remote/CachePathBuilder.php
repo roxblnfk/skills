@@ -8,8 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\RemoteEntry;
 
 /**
- * Computes deterministic cache paths for fetched remote archives per
- * spec §7.
+ * Computes deterministic cache paths for fetched remote archives.
  *
  * Layout:
  *

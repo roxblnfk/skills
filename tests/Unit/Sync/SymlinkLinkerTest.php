@@ -14,8 +14,8 @@ use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 /**
- * Tests for {@see SymlinkLinker} — the §4.2 state matrix from the
- * multi-target spec.
+ * Tests for {@see SymlinkLinker} — the alias-path state matrix
+ * (create / no-op / refuse-to-overwrite).
  *
  * Each test runs against its own temporary tree:
  *
@@ -158,8 +158,8 @@ final class SymlinkLinkerTest
 
     public function dryRunStillReportsCollisionsWithExistingDirectory(): void
     {
-        // The state-matrix collisions in §4.2 are reported the same way
-        // in dry-run and normal mode — the user can't tell from a dry-run
+        // The state-matrix collisions are reported the same way in
+        // dry-run and normal mode — the user can't tell from a dry-run
         // alone whether the conflict has been resolved.
         $aliasPath = $this->tmp . '/alias';
         \mkdir($aliasPath, 0o777, true);

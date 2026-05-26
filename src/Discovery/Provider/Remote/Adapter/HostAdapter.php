@@ -10,17 +10,19 @@ use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
 /**
  * Per-source-host plug-in contract.
  *
- * One adapter per `from` value in spec §5.2. Each adapter knows:
+ * One adapter per `from` value (see {@see \LLM\Skills\Discovery\Provider\ProviderId::REMOTE_IDS}).
+ * Each adapter knows:
  *
  * - The id ({@see self::id()}) used in `skills.json` `remote[].from`
  *   and in the `--from=<id>` CLI flag.
  * - The default host URL ({@see self::defaultHost()}) used when an
  *   entry omits `host`.
  * - How to parse CLI input ({@see self::parseAddInput()}) for
- *   `skills:add` (Phase 4) — a shorthand like `owner/repo`, a full
- *   URL, or `owner/repo@ref`.
+ *   `skills:add` — a shorthand like `owner/repo`, a full URL,
+ *   or `owner/repo@ref`.
  * - How to resolve a stored entry to a concrete fetchable archive
- *   ({@see self::resolve()}) — implements the §4.3 ref cascade.
+ *   ({@see self::resolve()}) — implements the ref cascade
+ *   (highest stable tag → highest prerelease → default branch HEAD).
  *
  * v1 ships {@see GithubAdapter} only. The interface is the contract
  * future adapters (`gitlab`, `composer`, `npm`, `go`, `skills.sh`,
@@ -90,10 +92,10 @@ interface HostAdapter
      *   returned `RemoteDonorRef` carries it verbatim.
      * - When `$entry->ref` is a caret constraint
      *   (`^1.2.3` / `^1` / `^v1.2.3`), the adapter walks the
-     *   adapter's version list and picks the highest match per
-     *   spec §4.
-     * - When `$entry->ref` is `null`, the adapter walks the §4.3
-     *   cascade: highest stable tag → highest prerelease tag →
+     *   adapter's version list and picks the highest matching
+     *   stable tag.
+     * - When `$entry->ref` is `null`, the adapter walks the
+     *   ref cascade: highest stable tag → highest prerelease tag →
      *   default branch HEAD.
      *
      * The returned `RemoteDonorRef::$url` is the URL the fetcher

@@ -26,7 +26,7 @@ use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
 /**
- * Unit coverage for the spec §6.1 `skills:add` orchestration.
+ * Unit coverage for the `skills:add` orchestration.
  *
  * Every external collaborator is a controlled test-double:
  *
@@ -46,7 +46,7 @@ use Testo\Test;
  *   and surface the underlying message via {@see BufferIO}.
  * - Archive validation: missing `composer.json`, invalid JSON,
  *   missing `extra.skills.source` all return FAILURE.
- * - Ref policy (§4.2): user-typed ref stored verbatim; auto-resolved
+ * - Ref policy: user-typed ref stored verbatim; auto-resolved
  *   stable semver formatted as `^X.Y.Z`; auto-resolved non-semver
  *   (branch HEAD) stores no ref.
  */
@@ -110,7 +110,7 @@ final class AddRunnerTest
         Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
     }
 
-    // ── ref policy (spec §4.2) ─────────────────────────────────────
+    // ── ref policy ─────────────────────────────────────────────────
 
     public function userTypedRefIsStoredVerbatim(): void
     {
@@ -170,7 +170,7 @@ final class AddRunnerTest
 
         Assert::false(
             \array_key_exists('ref', $this->readSkillsJson()['remote'][0]),
-            'no stable ref ⇒ ref field is omitted (spec §4.2)',
+            'no stable ref ⇒ ref field is omitted',
         );
     }
 

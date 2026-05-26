@@ -14,10 +14,9 @@ use LLM\Skills\Discovery\MalformedDonor;
  *
  * Children are queried in **declaration order**; on duplicate
  * `packageName` collisions the later child wins (the displaced earlier
- * entry is reported as a `-v` warning per spec §6.5). Wire the
- * composite with locals first and remote last: an explicit `remote[]`
- * entry then naturally overrides a transitive local discovery of the
- * same package name.
+ * entry is reported as a `-v` warning). Wire the composite with locals
+ * first and remote last so an explicit `remote[]` entry naturally
+ * overrides a transitive local discovery of the same package name.
  *
  * `isActive()` is the OR of all children. `directDependencies()` is the
  * union (deduplicated, order-preserved). `discover()` concatenates
@@ -77,11 +76,22 @@ final readonly class CompositeDonorProvider implements DonorProvider
 
             foreach ($result->donors as $donor) {
                 if (isset($donorsByName[$donor->packageName])) {
-                    // Later child wins (remote over local — spec §6.5).
-                    // The displaced earlier entry becomes a warning so
-                    // `-v` users can see what got overridden, but the
-                    // sync proceeds normally.
-                    $shadowed[] = $donorsByName[$donor->packageName]->packageName;
+                    // Later child wins. The displaced earlier entry
+                    // becomes a warning so `-v` users can see what
+                    // got overridden; the sync proceeds normally. The
+                    // composite is generic — the winner is "whichever
+                    // provider declared the package last" (typically
+                    // remote, since callers wire it last to honour the
+                    // explicit-over-transitive rule), not necessarily
+                    // remote in every wiring.
+                    $loser = $donorsByName[$donor->packageName];
+                    $warnings[] = \sprintf(
+                        'donor "%s" was provided by multiple providers — '
+                        . 'later "%s" overrides earlier "%s"',
+                        $donor->packageName,
+                        $donor->provenance,
+                        $loser->provenance,
+                    );
                 }
                 $donorsByName[$donor->packageName] = $donor;
             }
