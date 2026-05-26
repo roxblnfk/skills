@@ -82,10 +82,15 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
                 // downstream provenance carries through to VendorConfig
                 // (powering the `--from` CLI filter). The adapter itself
                 // does not know its own id at resolve time; the source does.
+                // The skill allowlist travels alongside the provenance so
+                // the donor's {@see VendorConfig::$skillFilter} ends up
+                // populated; `null` keeps the legacy "sync every skill"
+                // behaviour.
                 yield new RemoteDonorRef(
                     url: $resolved->url,
                     ref: $resolved->ref,
                     provenance: $entry->from,
+                    skillFilter: $entry->skills,
                 );
             } catch (RemoteResolveException $e) {
                 $this->lastWarnings[] = $e->getMessage();

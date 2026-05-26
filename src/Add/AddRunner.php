@@ -106,13 +106,16 @@ final readonly class AddRunner
             return Command::FAILURE;
         }
 
-        // Step 6: upsert into skills.json.
+        // Step 6: upsert into skills.json. The `--skill` allowlist (if
+        // any) is forwarded verbatim; the writer's upsert logic merges
+        // it with whatever names already lived in a matching entry.
         $entry = new RemoteEntry(
             from: $parsed->from,
             package: $parsed->package,
             url: $parsed->url,
             host: $parsed->host,
             ref: $storedRef,
+            skills: $options->skills,
         );
 
         try {

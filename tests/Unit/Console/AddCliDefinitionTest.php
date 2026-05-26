@@ -93,6 +93,48 @@ final class AddCliDefinitionTest
         $this->build(['input' => 'acme/skills', '--ref' => '']);
     }
 
+    public function skillFlagDefaultsToNull(): void
+    {
+        $opts = $this->build(['input' => 'acme/skills']);
+
+        Assert::same($opts->skills, null);
+    }
+
+    public function skillFlagCollectsRepeatableValues(): void
+    {
+        $opts = $this->build([
+            'input' => 'acme/skills',
+            '--skill' => ['code-review', 'refactor'],
+        ]);
+
+        Assert::same($opts->skills, ['code-review', 'refactor']);
+    }
+
+    public function emptySkillValueThrows(): void
+    {
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('--skill must be a non-empty string');
+
+        $this->build([
+            'input' => 'acme/skills',
+            '--skill' => ['valid', ''],
+        ]);
+    }
+
+    public function duplicateSkillValueThrows(): void
+    {
+        // The writer dedupes on merge, but a duplicate on a single CLI
+        // invocation is almost always a typo (or a copy-paste mistake);
+        // refusing it eagerly is the more helpful behaviour.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('passed more than once');
+
+        $this->build([
+            'input' => 'acme/skills',
+            '--skill' => ['dup', 'dup'],
+        ]);
+    }
+
     public function commandMetadataIsApplied(): void
     {
         // Pin the name + alias plumbing so a future refactor of

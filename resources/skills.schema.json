@@ -75,7 +75,7 @@
         },
         "remote": {
             "type": "array",
-            "description": "Explicit remote donor refs. Each entry tells the remote provider what to fetch and from where. See https://github.com/roxblnfk/skills spec §3.3 for the full key reference.",
+            "description": "Explicit remote donor refs. Each entry tells the remote provider what to fetch and from where: an adapter id in `from`, an identifier in `package` or `url`, and optional `host`/`ref`/`skills`/adapter-specific extras.",
             "default": [],
             "items": {
                 "oneOf": [
@@ -108,7 +108,15 @@
                 "ref": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Adapter-specific version pin (^1.2.3, v1.2.3, main, full SHA). Absent → adapter resolves latest stable per the §4.3 cascade."
+                    "description": "Adapter-specific version pin (^1.2.3, v1.2.3, main, full SHA). Absent → adapter resolves the latest stable tag, falling back to the default branch HEAD."
+                },
+                "skills": {
+                    "type": "array",
+                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships. A non-empty list keeps only those skills. An empty list ([]) keeps the donor registered but pulls no skills from it (useful for staging or a temporary opt-out without deleting the entry). Names that do not exist in the fetched archive surface as -v warnings without aborting the run.",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    }
                 }
             }
         },
@@ -133,6 +141,15 @@
                 "ref": {
                     "type": "string",
                     "minLength": 1
+                },
+                "skills": {
+                    "type": "array",
+                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships.",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "minItems": 1
                 },
                 "sha256": {
                     "type": "string",

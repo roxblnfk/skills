@@ -64,6 +64,15 @@ final class AddCliDefinition
                 . 'falling back to the default branch HEAD if no stable tag exists.',
             )
             ->addOption(
+                'skill',
+                null,
+                InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+                'Restrict the donor to selected skill directory names. Repeatable. '
+                . 'Each value is appended to the entry\'s allowlist (the field is '
+                . 'additive across consecutive `skills:add` calls). Without this '
+                . 'flag, every skill the donor ships is synced.',
+            )
+            ->addOption(
                 'no-sync',
                 null,
                 InputOption::VALUE_NONE,
@@ -81,6 +90,7 @@ final class AddCliDefinition
         $from = self::optionalNonEmptyOption($input, 'from');
         $host = self::optionalNonEmptyOption($input, 'host');
         $ref = self::optionalNonEmptyOption($input, 'ref');
+        $skills = self::collectSkillNames($input);
         $noSync = (bool) $input->getOption('no-sync');
 
         return new AddOptions(
@@ -89,7 +99,49 @@ final class AddCliDefinition
             host: $host,
             ref: $ref,
             sync: !$noSync,
+            skills: $skills,
         );
+    }
+
+    /**
+     * Collect `--skill` values into a list of non-empty strings, or
+     * return `null` when the flag was not used. Empty values and
+     * duplicates are rejected eagerly — the writer can dedupe on
+     * merge, but typo-induced empties at the CLI are almost always
+     * a user mistake worth surfacing now.
+     *
+     * @return list<non-empty-string>|null
+     *
+     * @throws \InvalidArgumentException when any value is empty or
+     *         when the same name was passed twice
+     */
+    private static function collectSkillNames(InputInterface $input): ?array
+    {
+        /** @var mixed $raw */
+        $raw = $input->getOption('skill');
+        if (!\is_array($raw) || $raw === []) {
+            return null;
+        }
+
+        /** @var list<non-empty-string> $out */
+        $out = [];
+        $seen = [];
+        /** @var mixed $value */
+        foreach ($raw as $value) {
+            if (!\is_string($value) || $value === '') {
+                throw new \InvalidArgumentException(
+                    '--skill must be a non-empty string',
+                );
+            }
+            if (isset($seen[$value])) {
+                throw new \InvalidArgumentException(
+                    '--skill "' . $value . '" was passed more than once',
+                );
+            }
+            $seen[$value] = true;
+            $out[] = $value;
+        }
+        return $out;
     }
 
     /**

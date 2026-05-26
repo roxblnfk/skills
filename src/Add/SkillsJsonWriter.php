@@ -114,7 +114,6 @@ final readonly class SkillsJsonWriter
     private static function upsertByCompositeKey(array $existing, RemoteEntry $new): array
     {
         $newKey = $new->compositeKey();
-        $serialised = self::serialise($new);
 
         $written = false;
         $out = [];
@@ -122,9 +121,16 @@ final readonly class SkillsJsonWriter
             if (self::compositeKeyOf($entry) === $newKey) {
                 // First match consumes the replacement; subsequent
                 // matches drop out entirely so duplicates collapse
-                // into a single entry.
+                // into a single entry. The `skills` allowlist is
+                // additive across consecutive `skills:add` calls — we
+                // merge any pre-existing names with the new ones so a
+                // second invocation can grow the allowlist without
+                // wiping the first one. Order: pre-existing names
+                // first (preserved verbatim), then new names appended,
+                // deduplicated.
                 if (!$written) {
-                    $out[] = $serialised;
+                    $mergedSkills = self::mergeSkills(self::extractSkills($entry), $new->skills);
+                    $out[] = self::serialiseWithSkills($new, $mergedSkills);
                     $written = true;
                 }
                 continue;
@@ -132,9 +138,132 @@ final readonly class SkillsJsonWriter
             $out[] = $entry;
         }
         if (!$written) {
-            $out[] = $serialised;
+            $out[] = self::serialise($new);
         }
         return $out;
+    }
+
+    /**
+     * Pull the `skills` list out of an already-serialised entry.
+     * Three return shapes match the three load-time states:
+     *
+     * - `null` — the `skills` key is absent altogether (sync every
+     *   skill the donor ships);
+     * - `[]` — the key is present but empty (donor registered, no
+     *   skills pulled from it). Preserved so a follow-up upsert
+     *   without `--skill` does not silently lose the explicit empty
+     *   allowlist;
+     * - non-empty list — the user's allowlist.
+     *
+     * Defensive against hand-edited files: anything that is not a
+     * list or contains a non-string element is treated as "no key
+     * present" rather than crashing the writer.
+     *
+     * @param array<string, mixed> $entry
+     *
+     * @return list<non-empty-string>|null
+     *
+     * @psalm-pure
+     */
+    private static function extractSkills(array $entry): ?array
+    {
+        if (!\array_key_exists('skills', $entry)) {
+            return null;
+        }
+        /** @var mixed $raw */
+        $raw = $entry['skills'];
+        if (!\is_array($raw) || !\array_is_list($raw)) {
+            return null;
+        }
+        /** @var list<non-empty-string> $out */
+        $out = [];
+        /** @var mixed $name */
+        foreach ($raw as $name) {
+            if (\is_string($name) && $name !== '') {
+                $out[] = $name;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Combine an existing `skills` list with the new one, preserving
+     * insertion order and dropping duplicates. When neither side has
+     * an allowlist the result is `null` (omitted from the file
+     * entirely). When exactly one side carries names, those win as-is.
+     *
+     * @param list<non-empty-string>|null $existing
+     * @param list<non-empty-string>|null $incoming
+     *
+     * @return list<non-empty-string>|null
+     *
+     * @psalm-pure
+     */
+    private static function mergeSkills(?array $existing, ?array $incoming): ?array
+    {
+        if ($existing === null) {
+            return $incoming;
+        }
+        if ($incoming === null) {
+            return $existing;
+        }
+        /** @var list<non-empty-string> $out */
+        $out = [];
+        $seen = [];
+        foreach ([...$existing, ...$incoming] as $name) {
+            if (isset($seen[$name])) {
+                continue;
+            }
+            $seen[$name] = true;
+            $out[] = $name;
+        }
+        return $out;
+    }
+
+    /**
+     * Render an entry with `skills` overridden by the supplied list
+     * (used by the upsert path to honour the merge result without
+     * mutating the original {@see RemoteEntry}). `$skills === null`
+     * omits the field entirely.
+     *
+     * @param list<non-empty-string>|null $skills
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    private static function serialiseWithSkills(RemoteEntry $entry, ?array $skills): array
+    {
+        $out = self::serialise($entry);
+        // serialise() already emitted `skills` from the entry; the
+        // upsert-merge path may compute a different list, so we
+        // re-insert in the canonical position (after `ref`, before
+        // extras) by rebuilding the map.
+        unset($out['skills']);
+        if ($skills === null) {
+            return $out;
+        }
+        $rebuilt = [];
+        $inserted = false;
+        /** @var mixed $v */
+        foreach ($out as $k => $v) {
+            /** @psalm-suppress MixedAssignment serialised entries carry adapter-specific shapes */
+            $rebuilt[$k] = $v;
+            if (!$inserted && $k === 'ref') {
+                $rebuilt['skills'] = $skills;
+                $inserted = true;
+            }
+        }
+        if (!$inserted) {
+            // No `ref` to anchor to — append `skills` before any
+            // adapter-specific extras at the tail, which means in
+            // practice "before whatever came after the identifier".
+            // Falling back to a plain append keeps the entry valid;
+            // the slight reorder vs the documented canonical layout is
+            // acceptable for the rare no-`ref` case.
+            $rebuilt['skills'] = $skills;
+        }
+        return $rebuilt;
     }
 
     /**
@@ -164,7 +293,8 @@ final readonly class SkillsJsonWriter
     /**
      * Render an entry as the JSON-serialisable map for storage. Key
      * order is fixed for stable diffs: `from` → `host` (if present) →
-     * `package` or `url` → `ref` (if present) → extras.
+     * `package` or `url` → `ref` (if present) → `skills` (if present)
+     * → extras.
      *
      * @param RemoteEntry|array<string, mixed> $entry
      *
@@ -187,6 +317,9 @@ final readonly class SkillsJsonWriter
             }
             if ($entry->ref !== null) {
                 $out['ref'] = $entry->ref;
+            }
+            if ($entry->skills !== null) {
+                $out['skills'] = $entry->skills;
             }
             /** @var mixed $v */
             foreach ($entry->extras as $k => $v) {
@@ -253,6 +386,16 @@ final readonly class SkillsJsonWriter
      * Write the content into a sibling temp file then rename into
      * place. The rename is atomic on most filesystems (POSIX + NTFS),
      * so a reader can never see a half-written file.
+     *
+     * Windows quirk: {@see \rename()} refuses to overwrite an
+     * existing destination on Windows (returns false / triggers a
+     * warning), even though NTFS itself supports atomic replace via
+     * `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`. PHP's `rename` does
+     * not pass that flag. So when the destination already exists we
+     * unlink it first and retry; this opens a sub-millisecond window
+     * where the file is gone, but the alternative — failing every
+     * second `skills:add` — is worse. POSIX never enters the retry
+     * path because the initial rename overwrites cleanly.
      */
     private static function atomicWrite(string $filePath, string $content): void
     {
@@ -260,9 +403,15 @@ final readonly class SkillsJsonWriter
         if (\file_put_contents($tmp, $content) === false) {
             throw new \RuntimeException('failed to write temp skills.json at ' . $tmp);
         }
-        if (!@\rename($tmp, $filePath)) {
-            @\unlink($tmp);
-            throw new \RuntimeException('failed to rename temp skills.json into ' . $filePath);
+        if (@\rename($tmp, $filePath)) {
+            return;
         }
+        // First rename failed. If the destination already exists, this
+        // is the Windows-overwrite case; unlink and retry once.
+        if (\file_exists($filePath) && @\unlink($filePath) && @\rename($tmp, $filePath)) {
+            return;
+        }
+        @\unlink($tmp);
+        throw new \RuntimeException('failed to rename temp skills.json into ' . $filePath);
     }
 }

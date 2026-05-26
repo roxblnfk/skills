@@ -127,6 +127,71 @@ final class RemoteProviderEndToEndTest
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
     }
 
+    public function remoteSkillsAllowlistThreadsIntoTheDonor(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            Assert::true(true);
+            return;
+        }
+
+        // skills.json declares a github donor with an explicit allowlist
+        // (`hello` only). The provider must build a VendorConfig whose
+        // skillFilter matches that list verbatim, which is what the
+        // enumerator downstream uses to drop everything else and warn
+        // on the typo.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'remote' => [
+                [
+                    'from' => 'github',
+                    'package' => 'acme/skills',
+                    'ref' => 'v1.0.0',
+                    'skills' => ['hello', 'missing-on-purpose'],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'acme-skills-v1.0.0',
+            files: [
+                'composer.json' => \json_encode([
+                    'name' => 'acme/skills',
+                    'extra' => ['skills' => ['source' => 'skills']],
+                ], \JSON_THROW_ON_ERROR),
+                'skills/hello/SKILL.md' => "---\nname: hello\n---\nhi",
+                'skills/other/SKILL.md' => "---\nname: other\n---\nbye",
+            ],
+        );
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/acme/skills/zipball/v1.0.0' => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GithubAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->skillFilter, ['hello', 'missing-on-purpose']);
+
+        // Run the enumerator over the produced donor and verify the
+        // contract end-to-end: only `hello` lands, `other` is dropped
+        // silently (not on the allowlist), `missing-on-purpose` emits
+        // a warning.
+        $enum = (new \LLM\Skills\Discovery\SkillEnumerator())->enumerate($result->donors);
+
+        $names = \array_map(static fn($s) => $s->name, $enum->skills);
+        Assert::same($names, ['hello']);
+        $combined = \implode("\n", $enum->warnings);
+        Assert::true(\str_contains($combined, 'missing-on-purpose'));
+        Assert::true(\str_contains($combined, 'acme/skills'));
+    }
+
     public function zipSlipArchiveIsRejectedBeforeAnyFileLands(): void
     {
         if (!\class_exists(\ZipArchive::class)) {

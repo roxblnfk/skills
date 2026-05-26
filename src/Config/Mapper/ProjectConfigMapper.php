@@ -207,7 +207,14 @@ final readonly class ProjectConfigMapper
             if (!\is_string($key)) {
                 continue;
             }
-            if ($key === 'from' || $key === 'package' || $key === 'url' || $key === 'host' || $key === 'ref') {
+            if (
+                $key === 'from'
+                || $key === 'package'
+                || $key === 'url'
+                || $key === 'host'
+                || $key === 'ref'
+                || $key === 'skills'
+            ) {
                 continue;
             }
             /** @psalm-suppress MixedAssignment intentional — adapter-specific extras are stored verbatim */
@@ -215,6 +222,50 @@ final readonly class ProjectConfigMapper
         }
 
         return $extras;
+    }
+
+    /**
+     * Parse the optional `remote[].skills` allowlist. Three states:
+     *
+     * - absent / `null` → no filter, every skill is synced (default);
+     * - non-empty list → only the listed skills are synced;
+     * - empty list (`[]`) → the donor is registered but no skills are
+     *   pulled from it (useful for staging or temporary opt-out
+     *   without deleting the entry).
+     *
+     * Non-list values, or lists with non-string / empty-string
+     * elements, are load-time errors.
+     *
+     * @return list<non-empty-string>|null
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
+     */
+    private static function mapRemoteSkills(mixed $raw, string $field): ?array
+    {
+        if ($raw === null) {
+            return null;
+        }
+        if (!\is_array($raw) || !\array_is_list($raw)) {
+            throw new MalformedProjectConfig(
+                $field . '.skills must be a list of skill names',
+            );
+        }
+        /** @var list<non-empty-string> $out */
+        $out = [];
+        /** @var mixed $name */
+        foreach ($raw as $i => $name) {
+            if (!\is_string($name) || $name === '') {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s.skills[%d] must be a non-empty string',
+                    $field,
+                    $i,
+                ));
+            }
+            $out[] = $name;
+        }
+        return $out;
     }
 
     /**
@@ -452,6 +503,8 @@ final readonly class ProjectConfigMapper
             }
         }
 
+        $skills = self::mapRemoteSkills($entry['skills'] ?? null, $field);
+
         $extras = self::collectExtras($entry);
 
         return new RemoteEntry(
@@ -461,6 +514,7 @@ final readonly class ProjectConfigMapper
             host: $host,
             ref: $ref,
             extras: $extras,
+            skills: $skills,
         );
     }
 

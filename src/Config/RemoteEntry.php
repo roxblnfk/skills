@@ -37,8 +37,19 @@ final readonly class RemoteEntry
      *         tag, falling back to the default branch HEAD.
      * @param array<string, mixed> $extras adapter-specific extra keys preserved verbatim
      *         (e.g. `{"sha256": "…"}` on `zip`). Empty map when the entry has no extras.
+     * @param list<non-empty-string>|null $skills explicit skill-name allowlist scoped to this
+     *         donor. `null` (the default) means "sync every skill the donor ships". A
+     *         non-empty list keeps only the listed names. The **empty list** is a third
+     *         meaningful state: "this donor is registered but no skills are taken from it"
+     *         — useful for staging a donor before opting into its content or for temporarily
+     *         disabling a donor without deleting the entry. Names that do not exist in the
+     *         fetched archive surface as `-v` warnings without aborting the sync.
+     *
+     * @throws \InvalidArgumentException unless exactly one of `$package` and `$url` is non-null,
+     *         or if `$skills` contains a non-string / contains an empty string
      *
      * @psalm-mutation-free
+     * @psalm-pure
      */
     public function __construct(
         public string $from,
@@ -47,12 +58,43 @@ final readonly class RemoteEntry
         public ?string $host,
         public ?string $ref,
         public array $extras = [],
-    ) {}
+        public ?array $skills = null,
+    ) {
+        // The "exactly one of package/url" invariant is the contract
+        // every downstream method relies on (identifier(),
+        // compositeKey(), the cache-path builder). Enforce it in the
+        // constructor so a direct caller cannot smuggle a half-built
+        // VO past the mapper.
+        $hasPackage = $package !== null;
+        $hasUrl = $url !== null;
+        if ($hasPackage === $hasUrl) {
+            throw new \InvalidArgumentException(
+                'RemoteEntry requires exactly one of $package or $url to be non-null; got '
+                . ($hasPackage ? 'both set' : 'neither set'),
+            );
+        }
+
+        // The psalm-level annotation already says `list<non-empty-string>|null`,
+        // but the constructor sits on a public API and is called from the
+        // mapper with values that originated as user JSON; keep the
+        // runtime check as defence in depth. An empty list is allowed
+        // — it carries the explicit "no skills from this donor" meaning.
+        if ($skills !== null) {
+            /** @psalm-suppress DocblockTypeContradiction defensive runtime check */
+            foreach ($skills as $name) {
+                if (!\is_string($name) || $name === '') {
+                    throw new \InvalidArgumentException(
+                        'RemoteEntry $skills must be a list of non-empty strings.',
+                    );
+                }
+            }
+        }
+    }
 
     /**
      * Identifier inside the adapter's namespace — `$package` when set,
-     * `$url` otherwise. The mapper guarantees exactly one is non-null,
-     * so the return value is always a non-empty string.
+     * `$url` otherwise. The constructor enforces "exactly one is
+     * non-null", so the return value is always a non-empty string.
      *
      * @return non-empty-string
      *

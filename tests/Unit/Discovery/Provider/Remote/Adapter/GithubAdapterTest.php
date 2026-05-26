@@ -383,20 +383,24 @@ final class GithubAdapterTest
         ));
     }
 
-    public function resolveRejectsMissingPackage(): void
+    public function remoteEntryConstructorRejectsBothPackageAndUrlNull(): void
     {
-        $adapter = self::adapter();
+        // The "package required for github" check used to live in
+        // GithubAdapter::resolve(), but RemoteEntry's constructor now
+        // refuses entries where neither `package` nor `url` is set —
+        // a malformed github entry can no longer reach the adapter.
+        // Keep the test as the lower-tier invariant probe so the
+        // VO's contract stays covered here.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('neither set');
 
-        Expect::exception(RemoteResolveException::class)
-            ->withMessageContaining('package is required');
-
-        $adapter->resolve(new RemoteEntry(
+        new RemoteEntry(
             from: 'github',
             package: null,
             url: null,
             host: null,
             ref: null,
-        ));
+        );
     }
 
     // ── helpers ────────────────────────────────────────────────────

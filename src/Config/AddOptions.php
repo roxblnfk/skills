@@ -28,6 +28,11 @@ final readonly class AddOptions
      * @param bool $sync when true (default), run a single-entry sync after the add so
      *         the new skills land in the target immediately — matches `composer require`'s
      *         "edit + install" ergonomics. When false, only the manifest is updated.
+     * @param list<non-empty-string>|null $skills explicit skill-name allowlist from
+     *         `--skill=NAME` (repeatable). `null` means the flag was not used and the
+     *         resulting entry inherits the legacy "sync every skill" default; a non-empty
+     *         list is propagated into the entry's `skills` field and merged with any
+     *         pre-existing names when the entry already exists.
      *
      * @psalm-mutation-free
      */
@@ -37,5 +42,6 @@ final readonly class AddOptions
         public ?string $host = null,
         public ?string $ref = null,
         public bool $sync = true,
+        public ?array $skills = null,
     ) {}
 }

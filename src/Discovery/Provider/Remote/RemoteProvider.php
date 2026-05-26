@@ -157,8 +157,14 @@ final readonly class RemoteProvider implements DonorProvider
                 // `remote[]` entries are user-declared and therefore
                 // implicit-trusted, regardless of `from` value. The
                 // planner's trust list applies to local-provider
-                // transitive discoveries only.
-                $donors[] = $donor->withProvenance($provenance)->asImplicitlyTrusted();
+                // transitive discoveries only. The optional skill
+                // allowlist carries through to the enumerator via
+                // {@see VendorConfig::$skillFilter}; `null` keeps the
+                // default "sync every skill" behaviour.
+                $donors[] = $donor
+                    ->withProvenance($provenance)
+                    ->asImplicitlyTrusted()
+                    ->withSkillFilter($ref->skillFilter);
             } catch (MalformedVendorConfig $e) {
                 $warnings[] = $e->getMessage();
                 /** @var non-empty-string $reason */

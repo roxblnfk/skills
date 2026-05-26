@@ -15,8 +15,10 @@ use LLM\Skills\Config\RemoteEntry;
  *     vendor/llm-skills/cache/<from>/<host-segment>/<package-segment>/<ref-segment>/
  *
  * - `<host-segment>` = the literal string `default` when the entry
- *   has no `host`, else a URL-safe encoding of the host
- *   (`api-github-com`, `github-corp-example-com`).
+ *   has no `host`, else a URL-safe encoding of the host. Dots stay
+ *   verbatim (they are in the safe set), so `api.github.com` and
+ *   `github.corp.example.com` round-trip as-is; only characters
+ *   outside `[A-Za-z0-9._-]` are replaced with `-`.
  * - `<package-segment>` = URL-safe encoding of the package
  *   identifier (`/` → `__`, `@` → `at-`).
  * - `<ref-segment>` = the resolved ref (`v1.2.3`, branch name, or

@@ -106,16 +106,18 @@ inside Composer it is reserved for `--working-dir`.
 ### Examples
 
 ```bash
-composer skills:update                          # sync everything that is trusted
-composer skills:update acme/skills-basic        # sync one package (implicit trust)
-composer skills:update 'acme/*'                 # sync an entire vendor namespace
-composer skills:update --discovery              # also include packages without extra.skills
-composer skills:update --alias=.claude/skills   # mirror target via a junction/symlink
-composer skills:update --from=github            # only refresh remote GitHub donors
-composer skills:update --dry-run                # preview, write nothing
-composer skills:show                            # inspect: per-skill status, what is skipped
-composer skills:init                            # create skills.json (migrating inline keys)
-composer skills:add acme/skills --from=github   # register a GitHub donor and sync it
+composer skills:update                                   # sync everything that is trusted
+composer skills:update acme/skills-basic                  # sync one package (implicit trust)
+composer skills:update 'acme/*'                           # sync an entire vendor namespace
+composer skills:update --discovery                        # also include packages without extra.skills
+composer skills:update --alias=.claude/skills             # mirror target via a junction/symlink
+composer skills:update --from=github                      # only refresh remote GitHub donors
+composer skills:update --dry-run                          # preview, write nothing
+composer skills:show                                      # inspect: per-skill status, what is skipped
+composer skills:init                                      # create skills.json (migrating inline keys)
+composer skills:add acme/skills --from=github             # register a GitHub donor and sync it
+composer skills:add acme/skills --from=github \
+        --skill=code-review --skill=refactor              # narrow a donor to two skills
 ```
 
 ## Shipping skills (vendor side)
@@ -175,7 +177,9 @@ where to put it, who to trust, whether to auto-sync.
 
   "local":  { "composer": true },
   "remote": [
-    { "from": "github", "package": "acme/skills", "ref": "^1.2.0" }
+    { "from": "github", "package": "acme/skills", "ref": "^1.2.0" },
+    { "from": "github", "package": "team/skills-pack", "ref": "^2",
+      "skills": ["code-review", "refactor"] }
   ]
 }
 ```
@@ -360,6 +364,8 @@ composer skills:add 'acme/skills@main' --from=github          # branch HEAD
 composer skills:add https://github.com/acme/skills            # full URL; --from inferred
 composer skills:add 'team/skills' --from=github \
         --host=https://github.corp.example.com                # GitHub Enterprise
+composer skills:add acme/skills --from=github \
+        --skill=code-review --skill=refactor                  # only these two skills
 composer skills:add acme/skills --from=github --no-sync       # only edit skills.json
 ```
 
@@ -369,7 +375,7 @@ The command:
 2. resolves the ref — explicit value wins verbatim; without `--ref` the adapter picks the highest stable tag, falling back to the highest prerelease tag, then to the default branch HEAD;
 3. downloads the archive into `vendor/llm-skills/cache/...` (gitignored by virtue of vendor);
 4. validates that the archive ships a `composer.json` with `extra.skills.source`;
-5. upserts the entry into `skills.json` `remote[]` (stable-sorted by `(from, host, package)`, atomic write);
+5. upserts the entry into `skills.json` `remote[]` (stable-sorted by `(from, host, package)`, atomic write — falls back to `unlink + rename` on Windows where `rename()` refuses to overwrite an existing destination);
 6. runs a single-entry sync so the new skills land in the target right away — same ergonomics as `composer require`. Suppress with `--no-sync`.
 
 | Option        | Description                                                                                                   |
@@ -378,6 +384,7 @@ The command:
 | `--from=ID`   | Adapter id. Required for shorthand; inferred from the URL host when omitted with a full URL.                   |
 | `--host=URL`  | Override the adapter's default host (GitHub Enterprise, self-hosted GitLab, private Packagist).               |
 | `--ref=REF`   | Pin a tag, branch, SHA, or Composer-style constraint (`^1.2.3`). Without this, the cascade above runs.        |
+| `--skill=NAME`| Restrict the donor to a specific skill directory. Repeatable. Names accumulate across consecutive `skills:add` calls. Without the flag, every skill the donor ships is synced. |
 | `--no-sync`   | Skip the automatic single-entry sync after writing `skills.json`.                                              |
 
 Stored entries look like:
@@ -387,16 +394,32 @@ Stored entries look like:
   "remote": [
     { "from": "github", "package": "acme/skills", "ref": "^1.2.0" },
     { "from": "github", "package": "team/internal-skills",
-      "host": "https://github.corp.example.com", "ref": "^1" }
+      "host": "https://github.corp.example.com", "ref": "^1",
+      "skills": ["code-review", "refactor"] }
   ]
 }
 ```
 
 The composite key is `(from, host, package | url)`: same triplet = upsert in place, different = append. Manual edits are fine — the next `skills:add` normalises the order.
 
+#### Per-entry skill allowlist
+
+A donor often ships more skills than you want in a given project. The optional `skills` field on each `remote[]` entry narrows the donor to a named subset:
+
+- **Absent / omitted** → sync every skill the donor ships (legacy behaviour).
+- **Non-empty list of names** → only those skills are copied; the rest are silently skipped.
+- **Empty list (`"skills": []`)** → the donor is registered but no skills are pulled from it. Useful for staging a donor before opting into its content or for temporarily disabling a donor without deleting the entry.
+- Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in remote.skills but not found in the donor`) so typos surface without aborting the sync.
+
+`skills:add --skill=NAME` is the CLI surface: pass `--skill` repeatedly to build the list. The flag is **additive on upsert** — running `skills:add` again on the same entry adds the new names to whatever was already stored. A follow-up `skills:add` without `--skill` does **not** touch the existing allowlist (whether it was a populated list or an explicit empty one). Removing a name or clearing the allowlist entirely is a manual edit of `skills.json`.
+
 ### Authentication
 
 Remote adapters reuse Composer's `auth.json` / `COMPOSER_AUTH` plumbing — no new credential surfaces. A GitHub token configured for `composer require` works as-is for `skills:add`.
+
+### Archive safety
+
+Remote archives are downloaded from a user-configurable `host`, so every zip entry name is validated **before** extraction. Absolute paths (`/foo`, `C:/foo`), `..` segments (`../etc/passwd`), backslash-rooted paths (`\\server\share`), and NUL bytes are rejected as a malformed archive; the fetcher emits a per-ref `-v` warning and never writes to disk. The scratch directory used during extraction is cleaned in a `finally` regardless of success.
 
 ### `--from=ID` filter on sync
 

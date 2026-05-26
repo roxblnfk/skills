@@ -659,6 +659,103 @@ final class ProjectConfigMapperTest
         Assert::count($cfg->remote, 2);
     }
 
+    public function remoteSkillsAllowlistIsParsed(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    [
+                        'from' => 'github',
+                        'package' => 'acme/skills',
+                        'skills' => ['code-review', 'refactor'],
+                    ],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, ['code-review', 'refactor']);
+    }
+
+    public function remoteWithoutSkillsKeyDefaultsToNull(): void
+    {
+        // Absent `skills` key means "sync every skill the donor ships"
+        // — represented as `null`, not as an empty list.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills'],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, null);
+    }
+
+    public function remoteSkillsAcceptsEmptyList(): void
+    {
+        // An empty `skills` list is a deliberate "no skills from this
+        // donor" state — the entry stays registered but pulls nothing.
+        // Distinct from omitting the key entirely, which keeps the
+        // legacy "sync every skill" default.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'skills' => []],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, []);
+    }
+
+    public function remoteSkillsMustBeAList(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('list of skill names');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'skills' => ['name' => true]],
+                ],
+            ],
+        ]);
+    }
+
+    public function remoteSkillsRejectsNonStringElement(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('non-empty string');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'skills' => ['ok', '']],
+                ],
+            ],
+        ]);
+    }
+
+    public function remoteSkillsKeyIsNotSweptIntoExtras(): void
+    {
+        // collectExtras must skip `skills` — otherwise it would end up
+        // duplicated in both VendorEntry::skills and ::extras.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    [
+                        'from' => 'github',
+                        'package' => 'acme/skills',
+                        'skills' => ['hello'],
+                    ],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, ['hello']);
+        Assert::same($cfg->remote[0]->extras, []);
+    }
+
     public function remoteAsObjectThrows(): void
     {
         Expect::exception(MalformedProjectConfig::class)

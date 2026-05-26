@@ -100,6 +100,73 @@ final class SkillEnumeratorTest
         Assert::same($result->skills[0]->packageName, 'acme/good');
     }
 
+    public function skillFilterKeepsOnlyTheAllowlistedSkills(): void
+    {
+        $donor = $this->makeDonor('acme/multi', 'src', [
+            'alpha/SKILL.md' => 'A',
+            'beta/SKILL.md' => 'B',
+            'gamma/SKILL.md' => 'C',
+        ])->withSkillFilter(['alpha', 'gamma']);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        $names = \array_map(static fn($s) => $s->name, $result->skills);
+        \sort($names);
+        Assert::same($names, ['alpha', 'gamma']);
+        Assert::same($result->warnings, []);
+    }
+
+    public function skillFilterEmitsWarningForDeclaredButMissingNames(): void
+    {
+        // `oops` was requested but doesn't exist in the donor — surface
+        // as a `-v` warning so the user can spot the typo. The rest of
+        // the allowlist still syncs.
+        $donor = $this->makeDonor('acme/multi', 'src', [
+            'alpha/SKILL.md' => 'A',
+        ])->withSkillFilter(['alpha', 'oops']);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\count($result->skills), 1);
+        Assert::same($result->skills[0]->name, 'alpha');
+        Assert::same(\count($result->warnings), 1);
+        Assert::true(\str_contains($result->warnings[0], 'acme/multi'));
+        Assert::true(\str_contains($result->warnings[0], '"oops"'));
+        Assert::true(\str_contains($result->warnings[0], 'not found'));
+    }
+
+    public function emptySkillFilterDropsAllSkillsAndEmitsNoWarnings(): void
+    {
+        // An explicitly empty allowlist means "the donor is on file but
+        // we don't want any of its skills right now" — distinct from
+        // `null` ("sync every skill"). Nothing lands and there is
+        // nothing to warn about (no missing names to call out).
+        $donor = $this->makeDonor('acme/multi', 'src', [
+            'alpha/SKILL.md' => 'A',
+            'beta/SKILL.md' => 'B',
+        ])->withSkillFilter([]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::same($result->warnings, []);
+    }
+
+    public function nullSkillFilterSyncsEverything(): void
+    {
+        // Sanity check that the filter path is purely additive — a null
+        // filter (the default) leaves behaviour identical to before the
+        // field existed.
+        $donor = $this->makeDonor('acme/two', 'src', [
+            'one/SKILL.md' => '1',
+            'two/SKILL.md' => '2',
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\count($result->skills), 2);
+    }
+
     public function returnsEmptyResultForEmptyDonorList(): void
     {
         $result = (new SkillEnumerator())->enumerate([]);

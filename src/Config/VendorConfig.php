@@ -36,6 +36,11 @@ final readonly class VendorConfig
      *         for every `remote[]` entry, regardless of `from` value. Local providers
      *         keep this `false` and let {@see \LLM\Skills\Sync\SyncPlanner} run the
      *         per-registry trust check.
+     * @param list<non-empty-string>|null $skillFilter optional allowlist of skill
+     *         directory names. `null` means "sync every skill the donor ships" — the
+     *         legacy behaviour. A non-null list is honoured by
+     *         {@see \LLM\Skills\Discovery\SkillEnumerator}, which keeps only matching
+     *         skills and emits a `-v` warning for names that do not exist in the donor.
      *
      * @psalm-mutation-free
      */
@@ -46,6 +51,7 @@ final readonly class VendorConfig
         public bool $discovered = false,
         public string $provenance = ProviderId::COMPOSER,
         public bool $implicitTrust = false,
+        public ?array $skillFilter = null,
     ) {}
 
     /**
@@ -75,6 +81,7 @@ final readonly class VendorConfig
             discovered: $this->discovered,
             provenance: $provenance,
             implicitTrust: $this->implicitTrust,
+            skillFilter: $this->skillFilter,
         );
     }
 
@@ -99,6 +106,29 @@ final readonly class VendorConfig
             discovered: $this->discovered,
             provenance: $this->provenance,
             implicitTrust: true,
+            skillFilter: $this->skillFilter,
+        );
+    }
+
+    /**
+     * Return a copy of this donor narrowed to a specific allowlist of
+     * skill directory names. `null` clears any existing filter and
+     * restores the "sync every skill" default.
+     *
+     * @param list<non-empty-string>|null $skillFilter
+     *
+     * @psalm-mutation-free
+     */
+    public function withSkillFilter(?array $skillFilter): self
+    {
+        return new self(
+            packageName: $this->packageName,
+            packageRoot: $this->packageRoot,
+            source: $this->source,
+            discovered: $this->discovered,
+            provenance: $this->provenance,
+            implicitTrust: $this->implicitTrust,
+            skillFilter: $skillFilter,
         );
     }
 }

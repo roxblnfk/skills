@@ -33,6 +33,11 @@ final readonly class RemoteDonorRef
      *         {@see \LLM\Skills\Config\VendorConfig::$provenance}, which drives
      *         the `--from` CLI filter. `null` means "unknown" — the provider
      *         will tag the donor with a generic `remote` provenance.
+     * @param list<non-empty-string>|null $skillFilter explicit allowlist of skill directory
+     *         names to keep from the fetched donor. `null` means "no filter — sync every
+     *         skill the donor ships". A non-null list is propagated into the resulting
+     *         {@see \LLM\Skills\Config\VendorConfig::$skillFilter} so the skill enumerator
+     *         drops everything not on the list and warns about declared-but-missing names.
      *
      * @psalm-mutation-free
      */
@@ -40,6 +45,7 @@ final readonly class RemoteDonorRef
         public string $url,
         public string $ref,
         public ?string $provenance = null,
+        public ?array $skillFilter = null,
     ) {}
 
     /**

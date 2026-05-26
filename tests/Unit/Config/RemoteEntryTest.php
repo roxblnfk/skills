@@ -94,4 +94,84 @@ final class RemoteEntryTest
 
         Assert::same($entry->extras, ['sha256' => 'abcd1234']);
     }
+
+    public function constructorRejectsBothPackageAndUrlNull(): void
+    {
+        // The exactly-one-of-(package, url) invariant is the contract
+        // downstream methods rely on (identifier(), compositeKey()).
+        // Enforcing it in the constructor keeps direct callers honest
+        // — the mapper's pre-flight check is one of several lines of
+        // defence, not the only one.
+        try {
+            new RemoteEntry('github', null, null, null, null);
+            Assert::fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'neither set'));
+        }
+    }
+
+    public function constructorRejectsBothPackageAndUrlSet(): void
+    {
+        try {
+            new RemoteEntry('github', 'acme/skills', 'https://example.com/x.zip', null, null);
+            Assert::fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'both set'));
+        }
+    }
+
+    public function skillsDefaultsToNull(): void
+    {
+        // No allowlist set ⇒ sync every skill the donor ships.
+        $entry = new RemoteEntry('github', 'acme/skills', null, null, null);
+
+        Assert::same($entry->skills, null);
+    }
+
+    public function skillsPreservesListWhenSet(): void
+    {
+        $entry = new RemoteEntry(
+            from: 'github',
+            package: 'acme/skills',
+            url: null,
+            host: null,
+            ref: null,
+            skills: ['code-review', 'refactor'],
+        );
+
+        Assert::same($entry->skills, ['code-review', 'refactor']);
+    }
+
+    public function constructorAcceptsEmptySkillsList(): void
+    {
+        // Empty list = "donor registered, no skills pulled from it".
+        // Distinct from `null` (= "sync every skill").
+        $entry = new RemoteEntry(
+            from: 'github',
+            package: 'acme/skills',
+            url: null,
+            host: null,
+            ref: null,
+            skills: [],
+        );
+
+        Assert::same($entry->skills, []);
+    }
+
+    public function constructorRejectsSkillsWithEmptyName(): void
+    {
+        try {
+            new RemoteEntry(
+                from: 'github',
+                package: 'acme/skills',
+                url: null,
+                host: null,
+                ref: null,
+                skills: ['valid-name', ''],
+            );
+            Assert::fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'non-empty strings'));
+        }
+    }
 }
