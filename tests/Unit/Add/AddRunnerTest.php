@@ -211,6 +211,28 @@ final class AddRunnerTest
         Assert::true(\str_contains($io->getOutput(), '--from is required'));
     }
 
+    public function urlWithUnknownHostIsRejectedWithUrlSpecificMessage(): void
+    {
+        // The input *is* a full URL but no adapter claims its host.
+        // The message must mention the URL, not say "shorthand"
+        // (copilot review #8 on PR #15 caught the misleading wording).
+        $adapter = StubAdapter::withDefaults();
+        $fetcher = new ExplodingFetcher();
+        $io = new BufferIO();
+
+        $code = $this->runner($adapter, $fetcher)->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'https://unknown.example.com/acme/skills'),
+        );
+
+        Assert::same($code, Command::INVALID);
+        $out = $io->getOutput();
+        Assert::true(\str_contains($out, 'could not infer adapter'));
+        Assert::true(\str_contains($out, 'https://unknown.example.com/acme/skills'));
+        Assert::false(\str_contains($out, 'shorthand'));
+    }
+
     // ── per-step errors ────────────────────────────────────────────
 
     public function parseAddInputErrorReturnsInvalid(): void

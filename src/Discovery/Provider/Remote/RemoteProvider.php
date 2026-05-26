@@ -154,7 +154,11 @@ final readonly class RemoteProvider implements DonorProvider
             try {
                 $donor = $this->vendorMapper->fromExtra($packageName, $path, $extra);
                 $provenance = $ref->provenance ?? 'remote';
-                $donors[] = $donor->withProvenance($provenance);
+                // Spec §8.3: `remote[]` entries are user-declared and
+                // therefore implicit-trusted, regardless of `from` value.
+                // The planner's trust list applies to local-provider
+                // transitive discoveries only.
+                $donors[] = $donor->withProvenance($provenance)->asImplicitlyTrusted();
             } catch (MalformedVendorConfig $e) {
                 $warnings[] = $e->getMessage();
                 /** @var non-empty-string $reason */
@@ -184,12 +188,13 @@ final readonly class RemoteProvider implements DonorProvider
 
     /**
      * Remote refs are external donors, not Composer dependencies of
-     * the consumer project. The implicit-trust rule ("declared in
-     * the consumer's manifest → trusted") applies only to deps
-     * resolved by Composer, so this provider always returns an
-     * empty list. Trust for remote refs flows through the explicit
-     * `trusted` pattern list, the same way trust for transitive
-     * Composer deps does.
+     * the consumer project, so the `directDependencies` channel
+     * (rooted in Composer's `require` / `require-dev` semantics)
+     * does not apply. Implicit-trust for `remote[]` entries flows
+     * through {@see \LLM\Skills\Config\VendorConfig::$implicitTrust}
+     * instead — set in {@see self::discover()} on every donor this
+     * provider emits — which the planner checks before consulting
+     * the trust list (spec §8.3).
      *
      * @psalm-suppress MissingPureAnnotation
      *         the inferred-pure body is incidental; the interface contract is impure

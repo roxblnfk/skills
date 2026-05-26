@@ -15,9 +15,9 @@ use LLM\Skills\Config\RemoteEntry;
  *
  *     vendor/llm-skills/cache/<from>/<host-segment>/<package-segment>/<ref-segment>/
  *
- * - `<host-segment>` = `<default>` when the entry has no `host`,
- *   else a URL-safe encoding of the host (`api-github-com`,
- *   `github-corp-example-com`).
+ * - `<host-segment>` = the literal string `default` when the entry
+ *   has no `host`, else a URL-safe encoding of the host
+ *   (`api-github-com`, `github-corp-example-com`).
  * - `<package-segment>` = URL-safe encoding of the package
  *   identifier (`/` → `__`, `@` → `at-`).
  * - `<ref-segment>` = the resolved ref (`v1.2.3`, branch name, or
@@ -133,8 +133,12 @@ final readonly class CachePathBuilder
     }
 
     /**
-     * Build the host segment. Absent host → `<default>` (literal
-     * angle brackets are part of the segment name for visibility).
+     * Build the host segment. Absent host → the literal string
+     * `default`. Present host → strip the scheme (`https://`,
+     * `http://`, …) and any trailing slashes, then sanitise via
+     * {@see self::encode()}. Ports are not stripped — `api-github-com-8080`
+     * is intentionally a distinct segment from `api-github-com`
+     * (different endpoints, different caches).
      *
      * @return non-empty-string
      *
@@ -145,8 +149,6 @@ final readonly class CachePathBuilder
         if ($host === null || $host === '') {
             return 'default';
         }
-        // Drop scheme + port for a cleaner segment; preserve enough
-        // of the host to distinguish github.com from corp GHE.
         /** @var string $stripped */
         $stripped = \preg_replace('#^[a-z]+://#i', '', $host);
         $stripped = \rtrim($stripped, '/');

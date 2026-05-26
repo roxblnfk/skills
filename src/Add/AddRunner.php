@@ -153,6 +153,19 @@ final readonly class AddRunner
     }
 
     /**
+     * Heuristic match for "input is a URL the user typed" — used only
+     * to phrase the adapter-inference error message. Catches the
+     * `https?://host/...` form that {@see self::inferAdapterFromUrl()}
+     * tries to match; anything else is treated as shorthand.
+     *
+     * @psalm-pure
+     */
+    private static function looksLikeUrl(string $input): bool
+    {
+        return \preg_match('~^https?://~i', $input) === 1;
+    }
+
+    /**
      * Pick an adapter for the user's input. If `$options->from` is
      * set, look it up directly. Otherwise infer from the input
      * URL's host: scan the registry for the adapter whose
@@ -171,10 +184,18 @@ final readonly class AddRunner
 
         $inferred = $this->inferAdapterFromUrl($options->input);
         if ($inferred === null) {
-            $io->writeError(
-                '<error>[llm/skills] --from is required for shorthand input; '
-                . 'pass --from=<adapter> (e.g. --from=github)</error>',
-            );
+            if (self::looksLikeUrl($options->input)) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] could not infer adapter from URL host in "%s"; '
+                    . 'pass --from=<adapter> (e.g. --from=github)</error>',
+                    $options->input,
+                ));
+            } else {
+                $io->writeError(
+                    '<error>[llm/skills] --from is required for shorthand input; '
+                    . 'pass --from=<adapter> (e.g. --from=github)</error>',
+                );
+            }
             return null;
         }
         return $inferred;

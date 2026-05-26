@@ -42,8 +42,9 @@ final class CachePathBuilderTest
             'v1.0.0',
         );
 
-        // host: scheme stripped, dots normalised to dashes via the
-        // safe-set sanitiser.
+        // host: scheme stripped; dots stay (they're inside the
+        // `[A-Za-z0-9._-]` safe set used by the sanitiser, so a host
+        // like `github.corp.example.com` survives verbatim).
         $s = (string) $path;
         Assert::true(\str_contains($s, '/cache/github/github.corp.example.com/team__skills/v1.0.0'));
     }

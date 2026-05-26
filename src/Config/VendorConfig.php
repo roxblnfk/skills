@@ -31,6 +31,11 @@ final readonly class VendorConfig
      * @param non-empty-string $provenance which provider produced this donor — defaults
      *         to {@see ProviderId::COMPOSER} for back-compat. Used by
      *         `skills:update --from=<id>` (spec §6.2) to filter the donor list.
+     * @param bool $implicitTrust the user explicitly declared this donor — the trust
+     *         list is not consulted (spec §8.3). Set by {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider}
+     *         for every `remote[]` entry, regardless of `from` value. Local providers
+     *         keep this `false` and let {@see \LLM\Skills\Sync\SyncPlanner} run the
+     *         per-registry trust check.
      *
      * @psalm-mutation-free
      */
@@ -40,6 +45,7 @@ final readonly class VendorConfig
         public string $source,
         public bool $discovered = false,
         public string $provenance = ProviderId::COMPOSER,
+        public bool $implicitTrust = false,
     ) {}
 
     /**
@@ -68,6 +74,31 @@ final readonly class VendorConfig
             source: $this->source,
             discovered: $this->discovered,
             provenance: $provenance,
+            implicitTrust: $this->implicitTrust,
+        );
+    }
+
+    /**
+     * Return a copy of this donor flagged as implicit-trusted. The
+     * `remote[]` provider calls this on every donor it produces so
+     * the planner does not consult the trust list for them
+     * (spec §8.3 — user-declared = trusted).
+     *
+     * @psalm-mutation-free
+     */
+    public function asImplicitlyTrusted(): self
+    {
+        if ($this->implicitTrust) {
+            return $this;
+        }
+
+        return new self(
+            packageName: $this->packageName,
+            packageRoot: $this->packageRoot,
+            source: $this->source,
+            discovered: $this->discovered,
+            provenance: $this->provenance,
+            implicitTrust: true,
         );
     }
 }

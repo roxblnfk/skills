@@ -582,6 +582,75 @@ final class SyncPlannerTest
         Assert::same($plan->skippedUntrustedNames, []);
     }
 
+    public function implicitTrustDonorIsApprovedWithoutAnyTrustPattern(): void
+    {
+        // Spec §8.3: a `remote[]` donor carries `implicitTrust = true` and
+        // the planner must approve it without consulting the trust list or
+        // the direct-dependency short-circuit. Reproduces copilot review
+        // #1 on PR #15: with an empty trust list and no direct deps, the
+        // donor would otherwise be silently skipped, breaking the default
+        // `skills:add` → auto-sync flow.
+        $donor = $this->donor('external/skills')->asImplicitlyTrusted();
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'external/skills');
+        Assert::true($plan->approvedDonors[0]->implicitTrust);
+        Assert::same($plan->skippedUntrustedNames, []);
+    }
+
+    public function implicitTrustSurvivesTrustedReplaceModeAndEmptyDirectDeps(): void
+    {
+        // `trusted-replace: true` wipes builtin + direct-dep trust. The
+        // implicit-trust flag is rooted in the user's explicit declaration
+        // (the `remote[]` entry) and stays in force regardless — replace
+        // mode tightens trust for local discoveries, not for entries the
+        // user typed verbatim.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: true,
+        );
+        $donor = $this->donor('external/skills')->asImplicitlyTrusted();
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::fromStrings('totally-irrelevant/*'),
+            projectRoot: $this->projectRoot(),
+            directDependencies: [],
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'external/skills');
+    }
+
+    public function implicitTrustIsCoexistsWithStandardTrustForOtherDonors(): void
+    {
+        // Mixed batch: one implicit-trust donor (remote) + one untrusted
+        // local donor. Implicit one approves, the other is skipped — the
+        // flag is per-donor, not a global override.
+        $remote = $this->donor('external/skills')->asImplicitlyTrusted();
+        $local = $this->donor('untrusted/local');
+        $plan = $this->planner()->plan(
+            donors: [$remote, $local],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'external/skills');
+        Assert::same($plan->skippedUntrustedNames, ['untrusted/local']);
+    }
+
     private function planner(): SyncPlanner
     {
         return new SyncPlanner();

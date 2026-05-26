@@ -14,13 +14,18 @@ use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
  *
  * Pipeline:
  *
- * 1. Compute the cache path under
- *    `vendor/llm-skills/cache/<from>/<host>/<package>/<ref>/`
- *    (per spec §7).
+ * 1. Compute the cache path via {@see CachePathBuilder::buildForUrl()} —
+ *    `vendor/llm-skills/cache/url/<sha256(url)-prefix>/<ref-segment>/`.
+ *    The fetcher receives a bare {@see RemoteDonorRef} (URL + ref) and
+ *    has no access to the originating `from` / `host` / `package`
+ *    triple, so it cannot use the human-readable spec §7 layout
+ *    that {@see CachePathBuilder::buildForEntry()} produces; the
+ *    URL already encodes from/host/ref uniquely, so a URL-hash
+ *    keyed cache is functionally equivalent.
  * 2. If the path already exists, return it — the cache is content-
  *    addressed-by-ref, so a hit means we have the right files.
  * 3. Otherwise, GET the URL via {@see HttpClient}, write the bytes
- *    to a temp `.zip` file, extract with {@see \ZipArchive}, locate
+ *    to a temp zip file, extract with {@see \ZipArchive}, locate
  *    the single top-level directory inside the archive (GitHub's
  *    zipball wraps everything in `<owner>-<repo>-<sha>/`), and
  *    rename that directory into the cache location.
@@ -31,10 +36,11 @@ use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
  * write error) becomes a {@see RemoteFetchException} that the
  * provider turns into a per-ref warning.
  *
- * The constructor does NOT receive a project root — the root is
- * passed at fetch time, which lets a single fetcher instance serve
- * multiple projects when the plugin is reused across sandboxes
- * (tests do this).
+ * The project root is bound to the fetcher at construction time
+ * (`$projectRoot`) — `fetch()` does not take it as an argument.
+ * One fetcher serves one project; a plugin instance reused across
+ * sandboxes (the test harness does this) builds a new fetcher per
+ * project root.
  *
  * @psalm-suppress MissingImmutableAnnotation
  *         depends on an impure {@see HttpClient}; filesystem effects are intentional
@@ -60,14 +66,6 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
             );
         }
 
-        // The fetcher needs a {@see \LLM\Skills\Config\RemoteEntry} to
-        // compute the cache path; we do not have that here. The
-        // {@see SkillsJsonRemoteDonorSource} could pass it through a
-        // composite VO, but that would couple the fetcher to the
-        // source's input shape. Instead we derive a stable cache key
-        // from the URL alone — the URL already encodes from/host/ref,
-        // so a URL-keyed cache is functionally equivalent and stays
-        // independent of the source.
         $cachePath = $this->cacheBuilder->buildForUrl($this->projectRoot, $ref->url, $ref->ref);
 
         $cachePathStr = (string) $cachePath;
@@ -76,12 +74,20 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
         }
 
         $tmpZip = $this->downloadToTemp($ref);
+        $scratch = \sys_get_temp_dir() . '/llm-skills-extract-' . \bin2hex(\random_bytes(6));
 
         try {
-            $extracted = $this->extractZip($ref, $tmpZip);
+            $extracted = $this->extractZip($ref, $tmpZip, $scratch);
             $this->moveExtractedToCache($ref, $extracted, $cachePath);
         } finally {
+            // The scratch dir is per-fetch and unbounded if left behind
+            // (sync runs accumulate one entry per fetched ref forever).
+            // Clean unconditionally — on success the top-level dir has
+            // been moved out and only the empty parent remains; on
+            // failure (malformed archive, mid-extract error) it may
+            // contain partial content that we also need to remove.
             @\unlink($tmpZip);
+            $this->removeRecursive($scratch);
         }
 
         return $cachePath;
@@ -119,14 +125,19 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
             );
         }
 
+        // {@see \tempnam()} creates the file at the returned path, so we
+        // write directly into it instead of appending a `.zip` suffix
+        // (which would orphan the original tempnam file on disk).
+        // {@see \ZipArchive::open()} accepts any extension — the suffix
+        // is cosmetic.
         $tmpPath = \tempnam(\sys_get_temp_dir(), 'llm-skills-archive-');
         if ($tmpPath === false) {
             throw new RemoteFetchException($ref, 'failed to create temp file for archive');
         }
-        $tmpPath .= '.zip';
 
         $bytes = \file_put_contents($tmpPath, $response->body);
         if ($bytes === false) {
+            @\unlink($tmpPath);
             throw new RemoteFetchException(
                 $ref,
                 'failed to write downloaded archive to ' . $tmpPath,
@@ -150,13 +161,15 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
      * surface a "malformed archive" warning.
      *
      * @param non-empty-string $tmpZip
+     * @param non-empty-string $scratch fresh, ideally not-yet-existing scratch directory
+     *         owned by the caller. {@see self::fetch()} cleans it up in `finally`.
      *
      * @return non-empty-string absolute path of the extracted top-level dir
      *
-     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedArgument
+     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedArgument,PossiblyFalseArgument
      *         ext-zip is a soft requirement — guarded by class_exists in fetch()
      */
-    private function extractZip(RemoteDonorRef $ref, string $tmpZip): string
+    private function extractZip(RemoteDonorRef $ref, string $tmpZip, string $scratch): string
     {
         $zip = new \ZipArchive();
         $openResult = $zip->open($tmpZip);
@@ -167,8 +180,6 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
             );
         }
 
-        $scratch = \sys_get_temp_dir()
-            . '/llm-skills-extract-' . \bin2hex(\random_bytes(6));
         if (!\mkdir($scratch, 0o777, true) && !\is_dir($scratch)) {
             $zip->close();
             throw new RemoteFetchException($ref, 'failed to create scratch dir ' . $scratch);
