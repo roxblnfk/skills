@@ -40,18 +40,16 @@ Allow the plugin to run:
 ```
 
 Auto-sync after every `composer install` / `update` is **on by default** — you don't have to
-configure anything to get fresh skills after running Composer. To opt out:
+configure anything to get fresh skills after running Composer. To opt out, drop a
+`skills.json` at the project root:
 
 ```jsonc
-{
-  "extra": {
-    "skills": { "auto-sync": false }
-  }
-}
+// <project-root>/skills.json
+{ "auto-sync": false }
 ```
 
-(or, in a `skills.json`, the same `"auto-sync": false`.) `composer install --no-scripts`
-also suppresses the auto-run for a single invocation without changing the config.
+`composer install --no-scripts` also suppresses the auto-run for a single invocation without
+changing the config.
 
 ### Global installation
 
@@ -68,11 +66,9 @@ composer skills:show
 composer skills:update
 ```
 
-Project-level settings (`target`, `trusted`, `discovery`, …) are read from the consumer
-project's `skills.json` when present, falling back to the legacy inline `extra.skills` block
-in `composer.json` otherwise. See [External config (`skills.json`)](#external-config-skillsjson)
-for the precedence rules and the auto-migration that moves inline blocks into the
-external file on the first write-mode command.
+Project-level settings (`target`, `trusted`, `discovery`, …) live in the consumer project's
+`skills.json` at the project root. See [Project configuration](#project-configuration) for the
+full reference.
 
 
 ## Commands
@@ -85,13 +81,13 @@ composer skills:init   [options]                  # alias: skills:i
 
 `skills:update` copies skills into the target directory. `skills:show` is read-only — it lists
 every donor, the per-skill sync status, and what is being skipped and why. `skills:init`
-bootstraps an external [`skills.json`](#external-config-skillsjson) at the project root and
-(when `composer.json` carries inline project keys) migrates them out.
+bootstraps a [`skills.json`](#project-configuration) at the project root and (when
+`composer.json` carries legacy inline project keys) migrates them out.
 
 | Option                | Where  | Description                                                                                                                                                        |
 |-----------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `<package>...`        | both   | Restrict to matching donors. Exact (`acme/foo`) or wildcard (`acme/*`, `*`). Listed packages are treated as **trusted** for this run (see [Trust](#trust)).        |
-| `--target=PATH`, `-t` | both   | Override the configured target directory, regardless of whether it came from `skills.json` or inline `extra.skills.target`.                                        |
+| `--target=PATH`, `-t` | both   | Override the configured target directory for this run.                                                                                                             |
 | `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces the configured aliases entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
 | `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                                |
@@ -153,20 +149,20 @@ After `skills:update`, the consumer project gets:
 
 ## Project configuration
 
-All settings live under `extra.skills` in the consumer project's `composer.json`:
+Project-level settings live in a dedicated **`skills.json`** at the project root. The file
+is the single source of truth for everything the plugin does in your project — what to copy,
+where to put it, who to trust, whether to auto-sync.
 
 ```jsonc
+// <project-root>/skills.json
 {
-  "extra": {
-    "skills": {
-      "target": ".agents/skills",
-      "aliases": [".claude/skills", ".cursor/skills"],
-      "trusted": ["acme/*", "myorg/skills-internal"],
-      "trusted-replace": false,
-      "discovery": false,
-      "auto-sync": true
-    }
-  }
+  "$schema": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
+  "target": ".agents/skills",
+  "aliases": [".claude/skills", ".cursor/skills"],
+  "trusted": ["acme/*", "myorg/skills-internal"],
+  "trusted-replace": false,
+  "discovery": false,
+  "auto-sync": true
 }
 ```
 
@@ -182,58 +178,8 @@ All settings live under `extra.skills` in the consumer project's `composer.json`
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
 
-A malformed `extra.skills` in the project is **fatal**. The same block in a *donor* package is
-skipped with a `-v` warning — one bad vendor never blocks the rest.
-
-
-## External config (`skills.json`)
-
-Project-level configuration can also live in a dedicated **`skills.json`** at the project root,
-side-by-side with `composer.json`. Same fields as `extra.skills`, but free from the noise of
-Composer's own config and with first-class JSON-schema support in editors.
-
-```jsonc
-// <project-root>/skills.json
-{
-  "$schema": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
-  "target": ".agents/skills",
-  "aliases": [".claude/skills", ".cursor/skills"],
-  "trusted": ["acme/*"],
-  "discovery": true,
-  "auto-sync": true
-}
-```
-
-### Precedence and auto-migration
-
-`skills.json` is the **only** long-lived project-config artifact. Inline `extra.skills` is a
-transitional state: the first time a write-mode command (`skills:update`, `skills:init`, or
-the `post-update-cmd` auto-sync hook) runs in a project that still has the inline block, the
-plugin moves the project-level keys out of `composer.json` and into a fresh `skills.json`.
-After that, `composer.json` is left alone forever.
-
-**Write-mode commands** (`skills:update`, `skills:init`, `post-update-cmd`):
-
-1. If `skills.json` exists at the project root → use it. `composer.json` is not touched.
-2. Otherwise, if `extra.skills` has project keys → auto-migrate: write `skills.json`, strip
-   the keys from `composer.json` via `JsonManipulator` (formatting preserved, donor-side
-   `extra.skills.source` stays put), then proceed with the freshly-written config. A
-   `[migrate] moved extra.skills → skills.json (...)` line is printed.
-3. Otherwise → defaults.
-
-**Read-only commands** (`skills:show`, `post-install-cmd`):
-
-1. If `skills.json` exists → use it. `composer.json` is not touched.
-2. Otherwise, read inline `extra.skills` (legacy 1.x behaviour) and emit a one-line
-   `[notice]` telling the user to run `skills:update` for the migration.
-
-The asymmetry is deliberate. `composer install` is a fetch step; a silent `composer.json`
-rewrite there would be a surprise. The other surfaces (`skills:update` and explicit
-`skills:init` runs) are write-mode by nature, so cleaning up the legacy artifact along the
-way is in character.
-
-There is no `--no-migrate` flag. If you need the old read-only behaviour for one run, use
-`skills:show` or `composer install --no-scripts`.
+The fastest way to get a valid `skills.json` is `composer skills:init` (see below). Bootstrap
+it once and commit it alongside `composer.json`.
 
 ### Strict shape
 
@@ -245,9 +191,10 @@ There is no `--no-migrate` flag. If you need the old read-only behaviour for one
 
 The PHP mapper is the authoritative validator at runtime; the
 [`resources/skills.schema.json`](resources/skills.schema.json) document mirrors it for IDE /
-editor support.
+editor support. A malformed `skills.json` is **fatal**; a malformed `extra.skills` block in a
+*donor* package is skipped with a `-v` warning so one bad vendor never blocks the rest.
 
-### `skills:init` — explicit fast-path
+### `skills:init` — bootstrap and migrate
 
 ```bash
 composer skills:init                  # migrate eagerly (same effect as a future skills:update)
@@ -273,6 +220,14 @@ Refusal semantics:
 auto-discover `skills.json` at the project root, so a non-default `--path` also emits a
 notice telling the user to move the file.
 
+> [!NOTE]
+> **Upgrading from inline `extra.skills`?** Early versions of `llm/skills` kept project
+> settings under `extra.skills` in `composer.json`. That surface is deprecated. Starting with
+> **1.3.0**, the first write-mode run (`skills:update`, `skills:init`, or the
+> `post-update-cmd` auto-sync hook) moves the project keys into `skills.json` automatically
+> and prints a `[migrate]` line. `skills:show` and `post-install-cmd` stay read-only and just
+> emit a one-line notice. Donor-side `extra.skills.source` is never touched.
+
 
 ## Aliases
 
@@ -289,13 +244,10 @@ OS-level mirrors:
   refused with a non-zero exit; the plugin never silently degrades to a copy.
 
 ```jsonc
+// <project-root>/skills.json
 {
-  "extra": {
-    "skills": {
-      "target":  ".agents/skills",
-      "aliases": [".claude/skills", ".cursor/skills"]
-    }
-  }
+  "target":  ".agents/skills",
+  "aliases": [".claude/skills", ".cursor/skills"]
 }
 ```
 
@@ -310,7 +262,7 @@ through any path see the same files.
   directory manually and re-run — the plugin never destroys user content.
 - **Stale aliases not pruned.** Removing an entry from `aliases` does not delete the
   junction/symlink on disk. Clean it up manually if needed.
-- **CLI override is total.** `--alias=PATH` (repeatable) replaces `extra.skills.aliases`
+- **CLI override is total.** `--alias=PATH` (repeatable) replaces the configured `aliases`
   for that run — there is no merging.
 
 ```bash
@@ -339,11 +291,12 @@ prompt-injection payload, so the plugin does not copy skills from a donor unless
 Effective trust list:
 
 ```
-builtin ∪ project.extra.skills.trusted ∪ --trust=<pattern> ∪ direct-deps
+builtin ∪ project.trusted ∪ --trust=<pattern> ∪ direct-deps
 ```
 
-`direct-deps` is the set of packages declared under `require` and `require-dev` in the
-consumer's root `composer.json`. Setting `trusted-replace: true` drops both implicit sources
+`project.trusted` is the `trusted` array from `skills.json`. `direct-deps` is the set of
+packages declared under `require` and `require-dev` in the consumer's root `composer.json`.
+Setting `trusted-replace: true` drops both implicit sources
 (`builtin` and `direct-deps`) from the union, leaving only project trust and `--trust=` —
 the explicit-only mode.
 
@@ -379,7 +332,7 @@ When a package does not declare `extra.skills` but ships a `skills/` directory a
 root, `llm/skills` can still pick up the skills inside. Opt in one of three ways:
 
 - `--discovery` flag on the command line (for a single run);
-- `extra.skills.discovery: true` in the project (always on);
+- `"discovery": true` in `skills.json` (always on);
 - Name the package as a positional argument (implicit, per-package — see [Shortcuts](#shortcuts)).
 
 ```

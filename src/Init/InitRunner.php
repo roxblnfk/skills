@@ -93,7 +93,20 @@ final readonly class InitRunner
             && $options->path === 'skills.json'
             && \is_file($target)
         ) {
+            // Suppress so we can report a friendlier message ourselves
+            // (permission denied / file lock on Windows surfaces as a
+            // PHP warning otherwise). The follow-up `is_file` check is
+            // what actually decides whether to fail the run — a
+            // successful unlink leaves no file, period.
             @\unlink($target);
+            if (\is_file($target)) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] --force could not remove existing %s (file locked or permission denied). '
+                    . 'Remove it manually and re-run.</error>',
+                    $target,
+                ));
+                return Command::FAILURE;
+            }
         }
 
         $composerJsonPath = (string) $projectRoot->join('composer.json');
