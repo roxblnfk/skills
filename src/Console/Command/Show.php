@@ -26,8 +26,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Composer itself via {@see Factory::create()} on a best-effort
  * basis. When the current working directory has no `composer.json`
  * the {@see ComposerProvider} reports itself inactive and the runner
- * emits the standalone `[no donors available]` notice instead of
- * dying with a bootstrap error.
+ * emits the `no donor providers are active` notice instead of dying
+ * with a bootstrap error.
  *
  * @internal
  */

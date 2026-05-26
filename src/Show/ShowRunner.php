@@ -20,8 +20,8 @@ use Symfony\Component\Console\Command\Command;
  * returns a Symfony exit code.
  *
  * Project-config IO concerns (the `skills.json` shadowing warning,
- * and the standalone "no donors available" notice) stay here so the
- * builder remains IO-free.
+ * and the standalone `no donor providers are active` notice) stay
+ * here so the builder remains IO-free.
  */
 final readonly class ShowRunner
 {

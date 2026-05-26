@@ -17,7 +17,8 @@ use LLM\Skills\Discovery\DonorDiscoveryResult;
  * to enumerate donors. When no `Composer` instance is supplied (the
  * standalone `bin/skills` ran outside any Composer project) the
  * provider reports `isActive() === false` and contributes nothing —
- * the runner falls through to the `[no donors available]` notice.
+ * the runner falls through to the `no donor providers are active`
+ * notice.
  *
  * Bootstrap concerns (how to obtain a `Composer` instance, what to
  * do when `Factory::create()` throws) belong to the entrypoints

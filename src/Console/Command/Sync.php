@@ -26,8 +26,9 @@ use Symfony\Component\Console\Output\OutputInterface;
  *
  * The bootstrap is **best-effort**: if no `composer.json` is found at the
  * current working directory, the {@see ComposerProvider} simply reports
- * itself inactive and the runner emits the `[no donors available]`
- * notice. Future providers (GitHub, npm, skills.sh, …) will plug into
+ * itself inactive and the runner emits the
+ * `no donor providers are active` notice. Future providers
+ * (GitHub, npm, skills.sh, …) will plug into
  * the same provider chain, so a Composer-less project will still have
  * actionable behaviour once those land. For now standalone mode is a
  * benign no-op rather than a crash.

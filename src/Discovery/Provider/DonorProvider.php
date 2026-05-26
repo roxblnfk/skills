@@ -48,7 +48,7 @@ interface DonorProvider
      * Whether this provider has anything to contribute in the
      * current project. The runner uses the aggregate of all providers'
      * `isActive()` to decide whether to emit the
-     * `[no donors available]` notice (true when every provider
+     * `no donor providers are active` notice (true when every provider
      * reports inactive — typically "no donor ecosystem detected").
      *
      * @psalm-suppress MissingAbstractPureAnnotation
