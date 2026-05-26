@@ -93,10 +93,15 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
     }
 
     /**
-     * Auto-sync hook. Runs `skills:update` with default options when
-     * the project opts in via `extra.skills.auto-sync: true`. Any
-     * failure is surfaced through the {@see IOInterface} but never
-     * thrown — a broken sync must not abort the surrounding
+     * Auto-sync hook. Runs `skills:update` with default options on
+     * every `composer install` / `update` unless the project opts
+     * out via `auto-sync: false` (in `skills.json` or, for projects
+     * still on the inline config, in `extra.skills`). The default
+     * was flipped to on once it became clear most projects wanted
+     * it; opt-outs are now the exception.
+     *
+     * Any failure is surfaced through the {@see IOInterface} but
+     * never thrown — a broken sync must not abort the surrounding
      * `composer install` / `update`.
      *
      * The two events are handled with slightly different policy:

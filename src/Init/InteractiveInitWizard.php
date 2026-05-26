@@ -6,6 +6,7 @@ namespace LLM\Skills\Init;
 
 use Composer\IO\IOInterface;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
+use LLM\Skills\Config\ProjectConfig;
 
 /**
  * Interactive setup helper for `skills:init`.
@@ -79,8 +80,10 @@ final readonly class InteractiveInitWizard
 
         $result = [];
         // Order matches ProjectConfigMapper::PROJECT_KEYS so generated
-        // skills.json files are diff-stable.
-        if ($target !== '.agents/skills') {
+        // skills.json files are diff-stable. We compare against the
+        // canonical default rather than the literal string so this
+        // wizard tracks any future change to DEFAULT_TARGET in one place.
+        if ($target !== ProjectConfig::DEFAULT_TARGET) {
             $result['target'] = $target;
         }
         if ($aliases !== []) {
@@ -203,7 +206,9 @@ final readonly class InteractiveInitWizard
     {
         /** @var mixed $rawDefault */
         $rawDefault = $defaults['target'] ?? null;
-        $default = \is_string($rawDefault) && $rawDefault !== '' ? $rawDefault : '.agents/skills';
+        $default = \is_string($rawDefault) && $rawDefault !== ''
+            ? $rawDefault
+            : ProjectConfig::DEFAULT_TARGET;
 
         $io->write('<info>1/6  target</info> — destination directory for synced skills,');
         $io->write('     relative to the project root. Tool-agnostic by default so');

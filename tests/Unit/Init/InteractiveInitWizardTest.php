@@ -25,12 +25,12 @@ final class InteractiveInitWizardTest
         // a skills.json with only `$schema`. The wizard returns an
         // empty array; the caller prepends the schema pointer.
         $io = $this->ioWithAnswers([
-            '',  // target (default)
+            '',  // target (default .agents/skills)
             '',  // aliases (default 'none')
             '',  // trusted (default '<none>')
             '',  // trusted-replace (default no)
             '',  // discovery (default no)
-            '',  // auto-sync (default no)
+            '',  // auto-sync (default yes — flipped on; omitted from result)
             'yes', // confirm write
         ]);
 

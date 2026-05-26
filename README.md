@@ -68,8 +68,11 @@ composer skills:show
 composer skills:update
 ```
 
-Project-level settings (`extra.skills.target`, `trusted`, `discovery`) are still read from the
-**consumer project's** `composer.json`.
+Project-level settings (`target`, `trusted`, `discovery`, …) are read from the consumer
+project's `skills.json` when present, falling back to the legacy inline `extra.skills` block
+in `composer.json` otherwise. See [External config (`skills.json`)](#external-config-skillsjson)
+for the precedence rules and the auto-migration that moves inline blocks into the
+external file on the first write-mode command.
 
 
 ## Commands
@@ -88,8 +91,8 @@ bootstraps an external [`skills.json`](#external-config-skillsjson) at the proje
 | Option                | Where  | Description                                                                                                                                                        |
 |-----------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `<package>...`        | both   | Restrict to matching donors. Exact (`acme/foo`) or wildcard (`acme/*`, `*`). Listed packages are treated as **trusted** for this run (see [Trust](#trust)).        |
-| `--target=PATH`, `-t` | both   | Override `extra.skills.target`.                                                                                                                                    |
-| `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces `extra.skills.aliases` entirely. See [Aliases](#aliases). |
+| `--target=PATH`, `-t` | both   | Override the configured target directory, regardless of whether it came from `skills.json` or inline `extra.skills.target`.                                        |
+| `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces the configured aliases entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
 | `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                                |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
