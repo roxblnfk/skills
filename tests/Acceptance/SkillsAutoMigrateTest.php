@@ -236,10 +236,17 @@ final class SkillsAutoMigrateTest
 
     // ── show is read-only ───────────────────────────────────────────────
 
+    #[WithSandboxExtras([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic'],
+    ])]
     public function showDoesNotMigrate(): void
     {
-        // Default sandbox composer.json has inline `trusted`. show is
-        // read-only and must not migrate it.
+        // Inject inline project keys explicitly via the attribute so
+        // this test does not depend on whatever the sandbox happens
+        // to ship with — particularly important on CI where tests
+        // across classes might run in an order that leaves the
+        // sandbox in a different state than local runs do.
         $composerBefore = (string) \file_get_contents(self::COMPOSER_JSON);
         Assert::false(\is_file(self::SKILLS_JSON));
 
@@ -259,10 +266,17 @@ final class SkillsAutoMigrateTest
         Assert::false(\is_file(self::SKILLS_JSON), 'show must not create skills.json');
     }
 
+    #[WithSandboxExtras([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic'],
+    ])]
     public function showEmitsLegacyNoticeWhenInlineDetected(): void
     {
         // The notice exists so a user staring at "still works on inline
         // config" output knows there's a one-command migration available.
+        // We inject inline project keys via WithSandboxExtras so the
+        // notice fires deterministically regardless of cross-class
+        // test ordering on CI.
         $process = ComposerRunner::run(
             Path::create(Info::PROJECT_DIR),
             'skills:show',
