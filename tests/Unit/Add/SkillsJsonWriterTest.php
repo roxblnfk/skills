@@ -192,6 +192,40 @@ final class SkillsJsonWriterTest
         Assert::true(\is_int($refPos) && \is_int($customPos) && $refPos < $customPos);
     }
 
+    public function upsertCollapsesPreExistingDuplicatesIntoOne(): void
+    {
+        // A hand-edited skills.json can have two entries with the same
+        // composite key. The mapper rejects that on load, but the
+        // writer also operates on raw-loaded payloads — so the upsert
+        // must collapse duplicates into a single normalised entry,
+        // not insert a copy next to each.
+        $this->writeSkillsJson([
+            'remote' => [
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v0.9.0'],
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v0.9.1'],
+                ['from' => 'github', 'package' => 'acme/other', 'ref' => 'v2.0.0'],
+            ],
+        ]);
+
+        (new SkillsJsonWriter())->upsertRemote(
+            Path::create($this->tmp),
+            self::entry('acme/skills', ref: 'v1.2.3'),
+        );
+
+        $payload = $this->readSkillsJson();
+        /** @var list<array<string, mixed>> $remote */
+        $remote = (array) $payload['remote'];
+
+        Assert::count($remote, 2);
+
+        $acmeSkills = \array_values(\array_filter(
+            $remote,
+            static fn(array $e): bool => ($e['package'] ?? null) === 'acme/skills',
+        ));
+        Assert::count($acmeSkills, 1);
+        Assert::same($acmeSkills[0]['ref'] ?? null, 'v1.2.3');
+    }
+
     public function atomicWriteLeavesNoTempFileBehindOnSuccess(): void
     {
         // The temp file pattern is `skills.json.<hex>.tmp`. After a

@@ -127,6 +127,62 @@ final class RemoteProviderEndToEndTest
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
     }
 
+    public function zipSlipArchiveIsRejectedBeforeAnyFileLands(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            Assert::true(true);
+            return;
+        }
+
+        // A malicious archive served by a user-configurable `host`
+        // contains an entry whose name resolves outside the
+        // extraction scratch dir. The fetcher must refuse the archive
+        // and emit a warning; no file may land at the traversal
+        // target. Mirrors the OWASP "zip slip" vulnerability.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'remote' => [
+                ['from' => 'github', 'package' => 'evil/payload', 'ref' => 'v1.0.0'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        // Build a zip with one well-shaped entry + one traversal
+        // entry. extractTo() would happily honour the `..` if we did
+        // not pre-validate.
+        $zipBytes = $this->buildRawZip([
+            'evil-payload-v1.0.0/' => '',
+            'evil-payload-v1.0.0/composer.json' => '{}',
+            '../../pwn.txt' => 'gotcha',
+        ]);
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/evil/payload/zipball/v1.0.0' => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GithubAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::same($result->donors, []);
+        Assert::true($result->warnings !== []);
+        $combined = \implode("\n", $result->warnings);
+        Assert::true(
+            \str_contains($combined, 'unsafe entry path'),
+            'fetcher must explicitly reject the traversal entry — got: ' . $combined,
+        );
+
+        // The traversal target must not exist. Both the parent dir
+        // (one level above $this->tmp) and the sibling pwn file must
+        // be absent.
+        $traversalTarget = \dirname($this->tmp, 2) . '/pwn.txt';
+        Assert::false(\is_file($traversalTarget), 'zip-slip wrote to ' . $traversalTarget);
+    }
+
     public function malformedRemoteArchiveProducesWarning(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
@@ -165,6 +221,41 @@ final class RemoteProviderEndToEndTest
         Assert::same($result->donors, []);
         Assert::true($result->warnings !== []);
         Assert::true(\str_contains((string) $result->warnings[0], 'composer.json missing'));
+    }
+
+    /**
+     * Build an in-memory zip with arbitrary entry names — used for
+     * adversarial cases (e.g. zip-slip traversal). A trailing slash on
+     * a key marks the entry as a directory (empty content).
+     *
+     * @param array<string, string> $entries entry-name → file contents
+     */
+    private function buildRawZip(array $entries): string
+    {
+        $tmpZip = \tempnam(\sys_get_temp_dir(), 'feature-raw-zip-');
+        if ($tmpZip === false) {
+            throw new \RuntimeException('failed to create tmp zip');
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($tmpZip, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException('failed to open zip for write');
+        }
+        foreach ($entries as $name => $content) {
+            if (\str_ends_with($name, '/')) {
+                $zip->addEmptyDir(\rtrim($name, '/'));
+            } else {
+                $zip->addFromString($name, $content);
+            }
+        }
+        $zip->close();
+
+        $bytes = \file_get_contents($tmpZip);
+        @\unlink($tmpZip);
+        if ($bytes === false) {
+            throw new \RuntimeException('failed to read built zip');
+        }
+        return $bytes;
     }
 
     /**

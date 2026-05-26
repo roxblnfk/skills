@@ -94,6 +94,50 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
     }
 
     /**
+     * Lexical zip-slip check on a zip entry name. The name is the
+     * archive-relative path; we reject anything that escapes the
+     * extraction root through any combination of:
+     *
+     * - absolute paths (`/foo`, `C:/foo`, `\\server\share`);
+     * - parent-directory segments (`../foo`, `foo/../../bar`);
+     * - backslash separators on Windows (a forward-slash-only check
+     *   is incomplete because `extractTo` happily honours both);
+     * - NUL bytes (PHP filesystem APIs truncate at NUL).
+     *
+     * The check is purely lexical — we do not consult the filesystem
+     * — because the archive has not been written yet. Lexical
+     * containment is sufficient because the archive contents are not
+     * symlinks (ZipArchive does not follow them on extract).
+     *
+     * @psalm-pure
+     */
+    private static function isSafeZipEntryName(string $name): bool
+    {
+        if ($name === '') {
+            return false;
+        }
+        if (\str_contains($name, "\0")) {
+            return false;
+        }
+        // Normalise separators for the segment walk below; check the
+        // unnormalised form for outright absolute paths first.
+        if ($name[0] === '/' || $name[0] === '\\') {
+            return false;
+        }
+        // Windows drive-letter absolutes: `C:foo`, `C:/foo`, `C:\foo`.
+        if (\preg_match('~^[A-Za-z]:~', $name) === 1) {
+            return false;
+        }
+        $normalised = \strtr($name, ['\\' => '/']);
+        foreach (\explode('/', $normalised) as $segment) {
+            if ($segment === '..') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Stream the archive over HTTP into a temp file.
      *
      * @return non-empty-string absolute path of the temp .zip file
@@ -178,6 +222,27 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
                 $ref,
                 \sprintf('failed to open archive (zip error %d)', $openResult),
             );
+        }
+
+        // Zip-slip guard: validate every entry name BEFORE extraction.
+        // The archive comes from a user-configurable {@see RemoteEntry::$host}
+        // and a single rogue entry like `../../../etc/passwd` or
+        // `/etc/passwd` would let {@see \ZipArchive::extractTo()} drop
+        // files anywhere on disk. Reject anything that does not
+        // lexically resolve to a path inside `$scratch`.
+        $count = $zip->numFiles;
+        for ($i = 0; $i < $count; $i++) {
+            /** @var string|false $name */
+            $name = $zip->getNameIndex($i);
+            if (!\is_string($name) || !self::isSafeZipEntryName($name)) {
+                $zip->close();
+                throw new RemoteFetchException(
+                    $ref,
+                    'archive contains an unsafe entry path "'
+                    . (\is_string($name) ? $name : '<unreadable>')
+                    . '" — refusing to extract',
+                );
+            }
         }
 
         if (!\mkdir($scratch, 0o777, true) && !\is_dir($scratch)) {

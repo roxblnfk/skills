@@ -96,8 +96,14 @@ final readonly class SkillsJsonWriter
     }
 
     /**
-     * Replace any entry that shares the new entry's composite key, or
-     * append when no match exists.
+     * Replace **every** entry that shares the new entry's composite
+     * key with a single normalised copy, or append when no match
+     * exists. A pre-existing `skills.json` may have been hand-edited
+     * to contain duplicate keys (the mapper rejects this on load, but
+     * the writer also operates on raw-loaded payloads); collapsing
+     * the duplicates here guarantees the post-upsert file always
+     * satisfies the composite-key uniqueness constraint, regardless
+     * of what shape the file was in before.
      *
      * @param list<array<string, mixed>> $existing
      *
@@ -110,17 +116,22 @@ final readonly class SkillsJsonWriter
         $newKey = $new->compositeKey();
         $serialised = self::serialise($new);
 
-        $found = false;
+        $written = false;
         $out = [];
         foreach ($existing as $entry) {
             if (self::compositeKeyOf($entry) === $newKey) {
-                $out[] = $serialised;
-                $found = true;
+                // First match consumes the replacement; subsequent
+                // matches drop out entirely so duplicates collapse
+                // into a single entry.
+                if (!$written) {
+                    $out[] = $serialised;
+                    $written = true;
+                }
                 continue;
             }
             $out[] = $entry;
         }
-        if (!$found) {
+        if (!$written) {
             $out[] = $serialised;
         }
         return $out;

@@ -631,7 +631,7 @@ final class SyncPlannerTest
         Assert::same($plan->approvedDonors[0]->packageName, 'external/skills');
     }
 
-    public function implicitTrustIsCoexistsWithStandardTrustForOtherDonors(): void
+    public function implicitTrustCoexistsWithStandardTrustForOtherDonors(): void
     {
         // Mixed batch: one implicit-trust donor (remote) + one untrusted
         // local donor. Implicit one approves, the other is skipped — the

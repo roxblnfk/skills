@@ -61,8 +61,6 @@ final readonly class CompositeDonorProvider implements DonorProvider
     {
         /** @var array<non-empty-string, \LLM\Skills\Config\VendorConfig> $donorsByName */
         $donorsByName = [];
-        /** @var list<non-empty-string> $shadowed */
-        $shadowed = [];
         /** @var list<string> $warnings */
         $warnings = [];
         /** @var list<MalformedDonor> $malformed */
@@ -97,13 +95,6 @@ final readonly class CompositeDonorProvider implements DonorProvider
             foreach ($result->discoverable as $d) {
                 $discoverable[] = $d;
             }
-        }
-
-        foreach ($shadowed as $name) {
-            $warnings[] = \sprintf(
-                'donor "%s" was provided by multiple providers; the later (remote) one wins',
-                $name,
-            );
         }
 
         return new DonorDiscoveryResult(

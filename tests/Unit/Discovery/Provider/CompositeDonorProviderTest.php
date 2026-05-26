@@ -110,14 +110,14 @@ final class CompositeDonorProviderTest
         $local = self::provider(
             active: true,
             discover: new DonorDiscoveryResult(
-                donors: [self::donor('acme/skills', source: 'local-source')],
+                donors: [self::donor('acme/skills', source: 'local-source', provenance: 'composer')],
                 warnings: [],
             ),
         );
         $remote = self::provider(
             active: true,
             discover: new DonorDiscoveryResult(
-                donors: [self::donor('acme/skills', source: 'remote-source')],
+                donors: [self::donor('acme/skills', source: 'remote-source', provenance: 'github')],
                 warnings: [],
             ),
         );
@@ -127,7 +127,15 @@ final class CompositeDonorProviderTest
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->source, 'remote-source');
         Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'acme/skills'));
+        // The warning must name the package AND both provenances so a
+        // user can tell which provider lost — the composite is generic
+        // (later-wins, not "remote-wins"), so the wording must not
+        // hard-code "remote".
+        $w = $result->warnings[0];
+        Assert::true(\str_contains($w, 'acme/skills'));
+        Assert::true(\str_contains($w, 'github'));
+        Assert::true(\str_contains($w, 'composer'));
+        Assert::false(\str_contains($w, '(remote)'));
     }
 
     public function directDependenciesAreUnionedAndDeduped(): void
@@ -154,14 +162,20 @@ final class CompositeDonorProviderTest
     /**
      * @param non-empty-string $name
      * @param non-empty-string $source
+     * @param non-empty-string $provenance
      */
-    private static function donor(string $name, string $source = 'skills', bool $discovered = false): VendorConfig
-    {
+    private static function donor(
+        string $name,
+        string $source = 'skills',
+        bool $discovered = false,
+        string $provenance = 'composer',
+    ): VendorConfig {
         return new VendorConfig(
             packageName: $name,
             packageRoot: self::root(),
             source: $source,
             discovered: $discovered,
+            provenance: $provenance,
         );
     }
 

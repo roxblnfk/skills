@@ -39,8 +39,8 @@ use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
  *     Inactive when `remote[]` is empty.
  *
  * Remote is wired LAST so the composite's "later-wins" semantic
- * (spec §6.5) makes explicit remote entries override transitive
- * local discoveries of the same package name.
+ * makes explicit remote entries override transitive local discoveries
+ * of the same package name.
  *
  * The builder does a **best-effort** read of `skills.json` to pick up
  * the `local` toggles. If that read throws (malformed config), the
@@ -78,20 +78,25 @@ final readonly class DonorProviderBuilder
      * backed HTTP client (so auth.json credentials apply), and an
      * archive fetcher into the {@see RemoteProvider} skeleton.
      *
-     * Falls back to a no-HTTP setup when no Composer instance is
-     * available (standalone `bin/skills` in a directory without
-     * composer.json). The {@see RemoteProvider} then sees a working
-     * source but a null fetcher, which it gracefully reports as
-     * "remote source declared refs but no fetcher is configured".
+     * Returns an inert {@see RemoteProvider} (default
+     * {@see \LLM\Skills\Discovery\Provider\Remote\NullRemoteDonorSource},
+     * no fetcher) when no Composer instance is available — i.e. the
+     * standalone `bin/skills` binary in a directory without
+     * `composer.json`. The remote pipeline depends on Composer's
+     * {@see HttpDownloader} for `auth.json` plumbing, and there is
+     * no offline-friendly path that can resolve a remote `from` or
+     * download an archive. The composite then falls back to the
+     * runner's `[llm/skills] no donor providers are active — nothing
+     * to sync. Run with -v for details.` notice, which is the
+     * documented standalone-without-Composer UX (see
+     * {@see \LLM\Skills\Sync\SyncRunner}). `remote[]` entries in
+     * `skills.json` are intentionally silent-dropped here — they
+     * become live again as soon as a `composer.json` (and therefore
+     * an HTTP-capable {@see Composer} instance) is present.
      */
     private function buildRemoteProvider(?Composer $composer): RemoteProvider
     {
         if ($composer === null) {
-            // No Composer context → no HTTP client (we rely on
-            // Composer's HttpDownloader for auth) → no fetcher. We
-            // leave the source wired with an empty registry so any
-            // entries surface their warnings cleanly, but the provider
-            // itself stays inactive without a fetcher anyway.
             return new RemoteProvider();
         }
 
