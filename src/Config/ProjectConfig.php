@@ -46,7 +46,7 @@ final readonly class ProjectConfig
         public bool $trustedReplace,
         public bool $discovery = false,
         public array $aliases = [],
-        public bool $autoSync = false,
+        public bool $autoSync = true,
     ) {}
 
     /**
@@ -63,7 +63,7 @@ final readonly class ProjectConfig
             trustedReplace: false,
             discovery: false,
             aliases: [],
-            autoSync: false,
+            autoSync: true,
         );
     }
 

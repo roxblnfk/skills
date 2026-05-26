@@ -12,9 +12,11 @@ use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
 use Composer\Script\Event as ScriptEvent;
 use Composer\Script\ScriptEvents;
+use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Discovery\Provider\ComposerProvider;
 use LLM\Skills\Sync\SyncRunner;
 
 /**
@@ -91,10 +93,31 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
     }
 
     /**
-     * Auto-sync hook. Runs `skills:update` with default options when the
-     * project opts in via `extra.skills.auto-sync: true`. Any failure is
-     * surfaced through the {@see IOInterface} but never thrown — a broken
-     * sync must not abort the surrounding `composer install` / `update`.
+     * Auto-sync hook. Runs `skills:update` with default options on
+     * every `composer install` / `update` unless the project opts
+     * out via `auto-sync: false` (in `skills.json` or, for projects
+     * still on the inline config, in `extra.skills`). The default
+     * was flipped to on once it became clear most projects wanted
+     * it; opt-outs are now the exception.
+     *
+     * Any failure is surfaced through the {@see IOInterface} but
+     * never thrown — a broken sync must not abort the surrounding
+     * `composer install` / `update`.
+     *
+     * The two events are handled with slightly different policy:
+     *
+     * - **`post-install-cmd`** is a fetch-only step from the user's
+     *   point of view; an unexpected `composer.json` rewrite during
+     *   `composer install` would be a surprise. The hook therefore
+     *   passes `autoMigrate: false` so any legacy inline
+     *   `extra.skills` block is read but not relocated.
+     * - **`post-update-cmd`** runs when the user is actively
+     *   reshuffling dependencies. A `composer.json` write is in
+     *   character with that command, so the migration goes through.
+     *
+     * Either way, the explicit `composer skills:update` is the
+     * unambiguous trigger for the migration; the auto-sync hook
+     * just opportunistically takes the same code path on `update`.
      */
     public function onPostInstallOrUpdate(ScriptEvent $event): void
     {
@@ -102,17 +125,40 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             return;
         }
 
+        $projectRoot = Path::create(\getcwd() ?: '.');
         try {
-            $project = (new ProjectConfigMapper())->fromExtra($this->composer->getPackage()->getExtra());
+            $resolution = (new ProjectConfigMapper())->forProject(
+                $projectRoot,
+                $this->composer->getPackage()->getExtra(),
+            );
         } catch (MalformedProjectConfig $e) {
             $this->io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return;
         }
 
-        if (!$project->autoSync) {
+        if (!$resolution->config->autoSync) {
             return;
         }
 
-        (new SyncRunner())->run($this->composer, $this->io, SyncOptions::default());
+        $autoMigrate = $event->getName() === ScriptEvents::POST_UPDATE_CMD;
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: null,
+            interactive: false,
+            dryRun: false,
+            discovery: null,
+            aliasOverrides: null,
+            autoMigrate: $autoMigrate,
+        );
+
+        $provider = new ComposerProvider($this->composer);
+        (new SyncRunner())->run(
+            $projectRoot,
+            $provider,
+            $provider->rootExtras(),
+            $this->io,
+            $options,
+        );
     }
 }

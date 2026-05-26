@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace LLM\Skills\Composer\Command;
 
 use Composer\Command\BaseCommand;
+use Internal\Path;
 use LLM\Skills\Console\ShowCliDefinition;
+use LLM\Skills\Discovery\Provider\ComposerProvider;
 use LLM\Skills\Show\ShowRunner;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -42,6 +44,16 @@ final class Show extends BaseCommand
             return self::INVALID;
         }
 
-        return (new ShowRunner())->run($this->requireComposer(), $this->getIO(), $options);
+        $composer = $this->requireComposer();
+        $provider = new ComposerProvider($composer);
+        $projectRoot = Path::create(\getcwd() ?: '.');
+
+        return (new ShowRunner())->run(
+            $projectRoot,
+            $provider,
+            $provider->rootExtras(),
+            $this->getIO(),
+            $options,
+        );
     }
 }

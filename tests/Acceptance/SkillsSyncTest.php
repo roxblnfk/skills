@@ -8,8 +8,10 @@ use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Tests\Testo\SandboxStateGuard;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
+use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
@@ -48,7 +50,10 @@ final class SkillsSyncTest
 
     /**
      * Wipe the synced skills directory before each test so assertions reflect
-     * what this run produced, not leftovers from previous runs.
+     * what this run produced, not leftovers from previous runs. Also snapshot
+     * composer.json / skills.json so the migration that `skills:update` now
+     * performs (moving inline extra.skills into skills.json) does not leak
+     * into the next test.
      */
     #[BeforeTest]
     public function clearTargetDir(): void
@@ -58,6 +63,13 @@ final class SkillsSyncTest
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/config-target');
         Filesystem::removeRecursive(self::ALIAS_CLAUDE);
         Filesystem::removeRecursive(self::ALIAS_CURSOR);
+        SandboxStateGuard::snapshot();
+    }
+
+    #[AfterTest]
+    public function restoreSandbox(): void
+    {
+        SandboxStateGuard::restore();
     }
 
     // ── basic happy path ────────────────────────────────────────────────────

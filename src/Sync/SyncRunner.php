@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Sync;
 
-use Composer\Composer;
 use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
+use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\DiscoveryResolver;
-use LLM\Skills\Discovery\DonorDiscovery;
+use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Info;
@@ -27,15 +28,21 @@ use Symfony\Component\Console\Command\Command;
  *
  * - {@see \LLM\Skills\Composer\Command\Sync} — wired into Composer via the
  *   plugin's {@see \LLM\Skills\Composer\CommandProvider}; the Composer
- *   instance is provided by `BaseCommand::requireComposer()`.
+ *   instance flows into the {@see DonorProvider} (today
+ *   {@see \LLM\Skills\Discovery\Provider\ComposerProvider}).
  * - {@see \LLM\Skills\Console\Command\Sync} — the PHAR/binary entrypoint
- *   shipped as `bin/skills`; the Composer instance is bootstrapped manually
- *   via {@see \Composer\Factory::create()}.
+ *   shipped as `bin/skills`; the Composer instance is bootstrapped
+ *   manually via {@see \Composer\Factory::create()}. When that fails
+ *   (e.g. no `composer.json` at cwd) the provider becomes inactive
+ *   and the runner emits the
+ *   `[llm/skills] no donor providers are active — nothing to sync.`
+ *   notice and exits 0.
  *
  * Whatever the source, the runner orchestrates the pipeline:
  *
- *   1. Map root `extra.skills` → {@see \LLM\Skills\Config\ProjectConfig}.
- *   2. {@see DonorDiscovery}: Composer → list of donor {@see VendorConfig}.
+ *   1. Map project config → {@see \LLM\Skills\Config\ProjectConfig}
+ *      via `skills.json` (when present) or inline `extra.skills`.
+ *   2. {@see DonorProvider::discover()}: enumerate donor packages.
  *   3. {@see DiscoveryResolver}: merge auto-discovered donors that the user
  *      asked for (via `--discovery` or a positional name) into the donor list.
  *   4. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
@@ -55,45 +62,110 @@ final readonly class SyncRunner
     public function __construct(
         private SyncPlanner $planner = new SyncPlanner(),
         private SyncEngine $engine = new SyncEngine(),
-        private DonorDiscovery $donorDiscovery = new DonorDiscovery(),
         private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
         private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
         private SymlinkLinker $symlinkLinker = new SymlinkLinker(),
+        private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
     ) {}
 
-    public function run(Composer $composer, IOInterface $io, SyncOptions $options): int
-    {
+    /**
+     * @param Path $projectRoot consumer project root, typically the entrypoint's cwd
+     * @param DonorProvider $provider source of donor packages (Composer today; in future,
+     *        also GitHub / npm / skills.sh — see {@see DonorProvider})
+     * @param mixed $extra raw `composer.json` `extra` field, or `null` when no
+     *        `composer.json` is around (standalone-mode bin run). Drives the legacy
+     *        inline `extra.skills` fallback when `skills.json` is absent.
+     */
+    public function run(
+        Path $projectRoot,
+        DonorProvider $provider,
+        mixed $extra,
+        IOInterface $io,
+        SyncOptions $options,
+    ): int {
+        // Auto-migration is part of the write-mode contract: any
+        // `skills:update` (or `post-update-cmd` auto-sync invocation)
+        // moves a legacy inline extra.skills block into the canonical
+        // skills.json before doing anything else. Skipped silently
+        // when there is no migration to do (skills.json exists, or no
+        // inline keys, or no composer.json at all). The
+        // `$options->autoMigrate=false` opt-out is used by the
+        // `post-install-cmd` hook, which must not rewrite
+        // `composer.json` mid-install.
+        if ($options->autoMigrate) {
+            $migration = $this->migrator->migrate($projectRoot, $io);
+            if ($migration->status === MigrationStatus::Failed) {
+                return Command::FAILURE;
+            }
+            if ($migration->status === MigrationStatus::Migrated) {
+                $io->write(\sprintf(
+                    '<info>[migrate]</info> moved extra.skills → skills.json (%s)',
+                    \implode(', ', $migration->migratedKeys),
+                ));
+                // The fresh skills.json is now the source of truth;
+                // the stale in-memory $extra (still containing the
+                // migrated keys) must be discarded so forProject()
+                // reads from disk.
+                $extra = null;
+            }
+        }
+
         try {
-            $project = $this->projectMapper->fromExtra($composer->getPackage()->getExtra());
+            $configResolution = $this->projectMapper->forProject($projectRoot, $extra);
         } catch (MalformedProjectConfig $e) {
             $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return Command::FAILURE;
         }
 
+        $project = $configResolution->config;
+        $this->emitShadowedKeysWarning($io, $configResolution->ignoredInlineKeys);
+
+        // No donor provider can contribute. Reasons vary by provider —
+        // {@see \LLM\Skills\Discovery\Provider\ComposerProvider} is
+        // inactive when no Composer instance was supplied (no composer.json
+        // at cwd, or `Factory::create()` threw). The entrypoint emits a
+        // `-v` line naming the actual cause; this user-facing notice
+        // stays neutral so it stays accurate across all providers
+        // (today only Composer, eventually also GitHub / npm / skills.sh).
+        if (!$provider->isActive($projectRoot)) {
+            $io->write(
+                '<comment>[llm/skills] no donor providers are active — nothing to sync. '
+                . 'Run with -v for details.</comment>',
+            );
+            return Command::SUCCESS;
+        }
+
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $discovery = $this->donorDiscovery->discover($composer);
+        $discovery = $provider->discover($projectRoot);
         $this->emitWarnings($io, $discovery->warnings);
 
         $discoveryActive = $options->discovery ?? $project->discovery;
-        $resolution = $this->discoveryResolver->resolve(
+        $discoveryResolution = $this->discoveryResolver->resolve(
             $discovery->discoverable,
             $discoveryActive,
             $options,
         );
-        $donors = [...$discovery->donors, ...$resolution->included];
+        $donors = [...$discovery->donors, ...$discoveryResolution->included];
 
-        $projectRoot = Path::create(\getcwd() ?: '.');
-        $directDeps = $this->collectDirectDependencies($composer);
-        $plan = $this->planner->plan(
-            $donors,
-            $project,
-            $options,
-            $builtin,
-            $projectRoot,
-            $directDeps,
-        );
+        $directDeps = $provider->directDependencies($projectRoot);
+        try {
+            $plan = $this->planner->plan(
+                $donors,
+                $project,
+                $options,
+                $builtin,
+                $projectRoot,
+                $directDeps,
+            );
+        } catch (MalformedProjectConfig $e) {
+            // Containment-check failures (target / alias escapes the
+            // project root) surface here. Same UX as inline / skills.json
+            // shape errors caught by the mapper above.
+            $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
 
         if ($options->hasPackageFilters() && $plan->approvedDonors === []) {
             $patterns = \implode(
@@ -125,7 +197,7 @@ final readonly class SyncRunner
                 ));
             }
             $io->writeError('<error>Sync aborted due to skill-name conflicts; nothing was written.</error>');
-            $this->emitTrailingDiagnostics($io, $plan, $resolution->excluded);
+            $this->emitTrailingDiagnostics($io, $plan, $discoveryResolution->excluded);
             return Command::FAILURE;
         }
 
@@ -141,7 +213,7 @@ final readonly class SyncRunner
 
         $aliasFailed = $this->processAliases($io, $plan, $options->dryRun);
 
-        $this->emitTrailingDiagnostics($io, $plan, $resolution->excluded);
+        $this->emitTrailingDiagnostics($io, $plan, $discoveryResolution->excluded);
 
         // Alias errors fail the run loudly — silent partial success would
         // mask broken `.claude/skills` / `.cursor/skills` aliases on CI,
@@ -278,31 +350,24 @@ final readonly class SyncRunner
     }
 
     /**
-     * Pull the consumer project's direct dependencies — every package
-     * named under `require` or `require-dev` in the root `composer.json`.
-     * These are implicitly trusted by the planner: depending on a
-     * package is already an act of trust, and asking the user to repeat
-     * it under `extra.skills.trusted` would be busywork. `trustedReplace`
-     * users opted out of implicit lists, so they pass the list through
-     * but the planner ignores it.
+     * `skills.json` won the precedence contest but `composer.json` still
+     * carries project-level keys under `extra.skills`. Surface their
+     * names under `-v` so a confused user can see why their inline
+     * `target` (or any other key) had no effect.
      *
-     * @return list<non-empty-string>
+     * @param list<non-empty-string> $ignored
      */
-    private function collectDirectDependencies(Composer $composer): array
+    private function emitShadowedKeysWarning(IOInterface $io, array $ignored): void
     {
-        $root = $composer->getPackage();
-        $names = [];
-        foreach ([...$root->getRequires(), ...$root->getDevRequires()] as $name => $_link) {
-            if ($name === '' || !\str_contains($name, '/')) {
-                // Platform requirements like `php` or `ext-json` and the
-                // odd metapackage placeholder don't carry skills.
-                continue;
-            }
-            /** @var non-empty-string $name */
-            $names[] = $name;
+        if ($ignored === []) {
+            return;
         }
 
-        return $names;
+        $io->writeError(
+            '<comment>[warn] skills.json present; the following extra.skills keys in '
+            . 'composer.json are ignored: ' . \implode(', ', $ignored) . '</comment>',
+            verbosity: IOInterface::VERBOSE,
+        );
     }
 
     /**

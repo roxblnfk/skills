@@ -50,6 +50,19 @@ final readonly class VendorPattern
             ));
         }
 
+        // Composer package names contain exactly one slash; treat anything
+        // with more as malformed instead of silently letting the extra
+        // segments become part of the package name. This also keeps the
+        // mapper in sync with `resources/skills.schema.json`, whose
+        // `^[^/]+/[^/]+$` regex rejects multi-slash entries.
+        if (\strpos($pattern, '/', $slash + 1) !== false) {
+            throw new \InvalidArgumentException(\sprintf(
+                'Invalid vendor pattern "%s": expected exactly one "/" '
+                . '(e.g. "vendor/package" or "vendor/*").',
+                $pattern,
+            ));
+        }
+
         /** @var non-empty-string $vendor */
         $vendor = \substr($pattern, 0, $slash);
         /** @var non-empty-string $package */

@@ -40,6 +40,18 @@ final class VendorPatternTest
         VendorPattern::fromString('acme');
     }
 
+    public function fromStringRejectsMultipleSlashes(): void
+    {
+        // Composer package names contain exactly one slash. Multi-slash
+        // patterns are nonsense (`a/b/c` cannot match any installed package)
+        // and used to silently parse with `b/c` as the package segment,
+        // which also disagreed with `resources/skills.schema.json`.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('exactly one');
+
+        VendorPattern::fromString('acme/foo/bar');
+    }
+
     public function fromStringRejectsLeadingSlash(): void
     {
         // strpos returns 0 ⇒ second clause fires (empty vendor before slash).
