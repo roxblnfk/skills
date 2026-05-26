@@ -66,12 +66,6 @@
     "extra": {
         "class": "LLM\\Skills\\Composer\\SkillsPlugin",
         "skills": {
-            "aliases": [
-                ".claude/skills",
-                ".cursor/skills"
-            ],
-            "discovery": true,
-            "auto-sync": true
         }
     },
     "config": {
