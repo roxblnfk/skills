@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/roxblnfk/skills/compare/1.2.0...1.3.0) (2026-05-26)
+
+
+### Features
+
+* Add command `skills:init` command ([8d2aadf](https://github.com/roxblnfk/skills/commit/8d2aadf3e79f574b810b39a3053192fd75cefbbc))
+* Migrate to external `skills.json` config ([8d2aadf](https://github.com/roxblnfk/skills/commit/8d2aadf3e79f574b810b39a3053192fd75cefbbc))
+
+
+### Code Refactoring
+
+* Add `provider` contract to add other vendors in the future ([#4](https://github.com/roxblnfk/skills/issues/4)) ([8d2aadf](https://github.com/roxblnfk/skills/commit/8d2aadf3e79f574b810b39a3053192fd75cefbbc))
+
 ## [1.2.0](https://github.com/roxblnfk/skills/compare/1.1.1...1.2.0) (2026-05-20)
 
 
