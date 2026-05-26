@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Config;
 
 use Internal\Path;
+use LLM\Skills\Discovery\Provider\ProviderId;
 
 /**
  * Configuration declared by a **donor package** under `extra.skills` in its
@@ -27,6 +28,9 @@ final readonly class VendorConfig
      * @param non-empty-string $source directory inside the package containing skill subdirs
      * @param bool $discovered `true` when this donor was synthesised by auto-discovery
      *         (the package does not declare `extra.skills`); `false` for declared donors
+     * @param non-empty-string $provenance which provider produced this donor — defaults
+     *         to {@see ProviderId::COMPOSER} for back-compat. Used by
+     *         `skills:update --from=<id>` (spec §6.2) to filter the donor list.
      *
      * @psalm-mutation-free
      */
@@ -35,6 +39,7 @@ final readonly class VendorConfig
         public Path $packageRoot,
         public string $source,
         public bool $discovered = false,
+        public string $provenance = ProviderId::COMPOSER,
     ) {}
 
     /**
@@ -43,5 +48,26 @@ final readonly class VendorConfig
     public function sourcePath(): Path
     {
         return $this->packageRoot->join($this->source);
+    }
+
+    /**
+     * Return a copy of this donor tagged with the given provenance id.
+     * Used by remote providers to label their donors with the
+     * adapter's `from` value (e.g. `github`) so the `--from` filter
+     * downstream knows which provider produced each donor.
+     *
+     * @param non-empty-string $provenance
+     *
+     * @psalm-mutation-free
+     */
+    public function withProvenance(string $provenance): self
+    {
+        return new self(
+            packageName: $this->packageName,
+            packageRoot: $this->packageRoot,
+            source: $this->source,
+            discovered: $this->discovered,
+            provenance: $provenance,
+        );
     }
 }

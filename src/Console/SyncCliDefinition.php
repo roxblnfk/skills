@@ -85,6 +85,14 @@ final class SyncCliDefinition
                 InputOption::VALUE_NONE,
                 'Also include packages that do not declare extra.skills but ship a skills/ '
                 . 'directory. Overrides extra.skills.discovery.',
+            )
+            ->addOption(
+                'from',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'Scope the sync to donors from a single provider. The id matches '
+                . 'skills.json local.{id} keys (e.g. "composer") and remote[].from values '
+                . '(e.g. "github"). Without this flag, all active providers contribute.',
             );
     }
 
@@ -100,6 +108,10 @@ final class SyncCliDefinition
         $rawTarget = $input->getOption('target');
         $targetOverride = \is_string($rawTarget) && $rawTarget !== '' ? $rawTarget : null;
 
+        /** @var mixed $rawFrom */
+        $rawFrom = $input->getOption('from');
+        $fromFilter = \is_string($rawFrom) && $rawFrom !== '' ? $rawFrom : null;
+
         $aliasOverrides = self::parseAliases($input);
 
         return new SyncOptions(
@@ -110,6 +122,7 @@ final class SyncCliDefinition
             dryRun: (bool) $input->getOption('dry-run'),
             discovery: $input->getOption('discovery') === true ? true : null,
             aliasOverrides: $aliasOverrides,
+            fromFilter: $fromFilter,
         );
     }
 

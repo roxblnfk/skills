@@ -17,7 +17,6 @@ use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
-use LLM\Skills\Info;
 use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Sync\SyncEngine;
 use LLM\Skills\Sync\SyncPlan;
@@ -448,28 +447,15 @@ final readonly class InspectionBuilder
     }
 
     /**
-     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall reading a file shipped with the
-     *         package is conceptually pure but psalm cannot prove it.
+     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall,ImpureMethodCall reading a file
+     *         shipped with the package is conceptually pure but psalm cannot prove it.
      *
      * @psalm-pure
      */
     private function loadBuiltinTrustedVendors(): TrustedVendors
     {
-        $path = Info::ROOT_DIR . '/resources/trusted-vendors.txt';
-        $content = \file_get_contents($path);
-        if ($content === false) {
-            throw new \RuntimeException('Failed to read built-in trusted-vendors list at ' . $path);
-        }
-
-        $patterns = [];
-        foreach (\explode("\n", $content) as $line) {
-            $line = \trim($line);
-            if ($line === '' || \str_starts_with($line, '#')) {
-                continue;
-            }
-            $patterns[] = $line;
-        }
-
-        return TrustedVendors::fromStrings(...$patterns);
+        return (new \LLM\Skills\Config\TrustedVendorRegistry())->loadForProvider(
+            \LLM\Skills\Discovery\Provider\ProviderId::COMPOSER,
+        );
     }
 }

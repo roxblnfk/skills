@@ -195,6 +195,10 @@ final class StandaloneBinTest
             true,
             flags: \JSON_THROW_ON_ERROR,
         );
-        Assert::same(\array_keys($decoded), ['$schema'], 'standalone init writes a stub');
+        Assert::same(
+            \array_keys($decoded),
+            ['$schema', 'local', 'remote'],
+            'standalone init writes a stub with the local + remote knobs visible',
+        );
     }
 }

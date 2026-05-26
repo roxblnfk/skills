@@ -28,4 +28,15 @@ final readonly class NullRemoteDonorSource implements RemoteDonorSource
     {
         return [];
     }
+
+    /**
+     * @return list<string>
+     *
+     * @psalm-pure
+     */
+    #[\Override]
+    public function warnings(): array
+    {
+        return [];
+    }
 }

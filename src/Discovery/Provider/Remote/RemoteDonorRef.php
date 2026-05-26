@@ -28,12 +28,18 @@ final readonly class RemoteDonorRef
     /**
      * @param non-empty-string $url any URL Composer's VCS layer can resolve
      * @param non-empty-string $ref tag, branch, or commit SHA
+     * @param non-empty-string|null $provenance adapter id that produced this ref
+     *         (e.g. `github`). Used downstream as the donor's
+     *         {@see \LLM\Skills\Config\VendorConfig::$provenance}, which drives
+     *         the `--from` filter in spec §6.2. `null` means "unknown" — the
+     *         provider will tag the donor with a generic `remote` provenance.
      *
      * @psalm-mutation-free
      */
     public function __construct(
         public string $url,
         public string $ref,
+        public ?string $provenance = null,
     ) {}
 
     /**

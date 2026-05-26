@@ -32,4 +32,21 @@ interface RemoteDonorSource
      *         implementations talk to filesystem / config and are not pure
      */
     public function refs(Path $projectRoot): iterable;
+
+    /**
+     * Warnings accumulated during the most recent {@see self::refs()}
+     * iteration. Typical contents: "unknown adapter id" for entries the
+     * registry rejected, "no matching tag" for caret constraints with
+     * no resolvable tag. Empty for sources that never fail mid-stream
+     * (e.g. {@see NullRemoteDonorSource}).
+     *
+     * Implementations populate this during iteration; the provider
+     * reads it AFTER consuming the iterable and merges the contents
+     * into the same warnings channel that carries fetcher failures.
+     *
+     * @return list<string>
+     *
+     * @psalm-suppress MissingAbstractPureAnnotation
+     */
+    public function warnings(): array;
 }

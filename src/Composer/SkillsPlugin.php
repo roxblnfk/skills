@@ -16,7 +16,7 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
-use LLM\Skills\Discovery\Provider\ComposerProvider;
+use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
 use LLM\Skills\Sync\SyncRunner;
 
 /**
@@ -152,11 +152,12 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             autoMigrate: $autoMigrate,
         );
 
-        $provider = new ComposerProvider($this->composer);
+        $extra = $this->composer->getPackage()->getExtra();
+        $provider = (new DonorProviderBuilder())->build($projectRoot, $this->composer, $extra);
         (new SyncRunner())->run(
             $projectRoot,
             $provider,
-            $provider->rootExtras(),
+            $extra,
             $this->io,
             $options,
         );

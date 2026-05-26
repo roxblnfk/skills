@@ -10,7 +10,7 @@ use Composer\IO\ConsoleIO;
 use Internal\Path;
 use LLM\Skills\Composer\ComposerJsonExtraReader;
 use LLM\Skills\Console\SyncCliDefinition;
-use LLM\Skills\Discovery\Provider\ComposerProvider;
+use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
 use LLM\Skills\Sync\SyncRunner;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\HelperSet;
@@ -64,7 +64,6 @@ final class Sync extends Command
 
         $projectRoot = Path::create(\getcwd() ?: '.');
         $composer = self::tryBootstrapComposer($io);
-        $provider = new ComposerProvider($composer);
 
         // When Composer bootstrap succeeded, the root package's getExtra()
         // is the canonical source. When it failed but composer.json is
@@ -75,6 +74,8 @@ final class Sync extends Command
         $extra = $composer !== null
             ? $composer->getPackage()->getExtra()
             : (new ComposerJsonExtraReader())->read($projectRoot, $io);
+
+        $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
 
         return (new SyncRunner())->run(
             $projectRoot,

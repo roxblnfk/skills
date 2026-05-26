@@ -53,6 +53,8 @@ final readonly class ExternalProjectConfigLoader
         'trusted-replace',
         'discovery',
         'auto-sync',
+        'local',
+        'remote',
     ];
 
     /**
@@ -83,12 +85,15 @@ final readonly class ExternalProjectConfigLoader
             ));
         }
 
-        // Decode once with `assoc=false` so we can distinguish an
-        // empty JSON object `{}` (→ stdClass) from an empty JSON
-        // array `[]` (→ PHP array). With `assoc=true` both decode to
-        // `[]` and the `array_is_list` check accepts the array as a
-        // valid empty object — exactly the contract violation we're
-        // guarding against.
+        // Decode twice: once with `assoc=false` to catch root-shape
+        // mistakes (an empty JSON list `[]` would otherwise be
+        // indistinguishable from an empty JSON object `{}` after
+        // assoc=true), and once with `assoc=true` to get the
+        // recursive-array structure the mapper expects.
+        //
+        // The second decode is cheap on a config file (typically
+        // <2 KiB) and avoids manual recursive `(array) $stdClass`
+        // unpacking for nested map-shaped fields like `local`.
         try {
             /** @var mixed $typed */
             $typed = \json_decode($content, false, flags: \JSON_THROW_ON_ERROR);
@@ -104,7 +109,7 @@ final readonly class ExternalProjectConfigLoader
         }
 
         /** @var array<string, mixed> $decoded */
-        $decoded = (array) $typed;
+        $decoded = \json_decode($content, true, flags: \JSON_THROW_ON_ERROR);
 
         // Casting a stdClass to array always yields string keys, so no
         // runtime is_string guard is needed.

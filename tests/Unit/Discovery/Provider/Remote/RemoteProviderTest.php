@@ -324,9 +324,16 @@ final class RemoteProviderTest
             /** @param list<RemoteDonorRef> $refs */
             public function __construct(private readonly array $refs) {}
 
+            #[\Override]
             public function refs(Path $projectRoot): iterable
             {
                 return $this->refs;
+            }
+
+            #[\Override]
+            public function warnings(): array
+            {
+                return [];
             }
         };
     }

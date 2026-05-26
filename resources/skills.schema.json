@@ -50,6 +50,96 @@
             "type": "boolean",
             "description": "When true (default), the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
             "default": true
+        },
+        "local": {
+            "type": "object",
+            "description": "Per-local-provider on/off toggles. Keys must come from the locked vocabulary (composer, npm, go). Absent keys fall back to per-provider defaults: composer enabled, others disabled until their provider implementation lands.",
+            "additionalProperties": false,
+            "properties": {
+                "composer": {
+                    "type": "boolean",
+                    "description": "Enable the Composer/Packagist local donor provider. Default: true.",
+                    "default": true
+                },
+                "npm": {
+                    "type": "boolean",
+                    "description": "Enable the npm local donor provider (future). Default: false.",
+                    "default": false
+                },
+                "go": {
+                    "type": "boolean",
+                    "description": "Enable the Go modules local donor provider (future). Default: false.",
+                    "default": false
+                }
+            }
+        },
+        "remote": {
+            "type": "array",
+            "description": "Explicit remote donor refs. Each entry tells the remote provider what to fetch and from where. See https://github.com/roxblnfk/skills spec §3.3 for the full key reference.",
+            "default": [],
+            "items": {
+                "oneOf": [
+                    { "$ref": "#/$defs/remoteByPackage" },
+                    { "$ref": "#/$defs/remoteByUrl" }
+                ]
+            }
+        }
+    },
+    "$defs": {
+        "remoteByPackage": {
+            "type": "object",
+            "description": "Remote entry for name-based adapters (github, gitlab, bitbucket, composer, npm, go, skills.sh).",
+            "required": ["from", "package"],
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "enum": ["github", "gitlab", "bitbucket", "composer", "npm", "go", "skills.sh"]
+                },
+                "package": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Adapter-namespaced identifier (e.g. acme/skills, @scope/pkg, github.com/owner/mod)."
+                },
+                "host": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Full URL of the registry / API host (private Packagist, GitHub Enterprise, self-hosted GitLab, …). Absent → adapter default."
+                },
+                "ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Adapter-specific version pin (^1.2.3, v1.2.3, main, full SHA). Absent → adapter resolves latest stable per the §4.3 cascade."
+                }
+            }
+        },
+        "remoteByUrl": {
+            "type": "object",
+            "description": "Remote entry for URL-only adapters (http, zip).",
+            "required": ["from", "url"],
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "enum": ["http", "zip"]
+                },
+                "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "format": "uri"
+                },
+                "host": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "ref": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "sha256": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional integrity hash (zip adapter)."
+                }
+            }
         }
     }
 }

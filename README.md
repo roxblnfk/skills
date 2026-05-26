@@ -33,21 +33,24 @@ composer require --dev llm/skills
 [![License](https://img.shields.io/packagist/l/llm/skills.svg?style=flat-square)](LICENSE.md)
 [![Total Downloads](https://img.shields.io/packagist/dt/llm/skills.svg?style=flat-square)](https://packagist.org/packages/llm/skills/stats)
 
-Allow the plugin to run:
+Composer will prompt to allow the plugin during install — answer **y**. (For non-interactive
+setups, pre-allow with `"config": { "allow-plugins": { "llm/skills": true } }` in
+`composer.json`.)
 
-```jsonc
-{ "config": { "allow-plugins": { "llm/skills": true } } }
+Then bootstrap your project's config — this is the one command to run first:
+
+```bash
+composer skills:init
 ```
 
-Auto-sync after every `composer install` / `update` is **on by default** — you don't have to
-configure anything to get fresh skills after running Composer. To opt out, drop a
-`skills.json` at the project root:
+An interactive wizard walks you through target dir, aliases, trusted vendors, and auto-sync,
+and writes a `skills.json` you commit alongside `composer.json`. See
+[Project configuration](#project-configuration) for the full reference. The plugin still works
+without it — defaults are sensible — but committing an explicit `skills.json` is what makes
+your skill setup reproducible across the team.
 
-```jsonc
-// <project-root>/skills.json
-{ "auto-sync": false }
-```
-
+Auto-sync after every `composer install` / `update` is **on by default**, so after `init` you
+get fresh skills with no further setup. To opt out, set `"auto-sync": false` in `skills.json`;
 `composer install --no-scripts` also suppresses the auto-run for a single invocation without
 changing the config.
 
@@ -74,15 +77,18 @@ full reference.
 ## Commands
 
 ```
+composer skills:init   [options]                  # alias: skills:i
 composer skills:update [<package>...] [options]   # alias: skills:u
 composer skills:show   [<package>...] [options]   # alias: skills:s
-composer skills:init   [options]                  # alias: skills:i
+composer skills:add    <input> [options]          # alias: skills:a
 ```
 
 `skills:update` copies skills into the target directory. `skills:show` is read-only — it lists
 every donor, the per-skill sync status, and what is being skipped and why. `skills:init`
 bootstraps a [`skills.json`](#project-configuration) at the project root and (when
-`composer.json` carries legacy inline project keys) migrates them out.
+`composer.json` carries legacy inline project keys) migrates them out. `skills:add` registers
+a donor that lives outside Composer (e.g. a GitHub repository) and immediately fetches its
+skills — see [Remote sources](#remote-sources).
 
 | Option                | Where  | Description                                                                                                                                                        |
 |-----------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -91,6 +97,7 @@ bootstraps a [`skills.json`](#project-configuration) at the project root and (wh
 | `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces the configured aliases entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
 | `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                                |
+| `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Remote sources](#remote-sources).                                                            |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
 Short flag `-d` for `--discovery` is registered only by the standalone `bin/skills` binary;
@@ -99,14 +106,16 @@ inside Composer it is reserved for `--working-dir`.
 ### Examples
 
 ```bash
-composer skills:update                      # sync everything that is trusted
-composer skills:update acme/skills-basic    # sync one package (implicit trust)
-composer skills:update 'acme/*'             # sync an entire vendor namespace
-composer skills:update --discovery          # also include packages without extra.skills
+composer skills:update                          # sync everything that is trusted
+composer skills:update acme/skills-basic        # sync one package (implicit trust)
+composer skills:update 'acme/*'                 # sync an entire vendor namespace
+composer skills:update --discovery              # also include packages without extra.skills
 composer skills:update --alias=.claude/skills   # mirror target via a junction/symlink
-composer skills:update --dry-run            # preview, write nothing
-composer skills:show                        # inspect: per-skill status, what is skipped
-composer skills:init                        # create skills.json (migrating inline keys)
+composer skills:update --from=github            # only refresh remote GitHub donors
+composer skills:update --dry-run                # preview, write nothing
+composer skills:show                            # inspect: per-skill status, what is skipped
+composer skills:init                            # create skills.json (migrating inline keys)
+composer skills:add acme/skills --from=github   # register a GitHub donor and sync it
 ```
 
 ## Shipping skills (vendor side)
@@ -162,18 +171,25 @@ where to put it, who to trust, whether to auto-sync.
   "trusted": ["acme/*", "myorg/skills-internal"],
   "trusted-replace": false,
   "discovery": false,
-  "auto-sync": true
+  "auto-sync": true,
+
+  "local":  { "composer": true },
+  "remote": [
+    { "from": "github", "package": "acme/skills", "ref": "^1.2.0" }
+  ]
 }
 ```
 
-| Key               | Type     | Default          | Description                                                                             |
-|-------------------|----------|------------------|-----------------------------------------------------------------------------------------|
-| `target`          | string   | `.agents/skills` | Destination directory, relative to the project root.                                    |
-| `aliases`         | string[] | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).          |
-| `trusted`         | string[] | `[]`             | Extra trust patterns (see [Trust](#trust)).                                             |
-| `trusted-replace` | bool     | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
-| `discovery`       | bool     | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
-| `auto-sync`       | bool     | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
+| Key               | Type        | Default          | Description                                                                             |
+|-------------------|-------------|------------------|-----------------------------------------------------------------------------------------|
+| `target`          | string      | `.agents/skills` | Destination directory, relative to the project root.                                    |
+| `aliases`         | string[]    | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).          |
+| `trusted`         | string[]    | `[]`             | Extra trust patterns (see [Trust](#trust)).                                             |
+| `trusted-replace` | bool        | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
+| `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
+| `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
+| `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Remote sources](#remote-sources). |
+| `remote`          | object[]    | `[]`             | Explicit remote donor refs. Managed by `skills:add`; documented in [Remote sources](#remote-sources). |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
@@ -323,7 +339,83 @@ Bare `vendor` without `/` is rejected as ambiguous.
 
 ### Built-in trusted vendors
 
-Shipped in [`resources/trusted-vendors.txt`](resources/trusted-vendors.txt); extended by PR.
+Shipped in [`resources/trusted-composer.txt`](resources/trusted-composer.txt); extended by PR. Other registries (npm, go) will ship their own per-ecosystem files when the corresponding local providers land — see [`spec-remote.md`](spec-remote.md) §8.
+
+
+## Remote sources
+
+`llm/skills` reads donors from two axes:
+
+- **Local providers** — walk a manifest the project already owns. Today only `composer`; `npm` and `go` are reserved in the vocabulary but ship later.
+- **Remote providers** — fetch an explicit ref from a URL (currently GitHub; the format is forward-compatible with GitLab, Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`).
+
+Both axes coexist. When the same package name arrives via both, the **remote entry wins** (you typed it; the transitive Composer pickup is treated as stale) and the displaced donor is logged under `-v`.
+
+### `skills:add` — register a remote donor
+
+```bash
+composer skills:add acme/skills --from=github                 # latest stable, write "^X.Y.Z"
+composer skills:add acme/skills --from=github --ref=v1.2.3    # pinned tag
+composer skills:add 'acme/skills@main' --from=github          # branch HEAD
+composer skills:add https://github.com/acme/skills            # full URL; --from inferred
+composer skills:add 'team/skills' --from=github \
+        --host=https://github.corp.example.com                # GitHub Enterprise
+composer skills:add acme/skills --from=github --no-sync       # only edit skills.json
+```
+
+The command:
+
+1. parses the input via the resolved adapter (currently `github`);
+2. resolves the ref — explicit value wins verbatim; without `--ref` the adapter picks the highest stable tag, falling back to the highest prerelease tag, then to the default branch HEAD;
+3. downloads the archive into `vendor/llm-skills/cache/...` (gitignored by virtue of vendor);
+4. validates that the archive ships a `composer.json` with `extra.skills.source`;
+5. upserts the entry into `skills.json` `remote[]` (stable-sorted by `(from, host, package)`, atomic write);
+6. runs a single-entry sync so the new skills land in the target right away — same ergonomics as `composer require`. Suppress with `--no-sync`.
+
+| Option        | Description                                                                                                   |
+|---------------|---------------------------------------------------------------------------------------------------------------|
+| `<input>`     | Shorthand `owner/repo`, shorthand with `@ref`, or a full URL.                                                  |
+| `--from=ID`   | Adapter id. Required for shorthand; inferred from the URL host when omitted with a full URL.                   |
+| `--host=URL`  | Override the adapter's default host (GitHub Enterprise, self-hosted GitLab, private Packagist).               |
+| `--ref=REF`   | Pin a tag, branch, SHA, or Composer-style constraint (`^1.2.3`). Without this, the cascade above runs.        |
+| `--no-sync`   | Skip the automatic single-entry sync after writing `skills.json`.                                              |
+
+Stored entries look like:
+
+```jsonc
+{
+  "remote": [
+    { "from": "github", "package": "acme/skills", "ref": "^1.2.0" },
+    { "from": "github", "package": "team/internal-skills",
+      "host": "https://github.corp.example.com", "ref": "^1" }
+  ]
+}
+```
+
+The composite key is `(from, host, package | url)`: same triplet = upsert in place, different = append. Manual edits are fine — the next `skills:add` normalises the order.
+
+### Authentication
+
+Remote adapters reuse Composer's `auth.json` / `COMPOSER_AUTH` plumbing — no new credential surfaces. A GitHub token configured for `composer require` works as-is for `skills:add`.
+
+### `--from=ID` filter on sync
+
+```bash
+composer skills:update --from=composer    # only local Composer donors
+composer skills:update --from=github      # only remote GitHub donors
+```
+
+The id matches `local.{id}` keys and `remote[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `RemoteProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
+
+### Local provider toggles
+
+```jsonc
+{ "local": { "composer": false } }    // disable Composer discovery entirely
+```
+
+`local.composer` defaults to `true` (preserves the pre-`local` behaviour). When set to `false`, transitive Composer packages are no longer scanned — useful when the project wants its donors purely from `remote[]`.
+
+For the full architectural rationale, the version-resolution cascade, the cache layout, and the multi-registry trust model, see [`spec-remote.md`](spec-remote.md).
 
 
 ## Auto-discovery

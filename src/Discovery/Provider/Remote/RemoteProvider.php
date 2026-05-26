@@ -68,6 +68,7 @@ final readonly class RemoteProvider implements DonorProvider
     public function discover(Path $projectRoot): DonorDiscoveryResult
     {
         $donors = [];
+        /** @var list<string> $warnings */
         $warnings = [];
         $malformed = [];
 
@@ -151,7 +152,9 @@ final readonly class RemoteProvider implements DonorProvider
             }
 
             try {
-                $donors[] = $this->vendorMapper->fromExtra($packageName, $path, $extra);
+                $donor = $this->vendorMapper->fromExtra($packageName, $path, $extra);
+                $provenance = $ref->provenance ?? 'remote';
+                $donors[] = $donor->withProvenance($provenance);
             } catch (MalformedVendorConfig $e) {
                 $warnings[] = $e->getMessage();
                 /** @var non-empty-string $reason */
@@ -162,6 +165,14 @@ final readonly class RemoteProvider implements DonorProvider
                     reason: $reason,
                 );
             }
+        }
+
+        // Pre-fetch warnings from the source: unknown-adapter and
+        // resolve errors accumulate here while {@see RemoteDonorSource::refs()}
+        // is iterated; the source's contract is to expose them after
+        // iteration finishes.
+        foreach ($this->source->warnings() as $w) {
+            $warnings[] = $w;
         }
 
         return new DonorDiscoveryResult(

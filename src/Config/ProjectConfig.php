@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Config;
 
+use LLM\Skills\Discovery\Provider\ProviderId;
+
 /**
  * Configuration declared by the **consumer project** under
  * `extra.skills` in its `composer.json`.
@@ -37,6 +39,14 @@ final readonly class ProjectConfig
      * @param bool $autoSync when true, the plugin runs `skills:update` automatically after
      *         every `composer install` / `composer update`, removing the need to wire up
      *         `scripts.post-install-cmd` and `scripts.post-update-cmd` by hand
+     * @param array<non-empty-string, bool> $local local-provider toggles. Keys are provider ids
+     *         from {@see ProviderId::LOCAL_IDS}; values turn the provider on/off. Absent keys
+     *         fall back to {@see ProviderId::defaultLocalEnabled()} — `composer` defaults to
+     *         enabled (preserves the pre-`local` behaviour), every other id defaults to off
+     *         so a new provider stays opt-in until its implementation lands.
+     * @param list<RemoteEntry> $remote remote donor refs declared by the project. The remote
+     *         provider treats each entry as an explicit fetch target. Empty list means
+     *         the remote provider stays inactive — symmetric with `local.composer == false`.
      *
      * @psalm-mutation-free
      */
@@ -47,6 +57,8 @@ final readonly class ProjectConfig
         public bool $discovery = false,
         public array $aliases = [],
         public bool $autoSync = true,
+        public array $local = [],
+        public array $remote = [],
     ) {}
 
     /**
@@ -64,7 +76,26 @@ final readonly class ProjectConfig
             discovery: false,
             aliases: [],
             autoSync: true,
+            local: [],
+            remote: [],
         );
+    }
+
+    /**
+     * Whether the given local-provider id is enabled for this project.
+     * Explicit `local: { <id>: bool }` settings win; absent keys fall
+     * back to the per-provider default
+     * ({@see ProviderId::defaultLocalEnabled()}).
+     *
+     * @psalm-mutation-free
+     */
+    public function isLocalEnabled(string $providerId): bool
+    {
+        if (\array_key_exists($providerId, $this->local)) {
+            return $this->local[$providerId];
+        }
+
+        return ProviderId::defaultLocalEnabled($providerId);
     }
 
     /**
@@ -81,6 +112,8 @@ final readonly class ProjectConfig
             $this->discovery,
             $this->aliases,
             $this->autoSync,
+            $this->local,
+            $this->remote,
         );
     }
 
@@ -98,6 +131,8 @@ final readonly class ProjectConfig
             $this->discovery,
             $aliases,
             $this->autoSync,
+            $this->local,
+            $this->remote,
         );
     }
 }

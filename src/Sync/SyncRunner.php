@@ -11,14 +11,15 @@ use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\DiscoveryResolver;
 use LLM\Skills\Discovery\Provider\DonorProvider;
+use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
-use LLM\Skills\Info;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -148,6 +149,24 @@ final readonly class SyncRunner
             $options,
         );
         $donors = [...$discovery->donors, ...$discoveryResolution->included];
+
+        // Spec §6.2: `--from=<id>` narrows the sync to a single
+        // provider's donors. Provenance is tagged at the source
+        // (`composer` for ComposerProvider, the entry's `from` for
+        // RemoteProvider) so a simple equality filter is enough.
+        if ($options->fromFilter !== null) {
+            $filter = $options->fromFilter;
+            $donors = \array_values(\array_filter(
+                $donors,
+                static fn(VendorConfig $d): bool => $d->provenance === $filter,
+            ));
+            if ($donors === []) {
+                $io->writeError(\sprintf(
+                    '<comment>[llm/skills] --from=%s matched no donors</comment>',
+                    $filter,
+                ));
+            }
+        }
 
         $directDeps = $provider->directDependencies($projectRoot);
         try {
@@ -371,28 +390,13 @@ final readonly class SyncRunner
     }
 
     /**
-     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall reading a file shipped with the
-     *         package is conceptually pure but psalm cannot prove it.
+     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall,ImpureMethodCall reading a file
+     *         shipped with the package is conceptually pure but psalm cannot prove it.
      *
      * @psalm-pure
      */
     private function loadBuiltinTrustedVendors(): TrustedVendors
     {
-        $path = Info::ROOT_DIR . '/resources/trusted-vendors.txt';
-        $content = \file_get_contents($path);
-        if ($content === false) {
-            throw new \RuntimeException('Failed to read built-in trusted-vendors list at ' . $path);
-        }
-
-        $patterns = [];
-        foreach (\explode("\n", $content) as $line) {
-            $line = \trim($line);
-            if ($line === '' || \str_starts_with($line, '#')) {
-                continue;
-            }
-            $patterns[] = $line;
-        }
-
-        return TrustedVendors::fromStrings(...$patterns);
+        return (new TrustedVendorRegistry())->loadForProvider(ProviderId::COMPOSER);
     }
 }

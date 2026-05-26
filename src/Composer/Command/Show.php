@@ -7,7 +7,7 @@ namespace LLM\Skills\Composer\Command;
 use Composer\Command\BaseCommand;
 use Internal\Path;
 use LLM\Skills\Console\ShowCliDefinition;
-use LLM\Skills\Discovery\Provider\ComposerProvider;
+use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
 use LLM\Skills\Show\ShowRunner;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -45,13 +45,14 @@ final class Show extends BaseCommand
         }
 
         $composer = $this->requireComposer();
-        $provider = new ComposerProvider($composer);
         $projectRoot = Path::create(\getcwd() ?: '.');
+        $extra = $composer->getPackage()->getExtra();
+        $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
 
         return (new ShowRunner())->run(
             $projectRoot,
             $provider,
-            $provider->rootExtras(),
+            $extra,
             $this->getIO(),
             $options,
         );

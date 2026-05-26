@@ -29,27 +29,20 @@ use LLM\Skills\Discovery\DonorDiscoveryResult;
 final readonly class ComposerProvider implements DonorProvider
 {
     /**
+     * @param bool $enabled honours the `local.composer` toggle from
+     *         `skills.json` (spec §3.2). When `false`, the provider
+     *         reports {@see self::isActive()} `=== false` even with a
+     *         live Composer instance — the user explicitly turned this
+     *         ecosystem off. Default `true` preserves the pre-`local`
+     *         behaviour for callers that have not yet been migrated.
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private ?Composer $composer = null,
+        private bool $enabled = true,
         private DonorDiscovery $discovery = new DonorDiscovery(),
     ) {}
-
-    /**
-     * Composer's root-package extras — the `extra` field of the
-     * project's own `composer.json`. Used by the runner to map the
-     * legacy inline `extra.skills` block when no `skills.json` exists.
-     *
-     * Returns `null` when the provider has no Composer instance
-     * (standalone-mode run with no `composer.json`); the runner then
-     * lets the {@see \LLM\Skills\Config\Mapper\ProjectConfigMapper}
-     * fall back to defaults.
-     */
-    public function rootExtras(): mixed
-    {
-        return $this->composer?->getPackage()->getExtra();
-    }
 
     /**
      * @psalm-suppress MissingPureAnnotation
@@ -58,13 +51,13 @@ final readonly class ComposerProvider implements DonorProvider
     #[\Override]
     public function isActive(Path $projectRoot): bool
     {
-        return $this->composer !== null;
+        return $this->enabled && $this->composer !== null;
     }
 
     #[\Override]
     public function discover(Path $projectRoot): DonorDiscoveryResult
     {
-        if ($this->composer === null) {
+        if (!$this->enabled || $this->composer === null) {
             return new DonorDiscoveryResult(donors: [], warnings: []);
         }
 
@@ -74,7 +67,7 @@ final readonly class ComposerProvider implements DonorProvider
     #[\Override]
     public function directDependencies(Path $projectRoot): array
     {
-        if ($this->composer === null) {
+        if (!$this->enabled || $this->composer === null) {
             return [];
         }
 

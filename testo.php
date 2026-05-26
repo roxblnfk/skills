@@ -24,6 +24,18 @@ return new ApplicationConfig(
             ),
         ),
         new SuiteConfig(
+            name: 'Feature',
+            // Middle ground between Unit and Acceptance: wires real
+            // collaborators (filesystem, real mappers, real fetchers)
+            // without spinning up Composer's plugin sandbox. Use it
+            // when a Unit test would need too many test-doubles to be
+            // meaningful, but Acceptance's `composer install` overhead
+            // is overkill.
+            location: new FinderConfig(
+                include: [__DIR__ . '/tests/Feature'],
+            ),
+        ),
+        new SuiteConfig(
             name: 'Acceptance',
             location: new FinderConfig(
                 include: [__DIR__ . '/tests/Acceptance'],

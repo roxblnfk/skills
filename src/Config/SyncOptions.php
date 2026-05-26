@@ -31,6 +31,10 @@ final readonly class SyncOptions
      *         `extra.skills` block into `skills.json` before doing the sync. Set to `false` by
      *         read-mode-adjacent callers (today: the `post-install-cmd` auto-sync hook) that
      *         must not rewrite the user's `composer.json` mid-install.
+     * @param non-empty-string|null $fromFilter `--from=<id>` scope (spec §6.2). When set,
+     *         the runner keeps only donors whose {@see VendorConfig::$provenance} matches
+     *         this id. The vocabulary is shared with `skills.json` `local.{id}` and
+     *         `remote[].from`.
      *
      * @psalm-mutation-free
      */
@@ -43,6 +47,7 @@ final readonly class SyncOptions
         public ?bool $discovery = null,
         public ?array $aliasOverrides = null,
         public bool $autoMigrate = true,
+        public ?string $fromFilter = null,
     ) {}
 
     /**
