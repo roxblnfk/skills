@@ -198,6 +198,18 @@ final readonly class ProjectConfigMigrator
             }
         }
 
+        // If `extra.skills` had nothing but the migrated project keys,
+        // it is now an empty object — strip it so composer.json doesn't
+        // accumulate dead `"skills": {}` debris. Same hygiene for
+        // `extra` itself when it becomes empty (the user might not have
+        // anything else under it). Donor-side `source` and any other
+        // unrelated `extra.skills` keys keep both nodes alive.
+        $remaining = \array_diff(\array_keys($skills), \array_keys($migrated));
+        if ($remaining === []) {
+            $manipulator->removeSubNode('extra', 'skills');
+            $manipulator->removeMainKeyIfEmpty('extra');
+        }
+
         if (\file_put_contents($composerJsonPath, $manipulator->getContents()) === false) {
             $io->writeError(\sprintf(
                 '<error>[llm/skills] failed to write composer.json at %s</error>',

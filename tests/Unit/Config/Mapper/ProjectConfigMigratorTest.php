@@ -137,6 +137,99 @@ final class ProjectConfigMigratorTest
         Assert::false(\array_key_exists('auto-sync', $remaining));
     }
 
+    public function collapsesEmptyExtraSkillsAndExtraAfterMigration(): void
+    {
+        // The composer.json carries only project keys under
+        // extra.skills (no donor `source`, no unrelated entries).
+        // After migration the `"skills": {}` leftover and the
+        // now-empty `"extra": {}` are both stripped — composer.json
+        // should not accumulate dead nesting.
+        $this->writeComposerJson([
+            'name' => 'demo/clean',
+            'extra' => [
+                'skills' => [
+                    'target' => 'custom/skills',
+                    'auto-sync' => false,
+                ],
+            ],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->migrate(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+
+        $composer = $this->readComposerJson();
+        Assert::false(
+            \array_key_exists('extra', $composer),
+            'empty extra must be removed entirely; composer.json keys: '
+            . \implode(', ', \array_keys($composer)),
+        );
+    }
+
+    public function keepsExtraSkillsWhenSourceRemains(): void
+    {
+        // Donor `source` lives alongside project keys. After migration
+        // the project keys are gone but `extra.skills.source` keeps
+        // the skills node alive — and therefore `extra` too.
+        $this->writeComposerJson([
+            'name' => 'demo/dual',
+            'extra' => [
+                'skills' => [
+                    'source' => 'resources/skills',
+                    'target' => 'custom/skills',
+                ],
+            ],
+        ]);
+
+        (new ProjectConfigMigrator())->migrate(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        $composer = $this->readComposerJson();
+        Assert::same(
+            $composer['extra']['skills']['source'] ?? null,
+            'resources/skills',
+            'donor `source` must keep extra.skills alive',
+        );
+    }
+
+    public function keepsExtraWhenOtherExtraKeysExist(): void
+    {
+        // Even if extra.skills becomes empty, `extra` may carry other
+        // top-level keys (composer plugin class declarations, scripts,
+        // …). Those must stay.
+        $this->writeComposerJson([
+            'name' => 'demo/has-other-extras',
+            'extra' => [
+                'skills' => ['target' => 'custom/skills'],
+                'branch-alias' => ['dev-main' => '1.x-dev'],
+            ],
+        ]);
+
+        (new ProjectConfigMigrator())->migrate(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        $composer = $this->readComposerJson();
+        Assert::true(
+            \array_key_exists('extra', $composer),
+            'extra must stay because branch-alias is still there',
+        );
+        Assert::false(
+            \array_key_exists('skills', $composer['extra'] ?? []),
+            'empty skills node must be removed',
+        );
+        Assert::true(
+            \array_key_exists('branch-alias', $composer['extra'] ?? []),
+            'unrelated extra keys must survive',
+        );
+    }
+
     public function preservesDonorSourceDuringMigration(): void
     {
         // A package can be both donor and consumer. The donor-side

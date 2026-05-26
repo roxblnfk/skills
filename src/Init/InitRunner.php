@@ -239,9 +239,12 @@ final readonly class InitRunner
         // Strip inline keys from composer.json if any are present. We
         // re-read composer.json here (instead of reusing the
         // earlier decode) because JsonManipulator needs the raw bytes
-        // for in-place editing.
+        // for in-place editing. We also pass the full original `$skills`
+        // block so the helper can collapse an empty `"skills": {}`
+        // residue (and an empty `"extra": {}`) after the strip.
         if ($composerJsonPath !== null && $inlineKeys !== []) {
-            if (!$this->stripInlineKeys($composerJsonPath, \array_keys($inlineKeys), $io)) {
+            /** @var array<string, mixed> $skills */
+            if (!$this->stripInlineKeys($composerJsonPath, $skills, \array_keys($inlineKeys), $io)) {
                 $io->write(
                     '<comment>[init] note: skills.json was written, but stripping '
                     . 'composer.json failed. skills.json wins from now on regardless.</comment>',
@@ -315,10 +318,17 @@ final readonly class InitRunner
 
     /**
      * @param non-empty-string $composerJsonPath
+     * @param array<string, mixed> $originalSkills the inline `extra.skills` block as it
+     *        existed before the strip; used to decide whether to collapse an
+     *        empty `"skills": {}` residue (and a now-empty `"extra": {}`)
      * @param list<non-empty-string> $keys
      */
-    private function stripInlineKeys(string $composerJsonPath, array $keys, IOInterface $io): bool
-    {
+    private function stripInlineKeys(
+        string $composerJsonPath,
+        array $originalSkills,
+        array $keys,
+        IOInterface $io,
+    ): bool {
         $raw = \file_get_contents($composerJsonPath);
         if ($raw === false) {
             $io->writeError('<error>[llm/skills] failed to re-read composer.json for cleanup</error>');
@@ -334,6 +344,16 @@ final readonly class InitRunner
                 return false;
             }
         }
+
+        // If the `extra.skills` block had nothing but the keys we just
+        // stripped, the leftover `"skills": {}` is dead weight — strip
+        // it too. Same hygiene for `"extra": {}`.
+        $remaining = \array_diff(\array_keys($originalSkills), $keys);
+        if ($remaining === []) {
+            $manipulator->removeSubNode('extra', 'skills');
+            $manipulator->removeMainKeyIfEmpty('extra');
+        }
+
         if (\file_put_contents($composerJsonPath, $manipulator->getContents()) === false) {
             $io->writeError('<error>[llm/skills] failed to write composer.json</error>');
             return false;
