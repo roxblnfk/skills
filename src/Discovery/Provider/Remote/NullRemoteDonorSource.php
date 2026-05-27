@@ -39,4 +39,13 @@ final readonly class NullRemoteDonorSource implements RemoteDonorSource
     {
         return [];
     }
+
+    /**
+     * @psalm-pure
+     */
+    #[\Override]
+    public function hasRefs(Path $projectRoot): bool
+    {
+        return false;
+    }
 }

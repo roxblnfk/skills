@@ -76,25 +76,20 @@ final class ZipCentralDirectoryReader
                 throw new UnpackerException('failed to read archive tail');
             }
 
-            $eocdOffset = \strrpos($tail, self::EOCD_SIGNATURE);
-            if ($eocdOffset === false) {
+            // EOCD locator: scan back through every PK\x05\x06 match in
+            // the tail, picking the FIRST one whose own `comment_len`
+            // field correctly accounts for the bytes that follow it.
+            // A naive `strrpos` would lock onto a signature that lives
+            // inside the archive comment (which trails the real EOCD)
+            // and parse adjacent comment bytes as EOCD fields. The
+            // self-consistency check (`offset + 22 + comment_len` ==
+            // tail length) rules that out: a fake match inside the
+            // comment can't simultaneously satisfy the math.
+            $unpacked = $this->findEocd($tail);
+            if ($unpacked === null) {
                 throw new UnpackerException(
                     'end-of-central-directory record not found — archive is corrupted or not a zip',
                 );
-            }
-
-            $eocd = \substr($tail, $eocdOffset, self::EOCD_MIN_SIZE);
-            if (\strlen($eocd) < self::EOCD_MIN_SIZE) {
-                throw new UnpackerException('truncated end-of-central-directory record');
-            }
-
-            /** @var array{entries: int, cd_size: int, cd_offset: int}|false $unpacked */
-            $unpacked = @\unpack(
-                'Vsig/vdisk/vcd_disk/ventries_disk/ventries/Vcd_size/Vcd_offset/vcomment_len',
-                $eocd,
-            );
-            if ($unpacked === false) {
-                throw new UnpackerException('failed to parse end-of-central-directory record');
             }
 
             $entries = $unpacked['entries'];
@@ -177,5 +172,57 @@ final class ZipCentralDirectoryReader
         }
 
         return $names;
+    }
+
+    /**
+     * Locate the End-of-Central-Directory record inside a tail buffer.
+     *
+     * The naive locator (`strrpos`) finds the LAST occurrence of the
+     * signature, which is wrong when the archive comment itself
+     * contains `PK\x05\x06` bytes — the fake match sits AFTER the real
+     * EOCD and `strrpos` picks it. To stay robust we walk every
+     * candidate from rightmost to leftmost and accept the first one
+     * whose `comment_len` field is consistent with the file layout
+     * (i.e. exactly `$tailLen - candidate - 22` bytes follow the EOCD
+     * inside our tail buffer). A signature embedded in the comment
+     * cannot satisfy that arithmetic.
+     *
+     * @return array{entries: int, cd_size: int, cd_offset: int}|null
+     *
+     * @psalm-pure
+     */
+    private function findEocd(string $tail): ?array
+    {
+        $tailLen = \strlen($tail);
+        $cursor = $tailLen;
+        while (true) {
+            $candidate = \strrpos(\substr($tail, 0, $cursor), self::EOCD_SIGNATURE);
+            if ($candidate === false) {
+                return null;
+            }
+
+            $eocd = \substr($tail, $candidate, self::EOCD_MIN_SIZE);
+            if (\strlen($eocd) === self::EOCD_MIN_SIZE) {
+                /** @var array{entries: int, cd_size: int, cd_offset: int, comment_len: int}|false $unpacked */
+                $unpacked = @\unpack(
+                    'Vsig/vdisk/vcd_disk/ventries_disk/ventries/Vcd_size/Vcd_offset/vcomment_len',
+                    $eocd,
+                );
+                if (
+                    $unpacked !== false
+                    && $candidate + self::EOCD_MIN_SIZE + $unpacked['comment_len'] === $tailLen
+                ) {
+                    return [
+                        'entries' => $unpacked['entries'],
+                        'cd_size' => $unpacked['cd_size'],
+                        'cd_offset' => $unpacked['cd_offset'],
+                    ];
+                }
+            }
+
+            // Inconsistent candidate — restrict the next search to the
+            // bytes strictly before this match and try again.
+            $cursor = $candidate;
+        }
     }
 }

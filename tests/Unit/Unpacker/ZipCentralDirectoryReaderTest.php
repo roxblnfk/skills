@@ -68,12 +68,11 @@ final class ZipCentralDirectoryReaderTest
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
-        // The EOCD-locator scan uses strrpos to find the last
-        // PK\x05\x06 in the file tail. If the archive's comment
-        // happens to contain that byte pattern, a naive
-        // implementation would lock onto the comment instead of the
-        // real EOCD. ZipArchive::setArchiveComment lets us reproduce
-        // that situation.
+        // The EOCD-locator must not lock onto a `PK\x05\x06` signature
+        // that lives inside the archive comment (which trails the real
+        // EOCD). The locator scans every candidate from right to left
+        // and accepts only the one whose `comment_len` field is
+        // self-consistent — the fake match cannot satisfy that math.
         $zip = new \ZipArchive();
         $zipPath = $this->tmpDir . '/with-comment.zip';
         $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
@@ -83,6 +82,39 @@ final class ZipCentralDirectoryReaderTest
 
         $names = (new ZipCentralDirectoryReader())->readNames($zipPath);
         Assert::same($names, ['only.txt']);
+    }
+
+    public function survivesAFullSyntheticEocdEmbeddedInTheArchiveComment(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // Stronger version of the previous case: the archive comment
+        // contains a *complete* 22-byte EOCD-shaped block whose own
+        // `comment_len` field claims zero trailing bytes. A naive
+        // `strrpos`-based locator would pick this fake EOCD (it sits
+        // after the real one) and the bogus offsets would steer the
+        // CD parse into nonsense bytes. The robust locator must reject
+        // it because the math (`candidate + 22 + 0` == tailLen) only
+        // holds for the trailing match, but the fake's interior
+        // offsets are inconsistent with the real CD — so it falls back
+        // to the leftward, real EOCD.
+        $fakeEocd = "\x50\x4b\x05\x06" // signature
+            . \str_repeat("\x00", 16)  // disks + entries + sizes (all zero)
+            . "\x00\x00";               // comment_len = 0
+
+        $zip = new \ZipArchive();
+        $zipPath = $this->tmpDir . '/fake-eocd-in-comment.zip';
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString('a.txt', 'a');
+        $zip->addFromString('b.txt', 'b');
+        $zip->setArchiveComment('padding ' . $fakeEocd . ' padding');
+        $zip->close();
+
+        $names = (new ZipCentralDirectoryReader())->readNames($zipPath);
+        \sort($names);
+        Assert::same($names, ['a.txt', 'b.txt']);
     }
 
     public function rejectsAFileThatHasNoEocdSignature(): void

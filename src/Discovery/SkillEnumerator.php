@@ -111,7 +111,7 @@ final readonly class SkillEnumerator
                 foreach ($filterSet as $name => $seen) {
                     if (!$seen) {
                         $warnings[] = \sprintf(
-                            '%s: skill "%s" declared in remote.skills but not found in the donor',
+                            '%s: skill "%s" declared in the skill allowlist but not found in the donor',
                             $donor->packageName,
                             $name,
                         );

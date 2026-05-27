@@ -5,24 +5,21 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Feature;
 
 use Internal\Path;
-use LLM\Skills\Config\RemoteEntry;
-use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpClient;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpResponse;
 use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
-use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
-use LLM\Skills\Discovery\Provider\Remote\RemoteFetcher;
 use LLM\Skills\Discovery\Provider\Remote\RemoteProvider;
 use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
+use LLM\Skills\Tests\Testo\Filesystem;
 use LLM\Skills\Unpacker\ArchiveUnpacker;
 use LLM\Skills\Unpacker\CliUnpacker;
 use LLM\Skills\Unpacker\UnpackerFactory;
-use LLM\Skills\Tests\Testo\Filesystem;
 use Symfony\Component\Process\ExecutableFinder;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -52,19 +49,6 @@ use Testo\Test;
 final class RemoteProviderEndToEndTest
 {
     private string $tmp;
-
-    #[BeforeTest]
-    public function setUp(): void
-    {
-        $this->tmp = \sys_get_temp_dir() . '/llm-skills-e2e-' . \bin2hex(\random_bytes(6));
-        \mkdir($this->tmp, 0o777, true);
-    }
-
-    #[AfterTest]
-    public function tearDown(): void
-    {
-        Filesystem::removeRecursive($this->tmp);
-    }
 
     public function remoteEntryResolvesFetchesAndProducesDonor(): void
     {
@@ -134,8 +118,7 @@ final class RemoteProviderEndToEndTest
     public function remoteSkillsAllowlistThreadsIntoTheDonor(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
-            Assert::true(true);
-            return;
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
         // skills.json declares a github donor with an explicit allowlist
@@ -199,8 +182,7 @@ final class RemoteProviderEndToEndTest
     public function zipSlipArchiveIsRejectedBeforeAnyFileLands(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
-            Assert::true(true);
-            return;
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
         $this->runZipSlipScenario(unpacker: null);
@@ -215,8 +197,7 @@ final class RemoteProviderEndToEndTest
         // installed, we force the fetcher onto the CLI unpacker and
         // verify the same rejection lands.
         if (!\class_exists(\ZipArchive::class)) {
-            Assert::true(true);
-            return;
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
         if (!\function_exists('proc_open')) {
             Assert::true(true);
@@ -236,6 +217,87 @@ final class RemoteProviderEndToEndTest
         }
 
         $this->runZipSlipScenario(unpacker: $cli);
+    }
+
+    public function malformedRemoteArchiveProducesWarning(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // Build a zip that's missing composer.json AND a `skills/`
+        // directory — neither donor shape (Composer-shaped or bare
+        // skill repo) applies, so the provider rejects the archive
+        // and surfaces a single combined warning. With a `skills/`
+        // directory present, the same archive would auto-discover
+        // (covered by the dedicated unit test).
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'remote' => [
+                ['from' => 'github', 'package' => 'acme/empty', 'ref' => 'v1.0.0'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'acme-empty-v1.0.0',
+            files: ['README.md' => 'no composer.json here'],
+        );
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/acme/empty/zipball/v1.0.0' => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GithubAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::same($result->donors, []);
+        Assert::true($result->warnings !== []);
+        Assert::string($result->warnings[0])
+            ->contains('neither a composer.json')
+            ->contains('skills/');
+    }
+
+    #[BeforeTest]
+    public function setUp(): void
+    {
+        $this->tmp = \sys_get_temp_dir() . '/llm-skills-e2e-' . \bin2hex(\random_bytes(6));
+        \mkdir($this->tmp, 0o777, true);
+    }
+
+    #[AfterTest]
+    public function tearDown(): void
+    {
+        Filesystem::removeRecursive($this->tmp);
+    }
+
+    /**
+     * @param array<string, HttpResponse> $responses
+     */
+    private static function stubHttp(array $responses): HttpClient
+    {
+        return new class($responses) implements HttpClient {
+            /**
+             * @param array<string, HttpResponse> $responses
+             */
+            public function __construct(
+                private readonly array $responses,
+            ) {}
+
+            #[\Override]
+            public function get(string $url, array $headers = []): HttpResponse
+            {
+                if (!isset($this->responses[$url])) {
+                    throw new \LogicException('unstubbed URL: ' . $url);
+                }
+                return $this->responses[$url];
+            }
+        };
     }
 
     private function runZipSlipScenario(?ArchiveUnpacker $unpacker): void
@@ -287,46 +349,6 @@ final class RemoteProviderEndToEndTest
         // be absent.
         $traversalTarget = \dirname($this->tmp, 2) . '/pwn.txt';
         Assert::false(\is_file($traversalTarget), 'zip-slip wrote to ' . $traversalTarget);
-    }
-
-    public function malformedRemoteArchiveProducesWarning(): void
-    {
-        if (!\class_exists(\ZipArchive::class)) {
-            Assert::true(true);
-            return;
-        }
-
-        // Build a zip that's missing composer.json — the fetcher
-        // succeeds (we have bytes), but the provider rejects the
-        // archive as not-a-donor.
-        \file_put_contents($this->tmp . '/skills.json', \json_encode([
-            'remote' => [
-                ['from' => 'github', 'package' => 'acme/empty', 'ref' => 'v1.0.0'],
-            ],
-        ], \JSON_THROW_ON_ERROR));
-
-        $zipBytes = $this->buildGithubStyleZip(
-            topDir: 'acme-empty-v1.0.0',
-            files: ['README.md' => 'no composer.json here'],
-        );
-
-        $http = self::stubHttp([
-            'https://api.github.com/repos/acme/empty/zipball/v1.0.0' => new HttpResponse(
-                statusCode: 200,
-                body: $zipBytes,
-            ),
-        ]);
-
-        $provider = new RemoteProvider(
-            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GithubAdapter($http))),
-            new HttpArchiveFetcher($http, Path::create($this->tmp)),
-        );
-
-        $result = $provider->discover(Path::create($this->tmp));
-
-        Assert::same($result->donors, []);
-        Assert::true($result->warnings !== []);
-        Assert::true(\str_contains((string) $result->warnings[0], 'composer.json missing'));
     }
 
     /**
@@ -398,27 +420,5 @@ final class RemoteProviderEndToEndTest
             throw new \RuntimeException('failed to read built zip');
         }
         return $bytes;
-    }
-
-    /**
-     * @param array<string, HttpResponse> $responses
-     */
-    private static function stubHttp(array $responses): HttpClient
-    {
-        return new class($responses) implements HttpClient {
-            /** @param array<string, HttpResponse> $responses */
-            public function __construct(
-                private readonly array $responses,
-            ) {}
-
-            #[\Override]
-            public function get(string $url, array $headers = []): HttpResponse
-            {
-                if (!isset($this->responses[$url])) {
-                    throw new \LogicException('unstubbed URL: ' . $url);
-                }
-                return $this->responses[$url];
-            }
-        };
     }
 }

@@ -383,6 +383,12 @@ final class RemoteProviderTest
             {
                 return [];
             }
+
+            #[\Override]
+            public function hasRefs(Path $projectRoot): bool
+            {
+                return $this->refs !== [];
+            }
         };
     }
 

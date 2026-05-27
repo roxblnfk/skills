@@ -34,6 +34,24 @@ interface RemoteDonorSource
     public function refs(Path $projectRoot): iterable;
 
     /**
+     * Cheap "does this source have anything configured?" check.
+     *
+     * MUST NOT resolve refs — the answer drives
+     * {@see RemoteProvider::isActive()}, which is called once per sync
+     * (and once per command for `show`). A naive "iterate refs() once"
+     * implementation would trigger HTTP roundtrips on every command,
+     * doubling network traffic when {@see RemoteProvider::discover()}
+     * subsequently iterates the same source.
+     *
+     * Implementations should answer by inspecting their config surface
+     * directly (e.g. "does skills.json declare any `remote[]` entries"),
+     * not by producing refs.
+     *
+     * @psalm-suppress MissingAbstractPureAnnotation
+     */
+    public function hasRefs(Path $projectRoot): bool;
+
+    /**
      * Warnings accumulated during the most recent {@see self::refs()}
      * iteration. Typical contents: "unknown adapter id" for entries the
      * registry rejected, "no matching tag" for caret constraints with

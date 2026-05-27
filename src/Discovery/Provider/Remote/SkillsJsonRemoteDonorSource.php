@@ -112,4 +112,22 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
     {
         return $this->lastWarnings;
     }
+
+    /**
+     * Config-level check: does `skills.json` declare any `remote[]`
+     * entry? Cheap by design — runs the mapper but **never resolves**
+     * refs (no adapter calls, no HTTP). Both `RemoteProvider::isActive()`
+     * (every sync / show invocation) and the standalone bootstrap rely
+     * on this not roundtripping to GitHub.
+     */
+    #[\Override]
+    public function hasRefs(Path $projectRoot): bool
+    {
+        try {
+            $config = $this->mapper->forProject($projectRoot, null)->config;
+        } catch (\Throwable) {
+            return false;
+        }
+        return $config->remote !== [];
+    }
 }

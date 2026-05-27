@@ -61,10 +61,11 @@ final readonly class RemoteProvider implements DonorProvider
     #[\Override]
     public function isActive(Path $projectRoot): bool
     {
-        foreach ($this->source->refs($projectRoot) as $_ref) {
-            return true;
-        }
-        return false;
+        // Cheap config-level check (no ref resolution / no HTTP).
+        // {@see RemoteDonorSource::hasRefs()} answers from `skills.json`
+        // directly; iterating `refs()` here would double-up the network
+        // traffic with the subsequent `discover()` call.
+        return $this->source->hasRefs($projectRoot);
     }
 
     #[\Override]

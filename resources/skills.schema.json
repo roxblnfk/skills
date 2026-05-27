@@ -144,12 +144,11 @@
                 },
                 "skills": {
                     "type": "array",
-                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships.",
+                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships; empty list → donor is registered but no skills are pulled (matches `remoteByPackage` semantics).",
                     "items": {
                         "type": "string",
                         "minLength": 1
-                    },
-                    "minItems": 1
+                    }
                 },
                 "sha256": {
                     "type": "string",
