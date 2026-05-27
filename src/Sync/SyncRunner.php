@@ -293,6 +293,11 @@ final readonly class SyncRunner
      * a list of vendor sections, not a flat stream of `name ← package` rows
      * that the eye has to re-sort.
      *
+     * Each row shows the canonical name (from the skill's `SKILL.md`
+     * `name:` frontmatter) and — when the directory name differs — the
+     * directory name dimmed alongside, so the user can tell at a glance
+     * what landed on disk vs. what they'd reference by name.
+     *
      * @param list<Skill> $copied
      */
     private function emitCopyReport(IOInterface $io, array $copied, bool $dryRun): void
@@ -304,13 +309,20 @@ final readonly class SyncRunner
         $action = $dryRun ? '[would copy]' : '[copy]';
         $byPackage = [];
         foreach ($copied as $skill) {
-            $byPackage[$skill->packageName][] = $skill->name;
+            $byPackage[$skill->packageName][] = $skill;
         }
 
-        foreach ($byPackage as $package => $names) {
+        foreach ($byPackage as $package => $skills) {
             $io->write('<fg=cyan>' . $package . '</>');
-            foreach ($names as $name) {
-                $io->write('  <info>' . $action . '</info> ' . $name);
+            foreach ($skills as $skill) {
+                $row = '  <info>' . $action . '</info> ' . $skill->canonicalName;
+                if ($skill->canonicalName !== $skill->name) {
+                    // Render the on-disk directory dimmed alongside the
+                    // canonical name. Only print when the two diverge —
+                    // duplicating the same string in parens is noise.
+                    $row .= ' <fg=gray>' . $skill->name . '/</>';
+                }
+                $io->write($row);
             }
         }
     }

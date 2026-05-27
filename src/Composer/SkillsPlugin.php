@@ -140,6 +140,13 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             return;
         }
 
+        // Banner so the user sees that the `llm/skills` plugin is doing
+        // work after `composer install` / `composer update`. Without this,
+        // the auto-sync output (which includes `[copy]` rows and skip
+        // diagnostics) looks like noise from Composer itself.
+        $this->io->write('<info>[llm/skills] running auto-sync after composer ' .
+            ($event->getName() === ScriptEvents::POST_UPDATE_CMD ? 'update' : 'install') . '…</info>');
+
         $autoMigrate = $event->getName() === ScriptEvents::POST_UPDATE_CMD;
         $options = new SyncOptions(
             packageFilters: [],

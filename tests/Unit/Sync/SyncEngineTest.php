@@ -251,6 +251,7 @@ final class SyncEngineTest
 
         return new Skill(
             name: $skillName,
+            canonicalName: $skillName,
             sourceDir: Path::create($skillDir),
             packageName: $packageName,
         );
