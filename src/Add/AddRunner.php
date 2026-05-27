@@ -9,6 +9,7 @@ use Internal\Path;
 use LLM\Skills\Config\AddOptions;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
@@ -196,10 +197,18 @@ final readonly class AddRunner
     }
 
     /**
-     * Pick an adapter for the user's input. If `$options->from` is
-     * set, look it up directly. Otherwise infer from the input
-     * URL's host: scan the registry for the adapter whose
-     * {@see HostAdapter::defaultHost()} matches the URL's scheme + host.
+     * Pick an adapter for the user's input. Resolution order:
+     *
+     * 1. Explicit `--from=<id>` wins, full stop.
+     * 2. Otherwise, if the input is a full URL, try to infer the
+     *    adapter from the URL's scheme + host. An unknown host is a
+     *    user error — we do NOT silently fall back to GitHub here,
+     *    because that would mean a `https://gitlab.com/...` URL gets
+     *    sent to the GitHub API.
+     * 3. Otherwise (shorthand input, no `--from`), default to
+     *    `github`. GitHub is overwhelmingly the most common donor
+     *    source; making it the default trims the most-typed flag off
+     *    `skills:add` without locking other adapters out.
      */
     private function selectAdapter(AddOptions $options, IOInterface $io): ?HostAdapter
     {
@@ -212,23 +221,28 @@ final readonly class AddRunner
             }
         }
 
-        $inferred = $this->inferAdapterFromUrl($options->input);
-        if ($inferred === null) {
-            if (self::looksLikeUrl($options->input)) {
+        if (self::looksLikeUrl($options->input)) {
+            $inferred = $this->inferAdapterFromUrl($options->input);
+            if ($inferred === null) {
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] could not infer adapter from URL host in "%s"; '
                     . 'pass --from=<adapter> (e.g. --from=github)</error>',
                     $options->input,
                 ));
-            } else {
-                $io->writeError(
-                    '<error>[llm/skills] --from is required for shorthand input; '
-                    . 'pass --from=<adapter> (e.g. --from=github)</error>',
-                );
+                return null;
             }
+            return $inferred;
+        }
+
+        // Shorthand input + no `--from` → default to GitHub.
+        try {
+            return $this->registry->get(ProviderId::GITHUB);
+        } catch (UnknownAdapterException $e) {
+            // Should only fire in a misconfigured registry; surface
+            // the message so it is at least debuggable.
+            $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return null;
         }
-        return $inferred;
     }
 
     /**

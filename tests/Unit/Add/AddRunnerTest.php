@@ -194,11 +194,14 @@ final class AddRunnerTest
         Assert::true(\str_contains($io->getOutput(), 'no remote adapter registered'));
     }
 
-    public function shorthandWithoutFromIsRejected(): void
+    public function shorthandWithoutFromDefaultsToGithub(): void
     {
-        // No --from + no URL = no way to infer adapter. Hard fail.
+        // GitHub is the overwhelmingly common donor source; `--from`
+        // is optional for shorthand input. The runner routes through
+        // the registered "github" adapter exactly as if `--from=github`
+        // had been passed.
         $adapter = StubAdapter::withDefaults();
-        $fetcher = new ExplodingFetcher();
+        $fetcher = $this->fetcherReturning($this->writeArchive('def', 'acme/skills', 'skills'));
         $io = new BufferIO();
 
         $code = $this->runner($adapter, $fetcher)->run(
@@ -207,8 +210,8 @@ final class AddRunnerTest
             new AddOptions(input: 'acme/skills'),
         );
 
-        Assert::same($code, Command::INVALID);
-        Assert::true(\str_contains($io->getOutput(), '--from is required'));
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'registered github:acme/skills'));
     }
 
     public function urlWithUnknownHostIsRejectedWithUrlSpecificMessage(): void

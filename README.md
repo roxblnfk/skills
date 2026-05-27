@@ -115,8 +115,8 @@ composer skills:update --from=github                      # only refresh remote 
 composer skills:update --dry-run                          # preview, write nothing
 composer skills:show                                      # inspect: per-skill status, what is skipped
 composer skills:init                                      # create skills.json (migrating inline keys)
-composer skills:add acme/skills --from=github             # register a GitHub donor and sync it
-composer skills:add acme/skills --from=github \
+composer skills:add acme/skills                           # register a GitHub donor and sync it (github is the default)
+composer skills:add acme/skills \
         --skill=code-review --skill=refactor              # narrow a donor to two skills
 ```
 
@@ -358,16 +358,19 @@ Both axes coexist. When the same package name arrives via both, the **remote ent
 ### `skills:add` — register a remote donor
 
 ```bash
-composer skills:add acme/skills --from=github                 # latest stable, write "^X.Y.Z"
-composer skills:add acme/skills --from=github --ref=v1.2.3    # pinned tag
-composer skills:add 'acme/skills@main' --from=github          # branch HEAD
-composer skills:add https://github.com/acme/skills            # full URL; --from inferred
-composer skills:add 'team/skills' --from=github \
+composer skills:add acme/skills                               # latest stable, write "^X.Y.Z" — github is the default
+composer skills:add acme/skills --ref=v1.2.3                  # pinned tag
+composer skills:add 'acme/skills@main'                        # branch HEAD
+composer skills:add https://github.com/acme/skills            # full URL; adapter inferred from host
+composer skills:add team/skills --from=gitlab                 # use a different adapter
+composer skills:add team/skills \
         --host=https://github.corp.example.com                # GitHub Enterprise
-composer skills:add acme/skills --from=github \
+composer skills:add acme/skills \
         --skill=code-review --skill=refactor                  # only these two skills
-composer skills:add acme/skills --from=github --no-sync       # only edit skills.json
+composer skills:add acme/skills --no-sync                     # only edit skills.json
 ```
+
+`--from` defaults to `github` for shorthand input (`owner/repo`). Pass it explicitly only when targeting a different adapter, or override it when the URL host is ambiguous. Full URLs still resolve the adapter from the host — `--from` is only consulted as an override.
 
 The command:
 
