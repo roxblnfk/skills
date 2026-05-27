@@ -17,6 +17,7 @@ use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
 use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
 use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
@@ -70,7 +71,7 @@ final class Add extends Command
 
         $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $composer->getConfig()));
         $registry = new HostAdapterRegistry(new GithubAdapter($http));
-        $fetcher = new HttpArchiveFetcher($http, $projectRoot);
+        $fetcher = new HttpArchiveFetcher($http, $projectRoot, self::cacheBuilderFor($composer));
 
         $runner = new AddRunner($registry, $fetcher);
         $donorPackageName = null;
@@ -101,6 +102,20 @@ final class Add extends Command
             autoMigrate: false,
         );
         return (new SyncRunner())->run($projectRoot, $provider, $extra, $io, $syncOptions);
+    }
+
+    /**
+     * Honour the project's configured `vendor-dir` so a custom value
+     * doesn't leave the cache under an unused `vendor/` directory.
+     */
+    private static function cacheBuilderFor(Composer $composer): CachePathBuilder
+    {
+        /** @var mixed $vendorDir */
+        $vendorDir = $composer->getConfig()->get('vendor-dir');
+        if (!\is_string($vendorDir) || $vendorDir === '') {
+            return new CachePathBuilder();
+        }
+        return new CachePathBuilder(Path::create($vendorDir)->join('llm-skills/cache'));
     }
 
     /**

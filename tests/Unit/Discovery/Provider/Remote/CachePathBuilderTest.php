@@ -124,6 +124,33 @@ final class CachePathBuilderTest
         Assert::true(\preg_match('#/cache/zip/default/[a-f0-9]{16}/sha256-abc$#', (string) $path) === 1);
     }
 
+    public function buildForEntryHonoursExplicitCacheRootOverride(): void
+    {
+        // Composer projects with a non-default `vendor-dir` (e.g.
+        // `deps/`) pass an explicit cache root so the cache lives
+        // inside the actual vendor tree, not under a `vendor/` that
+        // composer never created (and never gitignores). The override
+        // replaces the project-root-relative default wholesale; the
+        // segment layout under the root is unchanged.
+        $b = new CachePathBuilder(Path::create('/some/project/deps/llm-skills/cache'));
+        $path = (string) $b->buildForEntry(self::root(), self::entry('acme/skills'), 'v1.2.3');
+
+        Assert::true(\str_contains($path, '/deps/llm-skills/cache/github/default/acme__skills/v1.2.3'));
+        Assert::false(
+            \str_contains($path, '/vendor/llm-skills/cache'),
+            'override must not fall back to the default `vendor/...` layout',
+        );
+    }
+
+    public function buildForUrlHonoursExplicitCacheRootOverride(): void
+    {
+        $b = new CachePathBuilder(Path::create('/some/project/deps/llm-skills/cache'));
+        $path = (string) $b->buildForUrl(self::root(), 'https://example.com/x.zip', 'sha256-abc');
+
+        Assert::true(\str_contains($path, '/deps/llm-skills/cache/url/'));
+        Assert::false(\str_contains($path, '/vendor/llm-skills/cache'));
+    }
+
     private static function root(): Path
     {
         return Path::create('/some/project');

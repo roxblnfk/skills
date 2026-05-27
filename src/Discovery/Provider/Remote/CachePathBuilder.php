@@ -38,9 +38,13 @@ use LLM\Skills\Config\RemoteEntry;
 final readonly class CachePathBuilder
 {
     /**
-     * Cache dir under `vendor/`, gitignored by virtue of living in
-     * vendor. The layout is exposed as a constant so tests and the
-     * fetcher agree on where to look.
+     * Default cache dir relative to the project root, used when the
+     * caller does not pass an explicit `$cacheRoot` (mostly tests and
+     * the no-Composer fallback). Mirrors Composer's `vendor/` default;
+     * real entrypoints derive `<vendor-dir>/llm-skills/cache` from
+     * Composer's own config so a custom `vendor-dir` (e.g. `deps/`)
+     * keeps the cache inside the actual vendor tree, gitignored by
+     * the same rule as the rest of `vendor/`.
      */
     public const VENDOR_CACHE_DIR = 'vendor/llm-skills/cache';
 
@@ -57,6 +61,20 @@ final readonly class CachePathBuilder
      * (260-char total path limit on default config).
      */
     private const SHA_PREFIX_LENGTH = 12;
+
+    /**
+     * @param Path|null $cacheRoot absolute cache root. When `null`, methods
+     *         fall back to `$projectRoot->join(self::VENDOR_CACHE_DIR)` —
+     *         backwards-compatible default for callers without a Composer
+     *         instance. Entrypoints with access to `composer.json` should
+     *         pass `Path::create(<vendor-dir>)->join('llm-skills/cache')`
+     *         so a non-default `vendor-dir` config is honoured.
+     *
+     * @psalm-mutation-free
+     */
+    public function __construct(
+        private ?Path $cacheRoot = null,
+    ) {}
 
     /**
      * Build the cache directory path for the given entry and
@@ -82,7 +100,7 @@ final readonly class CachePathBuilder
         }
 
         /** @psalm-suppress ImpureMethodCall Path::join() is mutation-free; psalm conservatism */
-        return $projectRoot->join(self::VENDOR_CACHE_DIR)
+        return $this->resolveBase($projectRoot)
             ->join($fromSegment)
             ->join($hostSegment)
             ->join($idSegment)
@@ -107,7 +125,7 @@ final readonly class CachePathBuilder
     public function buildForUrl(Path $projectRoot, string $url, string $resolvedRef): Path
     {
         /** @psalm-suppress ImpureMethodCall Path::join() is mutation-free; psalm conservatism */
-        return $projectRoot->join(self::VENDOR_CACHE_DIR)
+        return $this->resolveBase($projectRoot)
             ->join('url')
             ->join(self::urlHash($url))
             ->join(self::refSegment($resolvedRef));
@@ -193,5 +211,21 @@ final readonly class CachePathBuilder
         /** @var non-empty-string $hash */
         $hash = \substr(\hash('sha256', $url), 0, self::URL_HASH_LENGTH);
         return $hash;
+    }
+
+    /**
+     * Resolve the absolute cache base for a given project root. Honours
+     * the constructor-injected override; otherwise falls back to
+     * `$projectRoot/vendor/llm-skills/cache`.
+     *
+     * @psalm-mutation-free
+     */
+    private function resolveBase(Path $projectRoot): Path
+    {
+        if ($this->cacheRoot !== null) {
+            return $this->cacheRoot;
+        }
+        /** @psalm-suppress ImpureMethodCall Path::join() is mutation-free; psalm conservatism */
+        return $projectRoot->join(self::VENDOR_CACHE_DIR);
     }
 }

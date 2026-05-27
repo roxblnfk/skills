@@ -11,6 +11,7 @@ use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
 use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
 use LLM\Skills\Discovery\Provider\Remote\RemoteProvider;
@@ -74,6 +75,23 @@ final readonly class DonorProviderBuilder
     }
 
     /**
+     * Build a {@see CachePathBuilder} rooted at Composer's configured
+     * `vendor-dir` so a custom value (`deps/`, `build/vendor/`, …) is
+     * honoured. Without this, the cache would always land under a
+     * hard-coded `vendor/` directory that Composer may not even use,
+     * leaving cached archives outside the vendor tree's `.gitignore`.
+     */
+    private static function cacheBuilderFor(Composer $composer): CachePathBuilder
+    {
+        /** @var mixed $vendorDir */
+        $vendorDir = $composer->getConfig()->get('vendor-dir');
+        if (!\is_string($vendorDir) || $vendorDir === '') {
+            return new CachePathBuilder();
+        }
+        return new CachePathBuilder(Path::create($vendorDir)->join('llm-skills/cache'));
+    }
+
+    /**
      * Build the remote provider. Wires the GitHub adapter, a Composer-
      * backed HTTP client (so auth.json credentials apply), and an
      * archive fetcher into the {@see RemoteProvider} skeleton.
@@ -109,6 +127,7 @@ final readonly class DonorProviderBuilder
         $fetcher = new HttpArchiveFetcher(
             $httpClient,
             $this->guessProjectRootForFetcher($composer),
+            self::cacheBuilderFor($composer),
         );
 
         return new RemoteProvider($source, $fetcher);
