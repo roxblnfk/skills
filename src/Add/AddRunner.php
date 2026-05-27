@@ -63,8 +63,27 @@ final readonly class AddRunner
         private RefResolver $refResolver = new RefResolver(),
     ) {}
 
-    public function run(Path $projectRoot, IOInterface $io, AddOptions $options): int
-    {
+    /**
+     * @param \Closure(RemoteEntry, non-empty-string):void|null $onRegistered
+     *         invoked exactly once after the entry is upserted into
+     *         `skills.json`. Receives the {@see RemoteEntry} AND the
+     *         donor's actual Composer-package name (read from the
+     *         fetched `composer.json`'s `name` field).
+     *
+     *         Note: the package name is **not** the same as
+     *         `$entry->package` — that field stores the adapter's
+     *         identifier (e.g. the GitHub `<owner>/<repo>` path), which
+     *         can differ from the package's `name`. The donor's
+     *         {@see \LLM\Skills\Config\VendorConfig::$packageName} is
+     *         what the planner filters on, so the entrypoint needs the
+     *         composer.json `name` to scope the post-add sync correctly.
+     */
+    public function run(
+        Path $projectRoot,
+        IOInterface $io,
+        AddOptions $options,
+        ?\Closure $onRegistered = null,
+    ): int {
         // Step 1: adapter selection.
         $adapter = $this->selectAdapter($options, $io);
         if ($adapter === null) {
@@ -102,7 +121,13 @@ final readonly class AddRunner
             return Command::FAILURE;
         }
 
-        if (!$this->validateArchiveShipsSkillsSource($extractedRoot, $io, $adapter->id(), $parsed)) {
+        $donorPackageName = $this->validateArchiveShipsSkillsSource(
+            $extractedRoot,
+            $io,
+            $adapter->id(),
+            $parsed,
+        );
+        if ($donorPackageName === null) {
             return Command::FAILURE;
         }
 
@@ -131,6 +156,8 @@ final readonly class AddRunner
             $entry->identifier(),
             $storedRef !== null ? ' @ ' . $storedRef : '',
         ));
+
+        $onRegistered?->__invoke($entry, $donorPackageName);
 
         return Command::SUCCESS;
     }
@@ -251,15 +278,20 @@ final readonly class AddRunner
 
     /**
      * Confirm the fetched archive contains a `composer.json` with
-     * `extra.skills.source` — refusing to register a donor we cannot
-     * actually use.
+     * `extra.skills.source` and a well-shaped `name`. Returns the
+     * donor's package name on success — needed by the entrypoint to
+     * scope the follow-up sync, because the adapter-side identifier
+     * (e.g. GitHub repo path) is not necessarily the same string the
+     * package declares in its composer.json.
+     *
+     * @return non-empty-string|null donor package name, or `null` if the archive cannot be used
      */
     private function validateArchiveShipsSkillsSource(
         Path $extractedRoot,
         IOInterface $io,
         string $adapterId,
         ParsedAddInput $parsed,
-    ): bool {
+    ): ?string {
         $composerJsonPath = (string) $extractedRoot->join('composer.json');
         if (!\is_file($composerJsonPath)) {
             $io->writeError(\sprintf(
@@ -268,13 +300,13 @@ final readonly class AddRunner
                 $adapterId,
                 $parsed->package ?? $parsed->url ?? $parsed->from,
             ));
-            return false;
+            return null;
         }
 
         $contents = \file_get_contents($composerJsonPath);
         if ($contents === false) {
             $io->writeError('<error>[llm/skills] failed to read composer.json from fetched archive</error>');
-            return false;
+            return null;
         }
 
         try {
@@ -282,11 +314,21 @@ final readonly class AddRunner
             $decoded = \json_decode($contents, true, flags: \JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             $io->writeError('<error>[llm/skills] fetched composer.json is not valid JSON: ' . $e->getMessage() . '</error>');
-            return false;
+            return null;
         }
         if (!\is_array($decoded)) {
             $io->writeError('<error>[llm/skills] fetched composer.json must be a JSON object</error>');
-            return false;
+            return null;
+        }
+
+        /** @var mixed $rawName */
+        $rawName = $decoded['name'] ?? null;
+        if (!\is_string($rawName) || $rawName === '' || !\str_contains($rawName, '/')) {
+            $io->writeError(
+                '<error>[llm/skills] fetched composer.json must declare a non-empty `name` '
+                . 'of the form vendor/package</error>',
+            );
+            return null;
         }
 
         /** @var mixed $extra */
@@ -296,9 +338,10 @@ final readonly class AddRunner
                 '<error>[llm/skills] fetched package does not declare extra.skills.source — '
                 . 'cannot register as a skill donor</error>',
             );
-            return false;
+            return null;
         }
 
-        return true;
+        /** @var non-empty-string $rawName */
+        return $rawName;
     }
 }

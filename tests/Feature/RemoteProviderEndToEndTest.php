@@ -16,7 +16,11 @@ use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\RemoteFetcher;
 use LLM\Skills\Discovery\Provider\Remote\RemoteProvider;
 use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
+use LLM\Skills\Unpacker\ArchiveUnpacker;
+use LLM\Skills\Unpacker\CliUnpacker;
+use LLM\Skills\Unpacker\UnpackerFactory;
 use LLM\Skills\Tests\Testo\Filesystem;
+use Symfony\Component\Process\ExecutableFinder;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Lifecycle\AfterTest;
@@ -199,6 +203,43 @@ final class RemoteProviderEndToEndTest
             return;
         }
 
+        $this->runZipSlipScenario(unpacker: null);
+    }
+
+    public function zipSlipArchiveIsAlsoRejectedOnTheCliFallbackPath(): void
+    {
+        // The CLI unpacker (unzip / 7z) has no built-in zip-slip
+        // protection — the safety boundary is owned by the fetcher's
+        // pre-extraction lexical check against the CDR. This scenario
+        // pins that path explicitly: even though ext-zip happens to be
+        // installed, we force the fetcher onto the CLI unpacker and
+        // verify the same rejection lands.
+        if (!\class_exists(\ZipArchive::class)) {
+            Assert::true(true);
+            return;
+        }
+        if (!\function_exists('proc_open')) {
+            Assert::true(true);
+            return;
+        }
+
+        $cli = (new UnpackerFactory(
+            finder: new ExecutableFinder(),
+            hasZipArchive: static fn(): bool => false,
+            hasProcOpen: static fn(): bool => true,
+        ))->detect();
+        if (!$cli instanceof CliUnpacker) {
+            // No `unzip` / `7z*` on this machine — the CLI path is not
+            // exercisable. The ZipArchive variant above still ran.
+            Assert::true(true);
+            return;
+        }
+
+        $this->runZipSlipScenario(unpacker: $cli);
+    }
+
+    private function runZipSlipScenario(?ArchiveUnpacker $unpacker): void
+    {
         // A malicious archive served by a user-configurable `host`
         // contains an entry whose name resolves outside the
         // extraction scratch dir. The fetcher must refuse the archive
@@ -228,7 +269,7 @@ final class RemoteProviderEndToEndTest
 
         $provider = new RemoteProvider(
             new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GithubAdapter($http))),
-            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+            new HttpArchiveFetcher($http, Path::create($this->tmp), unpacker: $unpacker),
         );
 
         $result = $provider->discover(Path::create($this->tmp));

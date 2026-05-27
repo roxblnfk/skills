@@ -9,7 +9,9 @@ use Composer\IO\NullIO;
 use Composer\Util\HttpDownloader;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
+use LLM\Skills\Config\RemoteEntry;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -59,22 +61,29 @@ final class Add extends BaseCommand
         $fetcher = new HttpArchiveFetcher($http, $projectRoot);
 
         $runner = new AddRunner($registry, $fetcher);
-        $exit = $runner->run($projectRoot, $this->getIO(), $options);
+        $donorPackageName = null;
+        $exit = $runner->run(
+            $projectRoot,
+            $this->getIO(),
+            $options,
+            static function (RemoteEntry $_entry, string $packageName) use (&$donorPackageName): void {
+                $donorPackageName = $packageName;
+            },
+        );
 
         if ($exit !== self::SUCCESS || !$options->sync) {
             return $exit;
         }
 
-        // Drop straight into a sync so the newly registered remote
-        // donor's skills land in the target immediately. We
-        // intentionally use the full provider chain (local +
-        // remote) so the user sees the same view they'd see if they
-        // ran `skills:update` themselves.
+        // Drop into a sync scoped to the just-registered donor so the
+        // new skills land in the target without re-syncing everything
+        // else. Matches `composer require <pkg>` ergonomics, which
+        // only installs the requested package's tree.
         $extra = $composer->getPackage()->getExtra();
         $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
 
         $syncOptions = new SyncOptions(
-            packageFilters: [],
+            packageFilters: self::filterFor($donorPackageName),
             extraTrusted: [],
             targetOverride: null,
             interactive: false,
@@ -84,5 +93,24 @@ final class Add extends BaseCommand
             autoMigrate: false,
         );
         return (new SyncRunner())->run($projectRoot, $provider, $extra, $this->getIO(), $syncOptions);
+    }
+
+    /**
+     * Single-element `packageFilters` scoped to the donor's
+     * Composer-package name (read from the fetched composer.json's
+     * `name`, NOT from `$options->input` — those can differ; e.g.
+     * GitHub's `<owner>/<repo>` path is unrelated to the package's
+     * `name`).
+     *
+     * @return list<VendorPattern>
+     *
+     * @psalm-pure
+     */
+    private static function filterFor(?string $donorPackageName): array
+    {
+        if ($donorPackageName === null || $donorPackageName === '') {
+            return [];
+        }
+        return [VendorPattern::fromString($donorPackageName)];
     }
 }

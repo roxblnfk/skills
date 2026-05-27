@@ -11,7 +11,9 @@ use Composer\IO\NullIO;
 use Composer\Util\HttpDownloader;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
+use LLM\Skills\Config\RemoteEntry;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -71,7 +73,15 @@ final class Add extends Command
         $fetcher = new HttpArchiveFetcher($http, $projectRoot);
 
         $runner = new AddRunner($registry, $fetcher);
-        $exit = $runner->run($projectRoot, $io, $options);
+        $donorPackageName = null;
+        $exit = $runner->run(
+            $projectRoot,
+            $io,
+            $options,
+            static function (RemoteEntry $_entry, string $packageName) use (&$donorPackageName): void {
+                $donorPackageName = $packageName;
+            },
+        );
 
         if ($exit !== self::SUCCESS || !$options->sync) {
             return $exit;
@@ -81,7 +91,7 @@ final class Add extends Command
         $extra = $composer->getPackage()->getExtra();
         $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
         $syncOptions = new SyncOptions(
-            packageFilters: [],
+            packageFilters: self::filterFor($donorPackageName),
             extraTrusted: [],
             targetOverride: null,
             interactive: false,
@@ -91,6 +101,19 @@ final class Add extends Command
             autoMigrate: false,
         );
         return (new SyncRunner())->run($projectRoot, $provider, $extra, $io, $syncOptions);
+    }
+
+    /**
+     * @return list<VendorPattern>
+     *
+     * @psalm-pure
+     */
+    private static function filterFor(?string $donorPackageName): array
+    {
+        if ($donorPackageName === null || $donorPackageName === '') {
+            return [];
+        }
+        return [VendorPattern::fromString($donorPackageName)];
     }
 
     private static function tryBootstrapComposer(ConsoleIO $io): ?Composer

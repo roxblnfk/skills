@@ -7,8 +7,10 @@ namespace LLM\Skills\Tests\Acceptance;
 use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Unpacker\UnpackerFactory;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -26,9 +28,10 @@ use Testo\Test;
  *   to ship a Composer-shaped `extra.skills.source` block;
  * - the absence of GitHub rate-limit throttling on the runner's IP.
  *
- * Without the env flag the test is a no-op — keeps the default CI
- * green and free of network surprises. Set the flag locally
- * (or in a manually-triggered job) to exercise the real path:
+ * Without the env flag the test reports as Skipped (via testo's
+ * {@see SkipTest}) — keeps the default CI green and free of
+ * network surprises. Set the flag locally (or in a manually-
+ * triggered job) to exercise the real path:
  *
  *     SKILLS_LIVE_TESTS=1 composer test
  *
@@ -65,14 +68,13 @@ final class SkillsAddGithubLiveTest
     private const EXPECTED_SKILL = 'testo-write-tests';
 
     #[BeforeTest]
-    public function skipUnlessLiveTestsEnabled(): void
+    public static function resetTarget(): void
     {
         if (\getenv('SKILLS_LIVE_TESTS') !== '1') {
-            Assert::true(true, 'SKILLS_LIVE_TESTS=1 not set — live network test skipped');
-            // Throwing here would mark the test as failed; testo has
-            // no built-in `skip()` API, so we early-return via a
-            // sentinel assertion and let the body short-circuit on
-            // its own env check.
+            // Cleanup is the test's own concern; nothing to wipe when
+            // the body is going to skip anyway. The skip itself must
+            // escape from the test method — throwing here would turn
+            // into a pipeline Aborted, not a Skipped verdict.
             return;
         }
 
@@ -83,7 +85,7 @@ final class SkillsAddGithubLiveTest
     }
 
     #[AfterTest]
-    public function cleanup(): void
+    public static function cleanup(): void
     {
         Filesystem::removeRecursive(self::TARGET_DIR);
         if (\is_file(self::SKILLS_JSON)) {
@@ -94,20 +96,18 @@ final class SkillsAddGithubLiveTest
     public function liveSkillsAddPullsRealDonorIntoTarget(): void
     {
         if (\getenv('SKILLS_LIVE_TESTS') !== '1') {
-            // Mirrored from the gate above — the test body is a no-op
-            // when the flag is off. The single trivial assertion keeps
-            // the test method from being reported as "no assertions".
-            Assert::true(true);
-            return;
+            throw new SkipTest('SKILLS_LIVE_TESTS=1 not set — live network test skipped');
         }
 
-        if (!\class_exists(\ZipArchive::class)) {
-            // ext-zip is a soft dependency of the fetcher; without it
-            // every remote add fails up front with the same canned
-            // message. Skip rather than report a false failure on a
-            // dev box that simply lacks the extension.
-            Assert::true(true, 'ext-zip unavailable — live skills:add skipped');
-            return;
+        // The fetcher auto-selects between ext-zip and a CLI extractor
+        // (unzip / 7z / 7zz / 7za). If absolutely none of those is on
+        // the box, even the live path cannot work — skip rather than
+        // surface a confusing "no archive extractor" failure here.
+        if ((new UnpackerFactory())->detect() === null) {
+            throw new SkipTest(
+                'no archive extractor available — install ext-zip or one of: '
+                . \implode(', ', UnpackerFactory::reportedCliTools()),
+            );
         }
 
         $process = $this->runAdd(self::REPO, self::REF);

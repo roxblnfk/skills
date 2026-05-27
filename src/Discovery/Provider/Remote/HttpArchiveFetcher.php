@@ -7,6 +7,9 @@ namespace LLM\Skills\Discovery\Provider\Remote;
 use Internal\Path;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpClient;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
+use LLM\Skills\Unpacker\ArchiveUnpacker;
+use LLM\Skills\Unpacker\UnpackerException;
+use LLM\Skills\Unpacker\UnpackerFactory;
 
 /**
  * {@see RemoteFetcher} that downloads a zip archive over HTTP and
@@ -24,15 +27,23 @@ use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
  *    cache is functionally equivalent.
  * 2. If the path already exists, return it — the cache is content-
  *    addressed-by-ref, so a hit means we have the right files.
- * 3. Otherwise, GET the URL via {@see HttpClient}, write the bytes
- *    to a temp zip file, extract with {@see \ZipArchive}, locate
- *    the single top-level directory inside the archive (GitHub's
- *    zipball wraps everything in `<owner>-<repo>-<sha>/`), and
- *    rename that directory into the cache location.
+ * 3. Otherwise, GET the URL via {@see HttpClient}, write the bytes to
+ *    a temp zip file, list every entry name via the selected
+ *    {@see ArchiveUnpacker} (zip-slip lexical check on each), extract,
+ *    locate the single top-level directory inside the archive
+ *    (GitHub's zipball wraps everything in `<owner>-<repo>-<sha>/`),
+ *    and rename that directory into the cache location.
+ *
+ * The unpacker is selected at construction by {@see UnpackerFactory}:
+ * `\ZipArchive` when `ext-zip` is loaded, otherwise a CLI fallback
+ * (`unzip` / `7z` / `7zz` / `7za`). When neither path is available,
+ * `fetch()` fails up front with a single warning listing every tool
+ * that was probed — the user knows what to install. Tests can inject
+ * a specific unpacker through the constructor.
  *
  * The fetcher's contract is "given a {@see RemoteDonorRef}, return
  * the path to an extracted Composer-package-shaped directory".
- * Any failure (network, corrupt zip, ZipArchive missing, write error)
+ * Any failure (network, corrupt zip, no unpacker, write error)
  * becomes a {@see RemoteFetchException} that the provider turns into
  * a per-ref warning.
  *
@@ -47,50 +58,23 @@ use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
  */
 final readonly class HttpArchiveFetcher implements RemoteFetcher
 {
+    private ?ArchiveUnpacker $unpacker;
+
     /**
+     * @param ArchiveUnpacker|null $unpacker when null, the fetcher autodetects
+     *         the best available extractor via {@see UnpackerFactory}. Tests
+     *         pass an explicit unpacker to pin the strategy.
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private HttpClient $http,
         private Path $projectRoot,
         private CachePathBuilder $cacheBuilder = new CachePathBuilder(),
-    ) {}
-
-    #[\Override]
-    public function fetch(RemoteDonorRef $ref): Path
-    {
-        if (!\class_exists(\ZipArchive::class)) {
-            throw new RemoteFetchException(
-                $ref,
-                'PHP ZipArchive extension is required to fetch remote archives',
-            );
-        }
-
-        $cachePath = $this->cacheBuilder->buildForUrl($this->projectRoot, $ref->url, $ref->ref);
-
-        $cachePathStr = (string) $cachePath;
-        if (\is_dir($cachePathStr) && \is_file($cachePathStr . '/composer.json')) {
-            return $cachePath;
-        }
-
-        $tmpZip = $this->downloadToTemp($ref);
-        $scratch = \sys_get_temp_dir() . '/llm-skills-extract-' . \bin2hex(\random_bytes(6));
-
-        try {
-            $extracted = $this->extractZip($ref, $tmpZip, $scratch);
-            $this->moveExtractedToCache($ref, $extracted, $cachePath);
-        } finally {
-            // The scratch dir is per-fetch and unbounded if left behind
-            // (sync runs accumulate one entry per fetched ref forever).
-            // Clean unconditionally — on success the top-level dir has
-            // been moved out and only the empty parent remains; on
-            // failure (malformed archive, mid-extract error) it may
-            // contain partial content that we also need to remove.
-            @\unlink($tmpZip);
-            $this->removeRecursive($scratch);
-        }
-
-        return $cachePath;
+        ?ArchiveUnpacker $unpacker = null,
+        private UnpackerFactory $unpackerFactory = new UnpackerFactory(),
+    ) {
+        $this->unpacker = $unpacker;
     }
 
     /**
@@ -107,11 +91,13 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
      * The check is purely lexical — we do not consult the filesystem
      * — because the archive has not been written yet. Lexical
      * containment is sufficient because the archive contents are not
-     * symlinks (ZipArchive does not follow them on extract).
+     * symlinks (ZipArchive does not follow them on extract; CLI tools
+     * with `-y` semantics will, but the lexical rejection happens
+     * before any byte hits disk).
      *
      * @psalm-pure
      */
-    private static function isSafeZipEntryName(string $name): bool
+    public static function isSafeZipEntryName(string $name): bool
     {
         if ($name === '') {
             return false;
@@ -137,6 +123,47 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
         return true;
     }
 
+    #[\Override]
+    public function fetch(RemoteDonorRef $ref): Path
+    {
+        $unpacker = $this->unpacker ?? $this->unpackerFactory->detect();
+        if ($unpacker === null) {
+            $tools = \implode(', ', \array_merge(['ZipArchive'], UnpackerFactory::reportedCliTools()));
+            throw new RemoteFetchException(
+                $ref,
+                'no archive extractor is available — install ext-zip or one of: '
+                . \implode(', ', UnpackerFactory::reportedCliTools())
+                . ' (tried: ' . $tools . ')',
+            );
+        }
+
+        $cachePath = $this->cacheBuilder->buildForUrl($this->projectRoot, $ref->url, $ref->ref);
+
+        $cachePathStr = (string) $cachePath;
+        if (\is_dir($cachePathStr) && \is_file($cachePathStr . '/composer.json')) {
+            return $cachePath;
+        }
+
+        $tmpZip = $this->downloadToTemp($ref);
+        $scratch = \sys_get_temp_dir() . '/llm-skills-extract-' . \bin2hex(\random_bytes(6));
+
+        try {
+            $extracted = $this->extractZip($ref, $unpacker, $tmpZip, $scratch);
+            $this->moveExtractedToCache($ref, $extracted, $cachePath);
+        } finally {
+            // The scratch dir is per-fetch and unbounded if left behind
+            // (sync runs accumulate one entry per fetched ref forever).
+            // Clean unconditionally — on success the top-level dir has
+            // been moved out and only the empty parent remains; on
+            // failure (malformed archive, mid-extract error) it may
+            // contain partial content that we also need to remove.
+            @\unlink($tmpZip);
+            $this->removeRecursive($scratch);
+        }
+
+        return $cachePath;
+    }
+
     /**
      * Stream the archive over HTTP into a temp file.
      *
@@ -145,8 +172,13 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
     private function downloadToTemp(RemoteDonorRef $ref): string
     {
         try {
+            // `Accept: */*` rather than `application/octet-stream`:
+            // GitHub's zipball endpoint rejects the latter with HTTP
+            // 415 ("Unsupported 'Accept' header") and redirects to
+            // `codeload.github.com` on a permissive Accept. Other
+            // adapters (raw `http`/`zip` URLs) tolerate `*/*` equally.
             $response = $this->http->get($ref->url, [
-                'Accept' => 'application/octet-stream',
+                'Accept' => '*/*',
                 'User-Agent' => 'llm-skills',
             ]);
         } catch (HttpException $e) {
@@ -193,9 +225,8 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
     }
 
     /**
-     * Open the zip with {@see \ZipArchive}, extract to a fresh
-     * scratch directory, and return the absolute path of the single
-     * top-level directory inside the archive.
+     * Validate entry names via the unpacker's listing, then extract.
+     * Returns the absolute path of the single top-level directory.
      *
      * GitHub zipballs always contain exactly one top-level directory
      * (`<owner>-<repo>-<sha>/`) holding the repo contents. We pick
@@ -209,51 +240,50 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
      *         owned by the caller. {@see self::fetch()} cleans it up in `finally`.
      *
      * @return non-empty-string absolute path of the extracted top-level dir
-     *
-     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedArgument,PossiblyFalseArgument
-     *         ext-zip is a soft requirement — guarded by class_exists in fetch()
      */
-    private function extractZip(RemoteDonorRef $ref, string $tmpZip, string $scratch): string
-    {
-        $zip = new \ZipArchive();
-        $openResult = $zip->open($tmpZip);
-        if ($openResult !== true) {
-            throw new RemoteFetchException(
-                $ref,
-                \sprintf('failed to open archive (zip error %d)', $openResult),
-            );
-        }
-
+    private function extractZip(
+        RemoteDonorRef $ref,
+        ArchiveUnpacker $unpacker,
+        string $tmpZip,
+        string $scratch,
+    ): string {
         // Zip-slip guard: validate every entry name BEFORE extraction.
         // The archive comes from a user-configurable {@see RemoteEntry::$host}
         // and a single rogue entry like `../../../etc/passwd` or
-        // `/etc/passwd` would let {@see \ZipArchive::extractTo()} drop
-        // files anywhere on disk. Reject anything that does not
-        // lexically resolve to a path inside `$scratch`.
-        $count = $zip->numFiles;
-        for ($i = 0; $i < $count; $i++) {
-            /** @var string|false $name */
-            $name = $zip->getNameIndex($i);
-            if (!\is_string($name) || !self::isSafeZipEntryName($name)) {
-                $zip->close();
+        // `/etc/passwd` would let the underlying extractor drop files
+        // anywhere on disk. Reject anything that does not lexically
+        // resolve to a path inside `$scratch`.
+        try {
+            $names = $unpacker->listEntries($tmpZip);
+        } catch (UnpackerException $e) {
+            throw new RemoteFetchException(
+                $ref,
+                'failed to inspect archive — ' . $e->getMessage(),
+                $e,
+            );
+        }
+
+        foreach ($names as $name) {
+            if (!self::isSafeZipEntryName($name)) {
                 throw new RemoteFetchException(
                     $ref,
-                    'archive contains an unsafe entry path "'
-                    . (\is_string($name) ? $name : '<unreadable>')
-                    . '" — refusing to extract',
+                    'archive contains an unsafe entry path "' . $name . '" — refusing to extract',
                 );
             }
         }
 
         if (!\mkdir($scratch, 0o777, true) && !\is_dir($scratch)) {
-            $zip->close();
             throw new RemoteFetchException($ref, 'failed to create scratch dir ' . $scratch);
         }
 
-        $extracted = $zip->extractTo($scratch);
-        $zip->close();
-        if ($extracted === false) {
-            throw new RemoteFetchException($ref, 'failed to extract archive into ' . $scratch);
+        try {
+            $unpacker->extractTo($tmpZip, $scratch);
+        } catch (UnpackerException $e) {
+            throw new RemoteFetchException(
+                $ref,
+                'failed to extract archive — ' . $e->getMessage(),
+                $e,
+            );
         }
 
         $topLevel = $this->findSingleTopLevelDir($scratch);
