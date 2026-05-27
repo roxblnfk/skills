@@ -50,7 +50,6 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
         try {
             $names = [];
             $count = $zip->numFiles;
-            \assert(\is_int($count));
             for ($i = 0; $i < $count; $i++) {
                 /** @var string|false $name */
                 $name = $zip->getNameIndex($i);
