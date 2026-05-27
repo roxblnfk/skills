@@ -168,6 +168,32 @@ final class StandaloneBinTest
         );
     }
 
+    // ── add standalone (no composer.json) ───────────────────────────────
+
+    public function addInEmptyDirectoryDoesNotRequireComposerJson(): void
+    {
+        // The standalone `add` used to refuse to run without a project
+        // composer.json. That contradicted the design — local Composer
+        // is just one provider, and `skills:add` registers a *remote*
+        // donor. The command must accept invocation in a bare directory
+        // and only fall back to network/parse errors downstream.
+        //
+        // We pass a deliberately bogus URL to keep the test offline:
+        // adapter selection + ref resolution will fail before any HTTP
+        // hits, but the failure shape proves we got past the bootstrap
+        // gate — no "requires a composer.json" message.
+        $process = BinSkillsRunner::run(
+            Path::create($this->tmp),
+            'add https://example.invalid/none/none --no-sync',
+        );
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::false(
+            \str_contains($combined, 'requires a composer.json'),
+            'standalone add must not refuse on missing composer.json. Got: ' . $combined,
+        );
+    }
+
     // ── init standalone (currently works but covered end-to-end) ────────
 
     public function initInEmptyDirectoryWritesStubSkillsJson(): void

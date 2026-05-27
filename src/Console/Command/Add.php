@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Console\Command;
 
 use Composer\Composer;
+use Composer\Config;
 use Composer\Factory;
 use Composer\IO\ConsoleIO;
 use Composer\IO\NullIO;
@@ -31,11 +32,15 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Standalone `add` (alias `a`) for the `bin/skills` binary.
  *
- * Bootstraps Composer manually via {@see Factory::create()} to
- * inherit `auth.json` credentials. When no `composer.json` exists at
- * the working directory, the command refuses — `skills:add` is a
- * write command and we will not silently store entries in a
- * directory we cannot also sync from.
+ * Bootstraps Composer when a `composer.json` is present so the user's
+ * project `auth.json` and any custom `vendor-dir` apply. When there is
+ * no `composer.json` at the working directory the command still runs:
+ * the user's global `~/.composer/auth.json` is loaded via
+ * {@see Factory::createConfig()}, the cache lives under
+ * `<cwd>/vendor/llm-skills/cache` (the default layout), and the new
+ * entry is upserted into `<cwd>/skills.json`. Composer-local donors
+ * stay inactive in that mode — only the just-added remote donor
+ * syncs, which is exactly what a `skills:add` invocation means.
  *
  * @internal
  */
@@ -61,17 +66,15 @@ final class Add extends Command
 
         $projectRoot = Path::create(\getcwd() ?: '.');
         $composer = self::tryBootstrapComposer($io);
-        if ($composer === null) {
-            $io->writeError(
-                '<error>[llm/skills] skills:add requires a composer.json at the current '
-                . 'directory (used for HTTP auth + cache layout). Run from a project root.</error>',
-            );
-            return self::FAILURE;
-        }
 
-        $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $composer->getConfig()));
+        // HTTP client: prefer the project's Composer config (its
+        // `auth.json` + `vendor-dir` overrides apply), otherwise fall
+        // back to a default Config built via `Factory::createConfig()`,
+        // which still loads the user-wide `~/.composer/auth.json`.
+        $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
+        $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $config));
         $registry = new HostAdapterRegistry(new GithubAdapter($http));
-        $fetcher = new HttpArchiveFetcher($http, $projectRoot, self::cacheBuilderFor($composer));
+        $fetcher = new HttpArchiveFetcher($http, $projectRoot, self::cacheBuilderFor($config));
 
         $runner = new AddRunner($registry, $fetcher);
         $donorPackageName = null;
@@ -88,8 +91,12 @@ final class Add extends Command
             return $exit;
         }
 
+        // Without a Composer instance there is no root package to read
+        // an `extra` from — fall through with `null`, which the mapper
+        // treats the same as an empty `extra.skills` block. Only the
+        // just-registered remote donor will sync.
         /** @var mixed $extra */
-        $extra = $composer->getPackage()->getExtra();
+        $extra = $composer?->getPackage()->getExtra();
         $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
         $syncOptions = new SyncOptions(
             packageFilters: self::filterFor($donorPackageName),
@@ -107,11 +114,16 @@ final class Add extends Command
     /**
      * Honour the project's configured `vendor-dir` so a custom value
      * doesn't leave the cache under an unused `vendor/` directory.
+     * Takes a `Config` rather than a `Composer` so the standalone
+     * no-composer.json path (default Config from
+     * {@see Factory::createConfig()}) can still resolve the cache
+     * layout correctly — its `vendor-dir` is just the default
+     * `vendor`, which is the right answer for that mode.
      */
-    private static function cacheBuilderFor(Composer $composer): CachePathBuilder
+    private static function cacheBuilderFor(Config $config): CachePathBuilder
     {
         /** @var mixed $vendorDir */
-        $vendorDir = $composer->getConfig()->get('vendor-dir');
+        $vendorDir = $config->get('vendor-dir');
         if (!\is_string($vendorDir) || $vendorDir === '') {
             return new CachePathBuilder();
         }
@@ -131,6 +143,12 @@ final class Add extends Command
         return [VendorPattern::fromString($donorPackageName)];
     }
 
+    /**
+     * Best-effort {@see Factory::create()}. Returns `null` when there is
+     * no `composer.json` at the working directory or when bootstrap
+     * fails — both cases are handled by the caller falling back to a
+     * default {@see Config} for HTTP plumbing.
+     */
     private static function tryBootstrapComposer(ConsoleIO $io): ?Composer
     {
         $cwd = \getcwd() ?: '.';

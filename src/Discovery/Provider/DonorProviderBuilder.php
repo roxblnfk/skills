@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace LLM\Skills\Discovery\Provider;
 
 use Composer\Composer;
+use Composer\Config;
+use Composer\Factory;
 use Composer\IO\NullIO;
 use Composer\Util\HttpDownloader;
 use Internal\Path;
@@ -75,16 +77,19 @@ final readonly class DonorProviderBuilder
     }
 
     /**
-     * Build a {@see CachePathBuilder} rooted at Composer's configured
+     * Build a {@see CachePathBuilder} rooted at the supplied Config's
      * `vendor-dir` so a custom value (`deps/`, `build/vendor/`, …) is
      * honoured. Without this, the cache would always land under a
      * hard-coded `vendor/` directory that Composer may not even use,
      * leaving cached archives outside the vendor tree's `.gitignore`.
+     * For the no-project mode (a default Config built via
+     * {@see Factory::createConfig()}) `vendor-dir` is the literal
+     * `vendor` default, which is exactly the right answer.
      */
-    private static function cacheBuilderFor(Composer $composer): CachePathBuilder
+    private static function cacheBuilderFor(Config $config): CachePathBuilder
     {
         /** @var mixed $vendorDir */
-        $vendorDir = $composer->getConfig()->get('vendor-dir');
+        $vendorDir = $config->get('vendor-dir');
         if (!\is_string($vendorDir) || $vendorDir === '') {
             return new CachePathBuilder();
         }
@@ -92,42 +97,39 @@ final readonly class DonorProviderBuilder
     }
 
     /**
-     * Build the remote provider. Wires the GitHub adapter, a Composer-
-     * backed HTTP client (so auth.json credentials apply), and an
-     * archive fetcher into the {@see RemoteProvider} skeleton.
+     * Build the remote provider. Wires the GitHub adapter, an HTTP
+     * client (so auth.json credentials apply), and an archive fetcher
+     * into the {@see RemoteProvider} skeleton.
      *
-     * Returns an inert {@see RemoteProvider} (default
-     * {@see \LLM\Skills\Discovery\Provider\Remote\NullRemoteDonorSource},
-     * no fetcher) when no Composer instance is available — i.e. the
-     * standalone `bin/skills` binary in a directory without
-     * `composer.json`. The remote pipeline depends on Composer's
-     * {@see HttpDownloader} for `auth.json` plumbing, and there is
-     * no offline-friendly path that can resolve a remote `from` or
-     * download an archive. The composite then falls back to the
-     * runner's `[llm/skills] no donor providers are active — nothing
-     * to sync. Run with -v for details.` notice, which is the
-     * documented standalone-without-Composer UX (see
-     * {@see \LLM\Skills\Sync\SyncRunner}). `remote[]` entries in
-     * `skills.json` are intentionally silent-dropped here — they
-     * become live again as soon as a `composer.json` (and therefore
-     * an HTTP-capable {@see Composer} instance) is present.
+     * Works **with or without** a Composer instance:
+     *
+     * - With Composer (Composer plugin entrypoints, standalone bin in a
+     *   project directory): the project's own {@see Config} provides
+     *   `auth.json` + custom `vendor-dir`.
+     * - Without Composer (standalone bin outside any project): a
+     *   default Config is built via {@see Factory::createConfig()};
+     *   the user-wide `~/.composer/auth.json` and the standard
+     *   environment variables still apply, the cache lives under
+     *   `<cwd>/vendor/llm-skills/cache`, and `skills.json` is read
+     *   from `<cwd>`. This matters because the local Composer donor
+     *   is just one provider — refusing to wire remote when local is
+     *   unavailable would defeat the multi-source design.
      */
     private function buildRemoteProvider(?Composer $composer): RemoteProvider
     {
-        if ($composer === null) {
-            return new RemoteProvider();
-        }
-
+        $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
         $httpClient = new ComposerHttpClient(
-            new HttpDownloader(new NullIO(), $composer->getConfig()),
+            new HttpDownloader(new NullIO(), $config),
         );
 
         $registry = new HostAdapterRegistry(new GithubAdapter($httpClient));
         $source = new SkillsJsonRemoteDonorSource($registry, $this->mapper);
         $fetcher = new HttpArchiveFetcher(
             $httpClient,
-            $this->guessProjectRootForFetcher($composer),
-            self::cacheBuilderFor($composer),
+            $composer !== null
+                ? $this->guessProjectRootForFetcher($composer)
+                : Path::create(\getcwd() ?: '.'),
+            self::cacheBuilderFor($config),
         );
 
         return new RemoteProvider($source, $fetcher);
