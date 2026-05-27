@@ -109,17 +109,58 @@ final class RemoteProviderTest
         Assert::true(\str_contains($result->warnings[0], $ref->describe()));
     }
 
-    public function warnsWhenComposerJsonMissing(): void
+    public function warnsWhenNeitherComposerJsonNorSkillsDirIsPresent(): void
     {
-        $extracted = $this->makeExtracted('archive-without-composer-json');
-        // ...intentionally no composer.json inside
+        // No composer.json AND no skills/ directory — both donor
+        // shapes (Composer-shaped and bare skill-repo) fail their
+        // probe, so the provider emits a single combined warning.
+        $extracted = $this->makeExtracted('archive-without-anything');
 
         $provider = $this->providerReturning($extracted);
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
         Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'composer.json missing'));
+        Assert::true(\str_contains($result->warnings[0], 'neither a composer.json'));
+        Assert::true(\str_contains($result->warnings[0], 'skills/'));
+    }
+
+    public function autoDiscoversBareSkillsRepoFromPackageHint(): void
+    {
+        // No composer.json, but the archive ships a `skills/` directory
+        // — the shape ad-hoc Claude/agent skill packs take. The
+        // provider falls back to the entry's `packageHint` (the
+        // adapter-side identifier, e.g. GitHub repo path) for the
+        // donor's name and synthesises a discoverable VendorConfig.
+        $extracted = $this->makeExtracted('bare-skill-repo');
+        \mkdir($extracted . '/skills', 0o777, true);
+
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/skills');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
+        Assert::same($result->donors[0]->source, 'skills');
+        // Remote donors are user-declared (skills:add); `discovered`
+        // (the "auto-found, gate behind --discovery" flag) does NOT
+        // apply even when the source dir was auto-probed.
+        Assert::false($result->donors[0]->discovered);
+        Assert::same($result->warnings, []);
+    }
+
+    public function warnsWhenBareSkillsRepoHasNoPackageHint(): void
+    {
+        // `skills/` is present but the ref carries no `packageHint` —
+        // no stable identifier to register the donor under.
+        $extracted = $this->makeExtracted('orphan-skill-repo');
+        \mkdir($extracted . '/skills', 0o777, true);
+
+        $provider = $this->providerReturning($extracted, packageHint: null);
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::same($result->donors, []);
+        Assert::count($result->warnings, 1);
+        Assert::true(\str_contains($result->warnings[0], 'no package name'));
     }
 
     public function warnsWhenComposerJsonInvalidJson(): void
@@ -151,34 +192,41 @@ final class RemoteProviderTest
         Assert::true(\str_contains($result->warnings[0], 'must be a JSON object'));
     }
 
-    public function warnsWhenNameMissing(): void
+    public function fallsBackToPackageHintWhenComposerJsonHasNoName(): void
     {
+        // composer.json declares extra.skills.source but no `name`.
+        // Previously this was a hard reject; now the provider falls
+        // through to the auto-discovery path. The fallback requires a
+        // `skills/` directory at root AND a packageHint — both are
+        // satisfied here, so a donor is synthesised.
         $extracted = $this->makeExtracted(
             'no-name',
             \json_encode(['extra' => ['skills' => ['source' => 'skills']]]),
         );
+        \mkdir($extracted . '/skills', 0o777, true);
 
-        $provider = $this->providerReturning($extracted);
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/skills');
         $result = $provider->discover($this->projectRoot());
 
-        Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], '`name`'));
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
     }
 
-    public function warnsWhenNameMissingVendorSlash(): void
+    public function fallsBackToPackageHintWhenComposerJsonNameMissesVendorSlash(): void
     {
+        // `name: "flat"` (no vendor/package shape) is treated the same
+        // as missing — fall through to auto-discovery using the hint.
         $extracted = $this->makeExtracted(
             'flat-name',
             \json_encode(['name' => 'flat', 'extra' => ['skills' => ['source' => 'skills']]]),
         );
+        \mkdir($extracted . '/skills', 0o777, true);
 
-        $provider = $this->providerReturning($extracted);
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/skills');
         $result = $provider->discover($this->projectRoot());
 
-        Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'vendor/package'));
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
     }
 
     public function warnsWhenExtraSkillsSourceMissing(): void
@@ -353,9 +401,19 @@ final class RemoteProviderTest
         return Path::create($dir);
     }
 
-    private function providerReturning(Path $extracted): RemoteProvider
+    /**
+     * @param non-empty-string|null $packageHint optional adapter-side identifier
+     *         (e.g. GitHub `<owner>/<repo>`). Threaded into the {@see RemoteDonorRef}
+     *         so the auto-discovery fallback in {@see RemoteProvider} can pick it
+     *         up. Defaults to a non-null hint so existing tests keep working.
+     */
+    private function providerReturning(Path $extracted, ?string $packageHint = 'acme/pkg'): RemoteProvider
     {
-        $ref = $this->ref('https://example.com/repo.git', 'v1.0.0');
+        $ref = new RemoteDonorRef(
+            url: 'https://example.com/repo.git',
+            ref: 'v1.0.0',
+            packageHint: $packageHint,
+        );
         $fetcher = new class($extracted) implements RemoteFetcher {
             public function __construct(private readonly Path $extracted) {}
 

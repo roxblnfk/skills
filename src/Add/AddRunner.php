@@ -9,6 +9,7 @@ use Internal\Path;
 use LLM\Skills\Config\AddOptions;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -62,6 +63,7 @@ final readonly class AddRunner
         private SkillsJsonWriter $writer = new SkillsJsonWriter(),
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
         private RefResolver $refResolver = new RefResolver(),
+        private AutoDiscoveryProbe $autoDiscovery = new AutoDiscoveryProbe(),
     ) {}
 
     /**
@@ -291,12 +293,19 @@ final readonly class AddRunner
     }
 
     /**
-     * Confirm the fetched archive contains a `composer.json` with
-     * `extra.skills.source` and a well-shaped `name`. Returns the
-     * donor's package name on success — needed by the entrypoint to
-     * scope the follow-up sync, because the adapter-side identifier
-     * (e.g. GitHub repo path) is not necessarily the same string the
-     * package declares in its composer.json.
+     * Confirm the fetched archive is a usable donor. Two acceptable shapes:
+     *
+     * 1. **Composer-shaped donor** — `composer.json` is present, declares
+     *    `name`, and declares `extra.skills.source`. The donor's package
+     *    name comes from the manifest's `name` field.
+     * 2. **Bare skill repo** — no `composer.json` (or one without the
+     *    expected fields), but the archive ships a top-level `skills/`
+     *    directory. The donor's package name falls back to
+     *    `$parsed->package` (set by the adapter — for GitHub the
+     *    `<owner>/<repo>` path). Mirrors the local-provider auto-discovery
+     *    path for ad-hoc skill packs that don't bother with a Composer
+     *    manifest. Same logic in {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider::discover()}
+     *    keeps the post-add sync working without a separate code path.
      *
      * @return non-empty-string|null donor package name, or `null` if the archive cannot be used
      */
@@ -307,55 +316,70 @@ final readonly class AddRunner
         ParsedAddInput $parsed,
     ): ?string {
         $composerJsonPath = (string) $extractedRoot->join('composer.json');
-        if (!\is_file($composerJsonPath)) {
+        $packageName = null;
+        $extra = null;
+
+        if (\is_file($composerJsonPath)) {
+            $contents = \file_get_contents($composerJsonPath);
+            if ($contents === false) {
+                $io->writeError('<error>[llm/skills] failed to read composer.json from fetched archive</error>');
+                return null;
+            }
+
+            try {
+                /** @var mixed $decoded */
+                $decoded = \json_decode($contents, true, flags: \JSON_THROW_ON_ERROR);
+            } catch (\JsonException $e) {
+                $io->writeError('<error>[llm/skills] fetched composer.json is not valid JSON: ' . $e->getMessage() . '</error>');
+                return null;
+            }
+            if (!\is_array($decoded)) {
+                $io->writeError('<error>[llm/skills] fetched composer.json must be a JSON object</error>');
+                return null;
+            }
+
+            /** @var mixed $rawName */
+            $rawName = $decoded['name'] ?? null;
+            if (\is_string($rawName) && $rawName !== '' && \str_contains($rawName, '/')) {
+                /** @var non-empty-string $packageName */
+                $packageName = $rawName;
+            }
+
+            /** @var mixed $extra */
+            $extra = $decoded['extra'] ?? null;
+        }
+
+        if ($packageName !== null && VendorConfigMapper::declaresSkills($extra)) {
+            return $packageName;
+        }
+
+        // Composer manifest is missing or non-conforming. Fall through to
+        // auto-discovery: require a `skills/` directory at the root, and
+        // synthesise the donor's name from the adapter-side identifier.
+        if ($this->autoDiscovery->probe($extractedRoot) === null) {
             $io->writeError(\sprintf(
-                '<error>[llm/skills] fetched archive for %s:%s does not contain a composer.json — '
+                '<error>[llm/skills] fetched archive for %s:%s ships neither a composer.json '
+                . 'with extra.skills.source nor a `%s/` directory at the root — '
                 . 'cannot register as a skill donor</error>',
                 $adapterId,
                 $parsed->package ?? $parsed->url ?? $parsed->from,
+                AutoDiscoveryProbe::SOURCE_DIR,
             ));
             return null;
         }
 
-        $contents = \file_get_contents($composerJsonPath);
-        if ($contents === false) {
-            $io->writeError('<error>[llm/skills] failed to read composer.json from fetched archive</error>');
+        $synthesisedName = $packageName ?? $parsed->package;
+        if ($synthesisedName === null) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] fetched archive has a `%s/` directory but no package '
+                . 'name to register it under (composer.json missing AND --from=%s did not '
+                . 'derive a vendor/repo identifier)</error>',
+                AutoDiscoveryProbe::SOURCE_DIR,
+                $adapterId,
+            ));
             return null;
         }
 
-        try {
-            /** @var mixed $decoded */
-            $decoded = \json_decode($contents, true, flags: \JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            $io->writeError('<error>[llm/skills] fetched composer.json is not valid JSON: ' . $e->getMessage() . '</error>');
-            return null;
-        }
-        if (!\is_array($decoded)) {
-            $io->writeError('<error>[llm/skills] fetched composer.json must be a JSON object</error>');
-            return null;
-        }
-
-        /** @var mixed $rawName */
-        $rawName = $decoded['name'] ?? null;
-        if (!\is_string($rawName) || $rawName === '' || !\str_contains($rawName, '/')) {
-            $io->writeError(
-                '<error>[llm/skills] fetched composer.json must declare a non-empty `name` '
-                . 'of the form vendor/package</error>',
-            );
-            return null;
-        }
-
-        /** @var mixed $extra */
-        $extra = $decoded['extra'] ?? null;
-        if (!VendorConfigMapper::declaresSkills($extra)) {
-            $io->writeError(
-                '<error>[llm/skills] fetched package does not declare extra.skills.source — '
-                . 'cannot register as a skill donor</error>',
-            );
-            return null;
-        }
-
-        /** @var non-empty-string $rawName */
-        return $rawName;
+        return $synthesisedName;
     }
 }

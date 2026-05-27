@@ -91,6 +91,7 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
                     ref: $resolved->ref,
                     provenance: $entry->from,
                     skillFilter: $entry->skills,
+                    packageHint: $entry->package,
                 );
             } catch (RemoteResolveException $e) {
                 $this->lastWarnings[] = $e->getMessage();

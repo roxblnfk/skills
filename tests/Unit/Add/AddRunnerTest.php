@@ -288,8 +288,11 @@ final class AddRunnerTest
 
     // ── archive validation ─────────────────────────────────────────
 
-    public function missingComposerJsonReturnsFailure(): void
+    public function archiveWithNeitherComposerJsonNorSkillsDirIsRejected(): void
     {
+        // No composer.json AND no skills/ directory — there's nothing to
+        // register. Both fallback paths fail and the runner surfaces a
+        // single combined error pointing at both acceptable shapes.
         $adapter = StubAdapter::withDefaults();
         $fetcher = $this->fetcherReturning($this->writeBareDir('no-cj'));
         $io = new BufferIO();
@@ -301,7 +304,31 @@ final class AddRunnerTest
         );
 
         Assert::same($code, Command::FAILURE);
-        Assert::true(\str_contains($io->getOutput(), 'does not contain a composer.json'));
+        Assert::true(\str_contains($io->getOutput(), 'neither a composer.json'));
+        Assert::true(\str_contains($io->getOutput(), '`skills/`'));
+    }
+
+    public function archiveWithoutComposerJsonButWithSkillsDirAutoRegistersUnderAdapterIdentifier(): void
+    {
+        // No composer.json, but the archive ships a top-level `skills/`
+        // directory — the same shape ad-hoc Claude/agent skill repos take.
+        // The runner falls back to the adapter-side identifier
+        // (`parsed.package`) for the donor name and succeeds.
+        $extracted = $this->writeBareDir('autodisc');
+        \mkdir($extracted . '/skills', 0o777, true);
+
+        $adapter = StubAdapter::withDefaults();
+        $fetcher = $this->fetcherReturning($extracted);
+        $io = new BufferIO();
+
+        $code = $this->runner($adapter, $fetcher)->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'registered github:acme/skills'));
     }
 
     public function invalidComposerJsonReturnsFailure(): void
@@ -323,11 +350,13 @@ final class AddRunnerTest
         Assert::true(\str_contains($io->getOutput(), 'not valid JSON'));
     }
 
-    public function archiveWithoutExtraSkillsSourceReturnsFailure(): void
+    public function archiveWithoutExtraSkillsSourceAndWithoutSkillsDirIsRejected(): void
     {
         // composer.json exists and is valid JSON, but the package
-        // does not declare itself as a skills donor — refuse to
-        // register it so a future sync doesn't silently no-op.
+        // does not declare itself as a skills donor — AND the archive
+        // ships no `skills/` directory either. With both fallback
+        // paths exhausted, refuse to register so a future sync doesn't
+        // silently no-op.
         $extracted = $this->writeBareDir('no-source');
         \file_put_contents(
             $extracted . '/composer.json',
@@ -345,7 +374,7 @@ final class AddRunnerTest
         );
 
         Assert::same($code, Command::FAILURE);
-        Assert::true(\str_contains($io->getOutput(), 'does not declare extra.skills.source'));
+        Assert::true(\str_contains($io->getOutput(), 'neither a composer.json'));
     }
 
     // ── writer failure ─────────────────────────────────────────────

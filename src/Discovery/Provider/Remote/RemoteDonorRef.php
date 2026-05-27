@@ -38,6 +38,11 @@ final readonly class RemoteDonorRef
      *         skill the donor ships". A non-null list is propagated into the resulting
      *         {@see \LLM\Skills\Config\VendorConfig::$skillFilter} so the skill enumerator
      *         drops everything not on the list and warns about declared-but-missing names.
+     * @param non-empty-string|null $packageHint adapter-side identifier the entry was
+     *         registered under (e.g. GitHub `<owner>/<repo>`). Used as the donor's
+     *         package name when the archive ships skills without a `composer.json` —
+     *         the only stable identifier we have for ad-hoc skill repos. `null` for
+     *         URL-only entries the adapter couldn't reduce to a vendor/package pair.
      *
      * @psalm-mutation-free
      */
@@ -46,6 +51,7 @@ final readonly class RemoteDonorRef
         public string $ref,
         public ?string $provenance = null,
         public ?array $skillFilter = null,
+        public ?string $packageHint = null,
     ) {}
 
     /**
