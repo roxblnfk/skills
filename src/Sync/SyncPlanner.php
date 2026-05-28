@@ -31,13 +31,17 @@ use LLM\Skills\Config\VendorConfig;
  *   `acme/foo` as approved regardless of the trust list. The trust list is
  *   the bouncer for *auto-discovered* donors, not for ones the user already
  *   asked for by name.
+ * - A donor flagged {@see VendorConfig::$implicitTrust} is user-declared at
+ *   the source level (today: every `remote[]` entry, regardless of `from`).
+ *   The trust list applies to local-provider transitive discoveries only,
+ *   so the planner skips it for these donors.
  * - A package declared as a direct dependency in the consumer's root
  *   `composer.json` (under `require` or `require-dev`) is implicitly
  *   trusted — the user already owns the decision to depend on it. This
  *   short-circuit is disabled when `extra.skills.trusted-replace` is
  *   `true`, since that flag asks for explicit-only trust.
- * - Without positional filters, every donor must clear the effective trust
- *   list (built-in ∪ project ∪ `--trust` ∪ direct deps).
+ * - Without positional filters, every other donor must clear the effective
+ *   trust list (built-in ∪ project ∪ `--trust` ∪ direct deps).
  */
 final readonly class SyncPlanner
 {
@@ -71,7 +75,15 @@ final readonly class SyncPlanner
                 ? []
                 : \array_fill_keys($directDependencies, true);
             foreach ($filtered as $donor) {
-                if (isset($directSet[$donor->packageName]) || $trust->trusts($donor->packageName)) {
+                // A donor flagged `implicitTrust` is user-declared
+                // (today: every `remote[]` entry); the trust list
+                // applies only to local-provider transitive discoveries,
+                // so we skip the check entirely.
+                if (
+                    $donor->implicitTrust
+                    || isset($directSet[$donor->packageName])
+                    || $trust->trusts($donor->packageName)
+                ) {
                     $approved[] = $donor;
                     continue;
                 }

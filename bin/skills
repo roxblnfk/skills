@@ -47,6 +47,7 @@ if ('cli' !== PHP_SAPI) {
             'update' => static fn() => new \LLM\Skills\Console\Command\Sync(),
             'show' => static fn() => new \LLM\Skills\Console\Command\Show(),
             'init' => static fn() => new \LLM\Skills\Console\Command\Init(),
+            'add' => static fn() => new \LLM\Skills\Console\Command\Add(),
         ]),
     );
     $application->setDefaultCommand('update', false);

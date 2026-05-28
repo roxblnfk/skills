@@ -16,8 +16,7 @@ use Testo\Test;
  * Acceptance tests for the standalone `bin/skills` binary running in
  * a directory without a `composer.json`.
  *
- * Per `spec-config-file.md` §3.2 / §10, with no Composer install tree
- * around the utility:
+ * With no Composer install tree around the utility, the binary:
  *
  *  1. Treats the cwd as the project root.
  *  2. Reads `skills.json` directly when it exists (or uses defaults).
@@ -169,6 +168,32 @@ final class StandaloneBinTest
         );
     }
 
+    // ── add standalone (no composer.json) ───────────────────────────────
+
+    public function addInEmptyDirectoryDoesNotRequireComposerJson(): void
+    {
+        // The standalone `add` used to refuse to run without a project
+        // composer.json. That contradicted the design — local Composer
+        // is just one provider, and `skills:add` registers a *remote*
+        // donor. The command must accept invocation in a bare directory
+        // and only fall back to network/parse errors downstream.
+        //
+        // We pass a deliberately bogus URL to keep the test offline:
+        // adapter selection + ref resolution will fail before any HTTP
+        // hits, but the failure shape proves we got past the bootstrap
+        // gate — no "requires a composer.json" message.
+        $process = BinSkillsRunner::run(
+            Path::create($this->tmp),
+            'add https://example.invalid/none/none --no-sync',
+        );
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::false(
+            \str_contains($combined, 'requires a composer.json'),
+            'standalone add must not refuse on missing composer.json. Got: ' . $combined,
+        );
+    }
+
     // ── init standalone (currently works but covered end-to-end) ────────
 
     public function initInEmptyDirectoryWritesStubSkillsJson(): void
@@ -195,6 +220,10 @@ final class StandaloneBinTest
             true,
             flags: \JSON_THROW_ON_ERROR,
         );
-        Assert::same(\array_keys($decoded), ['$schema'], 'standalone init writes a stub');
+        Assert::same(
+            \array_keys($decoded),
+            ['$schema', 'local', 'remote'],
+            'standalone init writes a stub with the local + remote knobs visible',
+        );
     }
 }

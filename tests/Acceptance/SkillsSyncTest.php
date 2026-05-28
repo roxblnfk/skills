@@ -688,7 +688,7 @@ final class SkillsSyncTest
     public function aliasCreationIsIdempotent(): void
     {
         // A second run must accept the existing link as already-correct
-        // and exit cleanly. The §4.2 state-matrix's "link → target → noop"
+        // and exit cleanly. The state-matrix's "link → target → noop"
         // path is what makes routine re-runs safe.
         $first = $this->runSync();
         $second = $this->runSync();
@@ -719,8 +719,8 @@ final class SkillsSyncTest
     public function cliAliasFlagReplacesProjectAliasesEntirely(): void
     {
         // Project config has `.claude/skills-alias`, CLI passes only
-        // `.cursor/skills-alias`. The takeover semantics in §3 of the
-        // spec mean only the cursor alias is created — the claude one
+        // `.cursor/skills-alias`. CLI `--alias` is a takeover, not a
+        // merge: only the cursor alias is created — the claude one
         // is NOT inherited from project config.
         $process = $this->runSync('--alias=.cursor/skills-alias');
 
@@ -757,7 +757,7 @@ final class SkillsSyncTest
     ])]
     public function preExistingRealDirectoryAtAliasPathFailsTheRun(): void
     {
-        // §4.2: the linker never destroys user-owned content. A real
+        // The linker never destroys user-owned content. A real
         // directory at the alias path is a fatal misconfiguration the
         // user must resolve before any link can be created. Exit code
         // is non-zero so CI catches it.

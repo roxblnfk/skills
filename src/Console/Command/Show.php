@@ -11,7 +11,7 @@ use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Composer\ComposerJsonExtraReader;
 use LLM\Skills\Console\ShowCliDefinition;
-use LLM\Skills\Discovery\Provider\ComposerProvider;
+use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
 use LLM\Skills\Show\ShowRunner;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\HelperSet;
@@ -55,7 +55,6 @@ final class Show extends Command
 
         $projectRoot = Path::create(\getcwd() ?: '.');
         $composer = self::tryBootstrapComposer($io);
-        $provider = new ComposerProvider($composer);
 
         // See the twin in Console\Command\Sync — keeps the inline
         // `extra.skills` fallback usable when Composer bootstrap fails.
@@ -63,6 +62,8 @@ final class Show extends Command
         $extra = $composer !== null
             ? $composer->getPackage()->getExtra()
             : (new ComposerJsonExtraReader())->read($projectRoot, $io);
+
+        $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
 
         return (new ShowRunner())->run(
             $projectRoot,

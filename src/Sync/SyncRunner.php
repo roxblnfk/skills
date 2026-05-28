@@ -11,14 +11,15 @@ use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\DiscoveryResolver;
 use LLM\Skills\Discovery\Provider\DonorProvider;
+use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
-use LLM\Skills\Info;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -149,6 +150,24 @@ final readonly class SyncRunner
         );
         $donors = [...$discovery->donors, ...$discoveryResolution->included];
 
+        // `--from=<id>` narrows the sync to a single
+        // provider's donors. Provenance is tagged at the source
+        // (`composer` for ComposerProvider, the entry's `from` for
+        // RemoteProvider) so a simple equality filter is enough.
+        if ($options->fromFilter !== null) {
+            $filter = $options->fromFilter;
+            $donors = \array_values(\array_filter(
+                $donors,
+                static fn(VendorConfig $d): bool => $d->provenance === $filter,
+            ));
+            if ($donors === []) {
+                $io->writeError(\sprintf(
+                    '<comment>[llm/skills] --from=%s matched no donors</comment>',
+                    $filter,
+                ));
+            }
+        }
+
         $directDeps = $provider->directDependencies($projectRoot);
         try {
             $plan = $this->planner->plan(
@@ -216,16 +235,14 @@ final readonly class SyncRunner
         $this->emitTrailingDiagnostics($io, $plan, $discoveryResolution->excluded);
 
         // Alias errors fail the run loudly — silent partial success would
-        // mask broken `.claude/skills` / `.cursor/skills` aliases on CI,
-        // which is exactly the footgun §4.2 of the multitarget spec
-        // exists to prevent.
+        // mask broken `.claude/skills` / `.cursor/skills` aliases on CI.
         return $aliasFailed ? Command::FAILURE : Command::SUCCESS;
     }
 
     /**
      * Process every alias declared in the plan through {@see SymlinkLinker}.
      * Returns `true` if any alias errored — the caller turns that into a
-     * non-zero exit code per §4.2 of the multitarget spec.
+     * non-zero exit code.
      */
     private function processAliases(IOInterface $io, SyncPlan $plan, bool $dryRun): bool
     {
@@ -276,6 +293,11 @@ final readonly class SyncRunner
      * a list of vendor sections, not a flat stream of `name ← package` rows
      * that the eye has to re-sort.
      *
+     * Each row shows the canonical name (from the skill's `SKILL.md`
+     * `name:` frontmatter) and — when the directory name differs — the
+     * directory name dimmed alongside, so the user can tell at a glance
+     * what landed on disk vs. what they'd reference by name.
+     *
      * @param list<Skill> $copied
      */
     private function emitCopyReport(IOInterface $io, array $copied, bool $dryRun): void
@@ -287,13 +309,20 @@ final readonly class SyncRunner
         $action = $dryRun ? '[would copy]' : '[copy]';
         $byPackage = [];
         foreach ($copied as $skill) {
-            $byPackage[$skill->packageName][] = $skill->name;
+            $byPackage[$skill->packageName][] = $skill;
         }
 
-        foreach ($byPackage as $package => $names) {
+        foreach ($byPackage as $package => $skills) {
             $io->write('<fg=cyan>' . $package . '</>');
-            foreach ($names as $name) {
-                $io->write('  <info>' . $action . '</info> ' . $name);
+            foreach ($skills as $skill) {
+                $row = '  <info>' . $action . '</info> ' . $skill->canonicalName;
+                if ($skill->canonicalName !== $skill->name) {
+                    // Render the on-disk directory dimmed alongside the
+                    // canonical name. Only print when the two diverge —
+                    // duplicating the same string in parens is noise.
+                    $row .= ' <fg=gray>' . $skill->name . '/</>';
+                }
+                $io->write($row);
             }
         }
     }
@@ -371,28 +400,13 @@ final readonly class SyncRunner
     }
 
     /**
-     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall reading a file shipped with the
-     *         package is conceptually pure but psalm cannot prove it.
+     * @psalm-suppress MissingPureAnnotation,ImpureFunctionCall,ImpureMethodCall reading a file
+     *         shipped with the package is conceptually pure but psalm cannot prove it.
      *
      * @psalm-pure
      */
     private function loadBuiltinTrustedVendors(): TrustedVendors
     {
-        $path = Info::ROOT_DIR . '/resources/trusted-vendors.txt';
-        $content = \file_get_contents($path);
-        if ($content === false) {
-            throw new \RuntimeException('Failed to read built-in trusted-vendors list at ' . $path);
-        }
-
-        $patterns = [];
-        foreach (\explode("\n", $content) as $line) {
-            $line = \trim($line);
-            if ($line === '' || \str_starts_with($line, '#')) {
-                continue;
-            }
-            $patterns[] = $line;
-        }
-
-        return TrustedVendors::fromStrings(...$patterns);
+        return (new TrustedVendorRegistry())->loadForProvider(ProviderId::COMPOSER);
     }
 }

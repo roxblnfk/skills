@@ -433,6 +433,7 @@ final class ReportFormatterTest
             $skillInspections[] = new SkillInspection(
                 skill: new Skill(
                     name: $tuple[0],
+                    canonicalName: $tuple[0],
                     sourceDir: Path::create('/donor/' . $tuple[0]),
                     packageName: $packageName,
                 ),

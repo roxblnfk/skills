@@ -426,6 +426,368 @@ final class ProjectConfigMapperTest
         Assert::same($resolution->ignoredInlineKeys, []);
     }
 
+    // ── local toggles ──────────────────────────────────────────────────
+
+    public function localDefaultsToEmptyMap(): void
+    {
+        // Sparse storage: an absent `local` block means "every provider
+        // uses its per-provider default" — codified by
+        // ProjectConfig::isLocalEnabled() rather than by filling the
+        // map up front.
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::same($cfg->local, []);
+        Assert::true($cfg->isLocalEnabled('composer'));
+        Assert::false($cfg->isLocalEnabled('npm'));
+    }
+
+    public function localCanDisableComposer(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['local' => ['composer' => false]],
+        ]);
+
+        Assert::same($cfg->local, ['composer' => false]);
+        Assert::false($cfg->isLocalEnabled('composer'));
+    }
+
+    public function localUnknownIdThrows(): void
+    {
+        // Typos must surface as load-time errors — silent ignore would
+        // make `loc.composer: false` look like it worked.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('known local provider');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['local' => ['githubz' => true]],
+        ]);
+    }
+
+    public function localNonBoolValueThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.local.composer');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['local' => ['composer' => 'yes']],
+        ]);
+    }
+
+    public function localAsListThrows(): void
+    {
+        // `local` is a map, not a list — `["composer"]` is wrong shape.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('map of provider-id to boolean');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['local' => ['composer']],
+        ]);
+    }
+
+    // ── remote entries ─────────────────────────────────────────────────
+
+    public function remoteDefaultsToEmptyList(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::same($cfg->remote, []);
+    }
+
+    public function remotePackageAdapterParses(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'ref' => '^1.0'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->remote, 1);
+        $entry = $cfg->remote[0];
+        Assert::same($entry->from, 'github');
+        Assert::same($entry->package, 'acme/skills');
+        Assert::same($entry->ref, '^1.0');
+        Assert::same($entry->url, null);
+        Assert::same($entry->host, null);
+    }
+
+    public function remoteHostFieldIsPreserved(): void
+    {
+        // `host` lets users hit GitHub Enterprise / self-hosted GitLab
+        // without a new adapter — the same `from` value plus a custom
+        // host is enough.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    [
+                        'from' => 'github',
+                        'package' => 'team/skills',
+                        'host' => 'https://github.corp.example.com',
+                    ],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->host, 'https://github.corp.example.com');
+    }
+
+    public function remoteUrlAdapterParses(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'zip', 'url' => 'https://example.com/x.zip', 'sha256' => 'abc'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->remote, 1);
+        $entry = $cfg->remote[0];
+        Assert::same($entry->from, 'zip');
+        Assert::same($entry->url, 'https://example.com/x.zip');
+        Assert::same($entry->package, null);
+        Assert::same($entry->extras, ['sha256' => 'abc']);
+    }
+
+    public function remoteUnknownAdapterThrows(): void
+    {
+        // `from` vocabulary is locked at the spec table; unknown values
+        // must fail at load so a typo never reaches the fetcher (which
+        // would otherwise give a less helpful error).
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('not a known remote adapter');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [['from' => 'mystery', 'package' => 'acme/x']],
+            ],
+        ]);
+    }
+
+    public function remotePackageRequiredForNameBasedAdapter(): void
+    {
+        // A `github` entry must use `package`, not `url`.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('package is required');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [['from' => 'github', 'url' => 'https://github.com/acme/x']],
+            ],
+        ]);
+    }
+
+    public function remoteUrlNotAllowedForNameBasedAdapter(): void
+    {
+        // Conversely, a `github` entry must NOT carry `url`.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('url is not allowed');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [[
+                    'from' => 'github',
+                    'package' => 'acme/x',
+                    'url' => 'https://github.com/acme/x',
+                ]],
+            ],
+        ]);
+    }
+
+    public function remoteUrlRequiredForUrlOnlyAdapter(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('url is required');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [['from' => 'zip', 'package' => 'acme/x']],
+            ],
+        ]);
+    }
+
+    public function remotePackageNotAllowedForUrlOnlyAdapter(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('package is not allowed');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [[
+                    'from' => 'zip',
+                    'url' => 'https://example.com/x.zip',
+                    'package' => 'acme/x',
+                ]],
+            ],
+        ]);
+    }
+
+    public function remoteDuplicateCompositeKeyThrows(): void
+    {
+        // Same (from, host, package) triplet ⇒ ambiguous fetch target.
+        // We surface it as schema error rather than picking one silently
+        // — `skills:add`-style upsert is a separate code path, not part
+        // of the mapper.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('duplicates an earlier entry');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/x'],
+                    ['from' => 'github', 'package' => 'acme/x', 'ref' => '^1.0'],
+                ],
+            ],
+        ]);
+    }
+
+    public function remoteSameNameWithDifferentHostsCoexist(): void
+    {
+        // GitHub.com `acme/x` vs corp-GHE `acme/x` are different
+        // donors. The composite key includes `host`, so the mapper
+        // accepts both.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/x'],
+                    ['from' => 'github', 'package' => 'acme/x', 'host' => 'https://github.corp.example.com'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->remote, 2);
+    }
+
+    public function remoteSkillsAllowlistIsParsed(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    [
+                        'from' => 'github',
+                        'package' => 'acme/skills',
+                        'skills' => ['code-review', 'refactor'],
+                    ],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, ['code-review', 'refactor']);
+    }
+
+    public function remoteWithoutSkillsKeyDefaultsToNull(): void
+    {
+        // Absent `skills` key means "sync every skill the donor ships"
+        // — represented as `null`, not as an empty list.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills'],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, null);
+    }
+
+    public function remoteSkillsAcceptsEmptyList(): void
+    {
+        // An empty `skills` list is a deliberate "no skills from this
+        // donor" state — the entry stays registered but pulls nothing.
+        // Distinct from omitting the key entirely, which keeps the
+        // legacy "sync every skill" default.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'skills' => []],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, []);
+    }
+
+    public function remoteSkillsMustBeAList(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('list of skill names');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'skills' => ['name' => true]],
+                ],
+            ],
+        ]);
+    }
+
+    public function remoteSkillsRejectsNonStringElement(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('non-empty string');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'skills' => ['ok', '']],
+                ],
+            ],
+        ]);
+    }
+
+    public function remoteSkillsKeyIsNotSweptIntoExtras(): void
+    {
+        // collectExtras must skip `skills` — otherwise it would end up
+        // duplicated in both VendorEntry::skills and ::extras.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [
+                    [
+                        'from' => 'github',
+                        'package' => 'acme/skills',
+                        'skills' => ['hello'],
+                    ],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->remote[0]->skills, ['hello']);
+        Assert::same($cfg->remote[0]->extras, []);
+    }
+
+    public function remoteAsObjectThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('list of objects');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['remote' => ['github' => 'acme/x']],
+        ]);
+    }
+
+    public function remoteEntryAsScalarThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must be an object');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['remote' => ['github:acme/x']],
+        ]);
+    }
+
+    public function remoteRefEmptyStringThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('ref must be a non-empty string');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [['from' => 'github', 'package' => 'acme/x', 'ref' => '']],
+            ],
+        ]);
+    }
+
     /**
      * @param array<string, mixed> $data
      */

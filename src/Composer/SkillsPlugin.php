@@ -16,7 +16,7 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
-use LLM\Skills\Discovery\Provider\ComposerProvider;
+use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
 use LLM\Skills\Sync\SyncRunner;
 
 /**
@@ -140,6 +140,13 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             return;
         }
 
+        // Banner so the user sees that the `llm/skills` plugin is doing
+        // work after `composer install` / `composer update`. Without this,
+        // the auto-sync output (which includes `[copy]` rows and skip
+        // diagnostics) looks like noise from Composer itself.
+        $this->io->write('<info>[llm/skills] running auto-sync after composer ' .
+            ($event->getName() === ScriptEvents::POST_UPDATE_CMD ? 'update' : 'install') . '…</info>');
+
         $autoMigrate = $event->getName() === ScriptEvents::POST_UPDATE_CMD;
         $options = new SyncOptions(
             packageFilters: [],
@@ -152,11 +159,12 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             autoMigrate: $autoMigrate,
         );
 
-        $provider = new ComposerProvider($this->composer);
+        $extra = $this->composer->getPackage()->getExtra();
+        $provider = (new DonorProviderBuilder())->build($projectRoot, $this->composer, $extra);
         (new SyncRunner())->run(
             $projectRoot,
             $provider,
-            $provider->rootExtras(),
+            $extra,
             $this->io,
             $options,
         );
