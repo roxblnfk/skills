@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/roxblnfk/skills/compare/1.3.0...1.4.0) (2026-05-28)
+
+
+### Features
+
+* Add `add` command ([e2dd709](https://github.com/roxblnfk/skills/commit/e2dd7092005b0c535dfec19900eab71b5b7604d4))
+* Multi-source skill providers (local + remote) ([#15](https://github.com/roxblnfk/skills/issues/15)) ([e2dd709](https://github.com/roxblnfk/skills/commit/e2dd7092005b0c535dfec19900eab71b5b7604d4))
+
 ## [1.3.0](https://github.com/roxblnfk/skills/compare/1.2.0...1.3.0) (2026-05-26)
 
 
