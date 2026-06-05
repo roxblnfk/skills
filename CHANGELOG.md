@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/roxblnfk/skills/compare/1.4.0...1.5.0) (2026-06-05)
+
+
+### Features
+
+* recursive SKILL.md auto-discovery (local + remote) ([8c795e5](https://github.com/roxblnfk/skills/commit/8c795e5285212d090bd2d99671f3b665df44f020))
+
 ## [1.4.0](https://github.com/roxblnfk/skills/compare/1.3.0...1.4.0) (2026-05-28)
 
 
