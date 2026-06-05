@@ -1,0 +1,6 @@
+{
+    "name": "nested/skills-tree",
+    "description": "Stub package without extra.skills that ships skills in non-skills/ locations (.claude/skills flat + a skills/<category>/<name> catalog layout) to exercise recursive SKILL.md auto-discovery (--discovery flag)",
+    "type": "library",
+    "license": "MIT"
+}

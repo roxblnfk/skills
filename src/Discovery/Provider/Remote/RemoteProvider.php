@@ -8,10 +8,11 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedVendorConfig;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\VendorConfig;
-use LLM\Skills\Discovery\AutoDiscoveryProbe;
+use LLM\Skills\Discovery\DiscoveredSkill;
 use LLM\Skills\Discovery\DonorDiscoveryResult;
 use LLM\Skills\Discovery\MalformedDonor;
 use LLM\Skills\Discovery\Provider\DonorProvider;
+use LLM\Skills\Discovery\SkillTreeScanner;
 
 /**
  * {@see DonorProvider} for donors fetched from arbitrary repository
@@ -55,7 +56,7 @@ final readonly class RemoteProvider implements DonorProvider
         private RemoteDonorSource $source = new NullRemoteDonorSource(),
         private ?RemoteFetcher $fetcher = null,
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
-        private AutoDiscoveryProbe $autoDiscovery = new AutoDiscoveryProbe(),
+        private SkillTreeScanner $scanner = new SkillTreeScanner(),
     ) {}
 
     #[\Override]
@@ -149,12 +150,14 @@ final readonly class RemoteProvider implements DonorProvider
      *    a Composer manifest.
      *
      * 2. **Bare skill repo** — no `composer.json` (or one without
-     *    `extra.skills.source`), but the archive ships a top-level
-     *    `skills/` directory. The donor's package name falls back to
-     *    `RemoteDonorRef::$packageHint` (set from the entry's
-     *    adapter-side identifier — for GitHub, `<owner>/<repo>`).
-     *    Mirrors the local-provider auto-discovery path for ad-hoc
-     *    skill packs that don't bother with a Composer manifest.
+     *    `extra.skills.source`), but the archive ships `SKILL.md` files
+     *    somewhere ({@see SkillTreeScanner} finds them in conventional
+     *    roots or, failing that, anywhere in the tree). The donor's
+     *    package name falls back to `RemoteDonorRef::$packageHint` (set
+     *    from the entry's adapter-side identifier — for GitHub,
+     *    `<owner>/<repo>`). Mirrors the local-provider auto-discovery
+     *    path for ad-hoc skill packs that don't bother with a Composer
+     *    manifest.
      *
      * @param list<string>             $warnings  appended to in place
      * @param list<MalformedDonor>     $malformed appended to in place
@@ -232,43 +235,49 @@ final readonly class RemoteProvider implements DonorProvider
             return $this->decorate($donor, $ref);
         }
 
-        // Auto-discovery fallback: no usable composer.json metadata,
-        // but the archive may ship a bare `skills/` directory. Synthesise
-        // a donor using the entry's `packageHint` as the name. Without a
-        // hint we have nothing stable to call the donor — abort.
-        $source = $this->autoDiscovery->probe($path);
-        if ($source === null) {
+        // Auto-discovery fallback: no usable composer.json metadata, but
+        // the archive may still ship SKILL.md files. Scan for them —
+        // conventional roots first, then a bounded recursion — so repos
+        // that nest skills (e.g. `maintenance/skills/<name>/`) are caught
+        // too. Synthesise a donor using the entry's `packageHint` as the
+        // name. Without a hint we have nothing stable to call it — abort.
+        $discovered = $this->scanner->scan($path);
+        if ($discovered === []) {
             $warnings[] = \sprintf(
                 'remote %s: archive ships neither a composer.json with extra.skills.source '
-                . 'nor a `%s/` directory at the root — not a donor',
+                . 'nor any SKILL.md files — not a donor',
                 $ref->describe(),
-                AutoDiscoveryProbe::SOURCE_DIR,
             );
             return null;
         }
         $synthesisedName = $packageName ?? $ref->packageHint;
         if ($synthesisedName === null) {
             $warnings[] = \sprintf(
-                'remote %s: archive has a `%s/` directory but no package name to '
+                'remote %s: archive ships SKILL.md files but no package name to '
                 . 'register it under (composer.json missing AND the adapter could not '
                 . 'derive a `vendor/repo` identifier)',
                 $ref->describe(),
-                AutoDiscoveryProbe::SOURCE_DIR,
             );
             return null;
         }
 
-        // NOTE: `discovered: false` even though the source directory was
-        // auto-probed. The `discovered` flag drives "auto-found locally,
-        // opt in via --discovery" semantics — but remote entries are
-        // already explicit (the user typed `skills:add`). Treating them
-        // as discoverable would show a misleading [discovered] badge and
-        // gate them behind a flag they shouldn't need.
+        // NOTE: `discovered: false` even though the skills were auto-found.
+        // The `discovered` flag drives "auto-found locally, opt in via
+        // --discovery" semantics — but remote entries are already explicit
+        // (the user typed `skills:add`). Treating them as discoverable
+        // would show a misleading [discovered] badge and gate them behind
+        // a flag they shouldn't need. The explicit skill directories ride
+        // on `discoveredSkillDirs` so the enumerator finds them at whatever
+        // depth they live.
         return $this->decorate(
             new VendorConfig(
                 packageName: $synthesisedName,
                 packageRoot: $path,
-                source: $source,
+                source: $discovered[0]->container,
+                discoveredSkillDirs: \array_map(
+                    static fn(DiscoveredSkill $skill): Path => $skill->dir,
+                    $discovered,
+                ),
             ),
             $ref,
         );

@@ -288,9 +288,9 @@ final class AddRunnerTest
 
     // ── archive validation ─────────────────────────────────────────
 
-    public function archiveWithNeitherComposerJsonNorSkillsDirIsRejected(): void
+    public function archiveWithNeitherComposerJsonNorSkillMdIsRejected(): void
     {
-        // No composer.json AND no skills/ directory — there's nothing to
+        // No composer.json AND no SKILL.md anywhere — there's nothing to
         // register. Both fallback paths fail and the runner surfaces a
         // single combined error pointing at both acceptable shapes.
         $adapter = StubAdapter::withDefaults();
@@ -305,17 +305,44 @@ final class AddRunnerTest
 
         Assert::same($code, Command::FAILURE);
         Assert::true(\str_contains($io->getOutput(), 'neither a composer.json'));
-        Assert::true(\str_contains($io->getOutput(), '`skills/`'));
+        Assert::true(\str_contains($io->getOutput(), 'SKILL.md'));
     }
 
-    public function archiveWithoutComposerJsonButWithSkillsDirAutoRegistersUnderAdapterIdentifier(): void
+    public function archiveWithoutComposerJsonButWithSkillMdAutoRegistersUnderAdapterIdentifier(): void
     {
-        // No composer.json, but the archive ships a top-level `skills/`
-        // directory — the same shape ad-hoc Claude/agent skill repos take.
-        // The runner falls back to the adapter-side identifier
-        // (`parsed.package`) for the donor name and succeeds.
+        // No composer.json, but the archive ships SKILL.md files — the same
+        // shape ad-hoc Claude/agent skill repos take. The runner falls back
+        // to the adapter-side identifier (`parsed.package`) for the donor
+        // name and succeeds.
         $extracted = $this->writeBareDir('autodisc');
-        \mkdir($extracted . '/skills', 0o777, true);
+        \mkdir($extracted . '/skills/example', 0o777, true);
+        \file_put_contents($extracted . '/skills/example/SKILL.md', "---\nname: example\n---\nbody");
+
+        $adapter = StubAdapter::withDefaults();
+        $fetcher = $this->fetcherReturning($extracted);
+        $io = new BufferIO();
+
+        $code = $this->runner($adapter, $fetcher)->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'registered github:acme/skills'));
+    }
+
+    public function archiveWithSkillsNestedBelowConventionalRootsAutoRegisters(): void
+    {
+        // Mirrors ArtemProshkovskiy/laravel-maintenance-skills: no
+        // composer.json and skills at `maintenance/skills/<name>/`. The
+        // recursive scan finds them where the single-root probe could not.
+        $extracted = $this->writeBareDir('nested');
+        \mkdir($extracted . '/maintenance/skills/triage', 0o777, true);
+        \file_put_contents(
+            $extracted . '/maintenance/skills/triage/SKILL.md',
+            "---\nname: triage\n---\nbody",
+        );
 
         $adapter = StubAdapter::withDefaults();
         $fetcher = $this->fetcherReturning($extracted);

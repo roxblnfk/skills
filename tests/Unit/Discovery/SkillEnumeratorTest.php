@@ -215,6 +215,78 @@ final class SkillEnumeratorTest
         Assert::same($result->warnings, []);
     }
 
+    // ── auto-discovered donors (explicit skill directories) ───────────────────
+
+    public function discoveredDonorEnumeratesItsExplicitSkillDirectories(): void
+    {
+        // Auto-discovery can surface skills at a catalog depth that is NOT an
+        // immediate subdirectory of `source` (`skills/php/<name>/`). The
+        // enumerator must use the explicit directory list, not scan `source`.
+        $donor = $this->makeDiscoveredDonor('acme/found', 'skills', [
+            'skills/php/refactor' => "---\nname: php:refactor\n---\nbody",
+            'skills/php/migrate' => '# Migrate',
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        $names = \array_map(static fn($s) => $s->name, $result->skills);
+        \sort($names);
+        Assert::same($names, ['migrate', 'refactor']);
+        Assert::same($result->warnings, []);
+    }
+
+    public function discoveredDonorReadsCanonicalNameFromFrontmatter(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/found', 'skills', [
+            'skills/refactor' => "---\nname: php:refactor\n---\nbody",
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::count($result->skills, 1);
+        Assert::same($result->skills[0]->name, 'refactor');
+        Assert::same($result->skills[0]->canonicalName, 'php:refactor');
+    }
+
+    public function discoveredDonorSkipsDirectoriesThatNoLongerHaveSkillMd(): void
+    {
+        // A directory that vanished (or lost its SKILL.md) between discovery
+        // and enumeration must degrade quietly to no phantom skill.
+        $donor = $this->makeDiscoveredDonor('acme/found', 'skills', [
+            'skills/real' => '# Real',
+        ]);
+        // Append a path that does not exist on disk.
+        $donor = new VendorConfig(
+            packageName: $donor->packageName,
+            packageRoot: $donor->packageRoot,
+            source: $donor->source,
+            discovered: true,
+            discoveredSkillDirs: [
+                ...$donor->discoveredSkillDirs ?? [],
+                Path::create($this->tmp . '/vendor/acme/found/skills/ghost'),
+            ],
+        );
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::count($result->skills, 1);
+        Assert::same($result->skills[0]->name, 'real');
+        Assert::same($result->warnings, []);
+    }
+
+    public function discoveredDonorStillHonoursSkillFilter(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/found', 'skills', [
+            'skills/alpha' => '# A',
+            'skills/beta' => '# B',
+        ])->withSkillFilter(['alpha']);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::count($result->skills, 1);
+        Assert::same($result->skills[0]->name, 'alpha');
+    }
+
     /**
      * @param non-empty-string $packageName
      * @param non-empty-string $sourceDir
@@ -236,5 +308,37 @@ final class SkillEnumeratorTest
         }
 
         return new VendorConfig($packageName, Path::create($packageRoot), $sourceDir);
+    }
+
+    /**
+     * Build an auto-discovered donor: writes each skill's files and points the
+     * donor's `discoveredSkillDirs` at the (absolute) skill directories — the
+     * way {@see \LLM\Skills\Discovery\DonorDiscovery} populates them from
+     * {@see \LLM\Skills\Discovery\SkillTreeScanner}.
+     *
+     * @param non-empty-string $packageName
+     * @param non-empty-string $source container, for display only
+     * @param array<non-empty-string, string> $skills "<rel-skill-dir>" → SKILL.md contents
+     */
+    private function makeDiscoveredDonor(string $packageName, string $source, array $skills): VendorConfig
+    {
+        $packageRoot = $this->tmp . '/vendor/' . $packageName;
+        \mkdir($packageRoot, 0o777, true);
+
+        $dirs = [];
+        foreach ($skills as $relDir => $contents) {
+            $full = $packageRoot . '/' . $relDir;
+            \mkdir($full, 0o777, true);
+            \file_put_contents($full . '/SKILL.md', $contents);
+            $dirs[] = Path::create($full);
+        }
+
+        return new VendorConfig(
+            packageName: $packageName,
+            packageRoot: Path::create($packageRoot),
+            source: $source,
+            discovered: true,
+            discoveredSkillDirs: $dirs,
+        );
     }
 }

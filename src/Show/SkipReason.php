@@ -13,8 +13,8 @@ namespace LLM\Skills\Show;
  * and decides whether to act (trust the donor, fix the malformed
  * `extra.skills`, drop the positional filter, opt in to discovery, …).
  *
- * {@see SkipReason::NotDeclared} is used when {@see \LLM\Skills\Discovery\AutoDiscoveryProbe}
- * found a `skills/` directory inside a package that does **not** declare
+ * {@see SkipReason::NotDeclared} is used when {@see \LLM\Skills\Discovery\SkillTreeScanner}
+ * found `SKILL.md` files inside a package that does **not** declare
  * `extra.skills`, but the run did not opt in via `--discovery` /
  * `extra.skills.discovery: true`. Listing the donor here makes the
  * candidate names visible alongside the actionable hint at the bottom of

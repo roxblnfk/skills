@@ -43,25 +43,34 @@ final readonly class SkillEnumerator
         $warnings = [];
 
         foreach ($donors as $donor) {
-            $sourcePath = (string) $donor->sourcePath();
+            // Auto-discovered donors carry their skill directories explicitly
+            // (they may sit at a catalog depth the immediate-subdir scan below
+            // cannot reach); declared donors are scanned from their `source`.
+            if ($donor->discoveredSkillDirs !== null) {
+                $candidates = $this->discoveredCandidates($donor->discoveredSkillDirs);
+            } else {
+                $sourcePath = (string) $donor->sourcePath();
 
-            if (!\is_dir($sourcePath)) {
-                $warnings[] = \sprintf(
-                    '%s: source directory "%s" does not exist',
-                    $donor->packageName,
-                    $donor->source,
-                );
-                continue;
-            }
+                if (!\is_dir($sourcePath)) {
+                    $warnings[] = \sprintf(
+                        '%s: source directory "%s" does not exist',
+                        $donor->packageName,
+                        $donor->source,
+                    );
+                    continue;
+                }
 
-            $entries = \scandir($sourcePath);
-            if ($entries === false) {
-                $warnings[] = \sprintf(
-                    '%s: source directory "%s" is unreadable',
-                    $donor->packageName,
-                    $donor->source,
-                );
-                continue;
+                $entries = \scandir($sourcePath);
+                if ($entries === false) {
+                    $warnings[] = \sprintf(
+                        '%s: source directory "%s" is unreadable',
+                        $donor->packageName,
+                        $donor->source,
+                    );
+                    continue;
+                }
+
+                $candidates = $this->declaredCandidates($sourcePath, $entries);
             }
 
             // Optional per-donor allowlist. Tracks which declared names
@@ -70,17 +79,7 @@ final readonly class SkillEnumerator
             $filter = $donor->skillFilter;
             $filterSet = $filter === null ? null : \array_fill_keys($filter, false);
 
-            foreach ($entries as $entry) {
-                if ($entry === '.' || $entry === '..') {
-                    continue;
-                }
-                $skillPath = $sourcePath . \DIRECTORY_SEPARATOR . $entry;
-                if (!\is_dir($skillPath)) {
-                    // Files at the source root are not skills. Ignore silently.
-                    continue;
-                }
-
-                /** @var non-empty-string $entry */
+            foreach ($candidates as [$entry, $skillPath]) {
                 $canonicalName = $this->readCanonicalName(Path::create($skillPath), $entry);
 
                 if ($filterSet !== null) {
@@ -121,6 +120,56 @@ final readonly class SkillEnumerator
         }
 
         return new SkillEnumerationResult(skills: $skills, warnings: $warnings);
+    }
+
+    /**
+     * Immediate subdirectories of a declared donor's `source`. Loose files at
+     * the source root (e.g. `README.md`) are ignored — they are not skills.
+     *
+     * @param list<string> $entries result of {@see \scandir()} on `$sourcePath`
+     *
+     * @return list<array{non-empty-string, non-empty-string}> `[directory name, absolute path]`
+     */
+    private function declaredCandidates(string $sourcePath, array $entries): array
+    {
+        $out = [];
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $skillPath = $sourcePath . \DIRECTORY_SEPARATOR . $entry;
+            if (!\is_dir($skillPath)) {
+                continue;
+            }
+            /** @var non-empty-string $entry */
+            $out[] = [$entry, $skillPath];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Candidates for an auto-discovered donor: the exact skill directories the
+     * scanner found. Each is re-validated (still a directory holding a
+     * `SKILL.md`) so a tree that changed between discovery and enumeration
+     * degrades quietly instead of producing a phantom skill.
+     *
+     * @param list<Path> $dirs
+     *
+     * @return list<array{non-empty-string, non-empty-string}> `[directory name, absolute path]`
+     */
+    private function discoveredCandidates(array $dirs): array
+    {
+        $out = [];
+        foreach ($dirs as $dir) {
+            $skillPath = (string) $dir;
+            if (!\is_dir($skillPath) || !\is_file($skillPath . \DIRECTORY_SEPARATOR . 'SKILL.md')) {
+                continue;
+            }
+            $out[] = [$dir->name(), $skillPath];
+        }
+
+        return $out;
     }
 
     /**

@@ -138,7 +138,7 @@ final readonly class SyncPlanner
      * happily start writing files (or planting junctions) outside
      * the project. Donor packages are already pinned to their own
      * roots ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper},
-     * {@see \LLM\Skills\Discovery\AutoDiscoveryProbe}); this check
+     * {@see \LLM\Skills\Discovery\SkillTreeScanner}); this check
      * brings the project side in line with that posture.
      *
      * Uses the same {@see Path::match()} idiom as the vendor-side

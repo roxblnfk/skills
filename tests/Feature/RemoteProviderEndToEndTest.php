@@ -115,6 +115,58 @@ final class RemoteProviderEndToEndTest
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
     }
 
+    public function nestedBareSkillRepoIsDiscoveredAndEnumeratedEndToEnd(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // Mirrors ArtemProshkovskiy/laravel-maintenance-skills: no
+        // composer.json, and the skill is nested at
+        // `maintenance/skills/<name>/`. The recursive scanner finds it
+        // (the old single-root probe could not), and the enumerator copies
+        // it through `discoveredSkillDirs`.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'remote' => [
+                ['from' => 'github', 'package' => 'artem/maintenance', 'ref' => 'v1.0.0'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'artem-maintenance-v1.0.0',
+            files: [
+                'README.md' => '# no composer.json here',
+                'maintenance/skills/triage/SKILL.md' => "---\nname: triage\n---\nbody",
+            ],
+        );
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/artem/maintenance/zipball/v1.0.0' => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GithubAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'artem/maintenance');
+        // Remote refs are explicit (the user typed skills:add), so they are
+        // never gated behind --discovery even when the skills were auto-found.
+        Assert::false($result->donors[0]->discovered);
+
+        // End-to-end enumeration: the nested skill is resolved via the
+        // donor's explicit discoveredSkillDirs, not a source-subdir scan.
+        $enum = (new \LLM\Skills\Discovery\SkillEnumerator())->enumerate($result->donors);
+        $names = \array_map(static fn($s) => $s->name, $enum->skills);
+        Assert::same($names, ['triage']);
+    }
+
     public function remoteSkillsAllowlistThreadsIntoTheDonor(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
@@ -225,12 +277,11 @@ final class RemoteProviderEndToEndTest
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
-        // Build a zip that's missing composer.json AND a `skills/`
-        // directory — neither donor shape (Composer-shaped or bare
-        // skill repo) applies, so the provider rejects the archive
-        // and surfaces a single combined warning. With a `skills/`
-        // directory present, the same archive would auto-discover
-        // (covered by the dedicated unit test).
+        // Build a zip that's missing composer.json AND any SKILL.md —
+        // neither donor shape (Composer-shaped or bare skill repo)
+        // applies, so the provider rejects the archive and surfaces a
+        // single combined warning. With a SKILL.md present, the same
+        // archive would auto-discover (covered by the dedicated unit test).
         \file_put_contents($this->tmp . '/skills.json', \json_encode([
             'remote' => [
                 ['from' => 'github', 'package' => 'acme/empty', 'ref' => 'v1.0.0'],
@@ -260,7 +311,7 @@ final class RemoteProviderEndToEndTest
         Assert::true($result->warnings !== []);
         Assert::string($result->warnings[0])
             ->contains('neither a composer.json')
-            ->contains('skills/');
+            ->contains('SKILL.md');
     }
 
     #[BeforeTest]

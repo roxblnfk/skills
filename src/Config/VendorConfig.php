@@ -41,6 +41,14 @@ final readonly class VendorConfig
      *         legacy behaviour. A non-null list is honoured by
      *         {@see \LLM\Skills\Discovery\SkillEnumerator}, which keeps only matching
      *         skills and emits a `-v` warning for names that do not exist in the donor.
+     * @param list<Path>|null $discoveredSkillDirs explicit absolute skill directories for
+     *         an auto-discovered donor (set by {@see \LLM\Skills\Discovery\DonorDiscovery}
+     *         from {@see \LLM\Skills\Discovery\SkillTreeScanner}). When non-null the
+     *         enumerator uses exactly these directories instead of scanning `source`'s
+     *         immediate subdirectories — this is what lets discovery surface skills at a
+     *         catalog depth (`<source>/<category>/<name>/`). Always `null` for declared
+     *         donors, whose `source` directory is the contract. Orthogonal to
+     *         {@see $skillFilter}, which still applies on top.
      *
      * @psalm-mutation-free
      */
@@ -52,6 +60,7 @@ final readonly class VendorConfig
         public string $provenance = ProviderId::COMPOSER,
         public bool $implicitTrust = false,
         public ?array $skillFilter = null,
+        public ?array $discoveredSkillDirs = null,
     ) {}
 
     /**
@@ -82,6 +91,7 @@ final readonly class VendorConfig
             provenance: $provenance,
             implicitTrust: $this->implicitTrust,
             skillFilter: $this->skillFilter,
+            discoveredSkillDirs: $this->discoveredSkillDirs,
         );
     }
 
@@ -107,6 +117,7 @@ final readonly class VendorConfig
             provenance: $this->provenance,
             implicitTrust: true,
             skillFilter: $this->skillFilter,
+            discoveredSkillDirs: $this->discoveredSkillDirs,
         );
     }
 
@@ -129,6 +140,7 @@ final readonly class VendorConfig
             provenance: $this->provenance,
             implicitTrust: $this->implicitTrust,
             skillFilter: $skillFilter,
+            discoveredSkillDirs: $this->discoveredSkillDirs,
         );
     }
 }

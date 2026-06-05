@@ -10,16 +10,17 @@
 
 <br />
 
-A **Composer plugin** that copies AI Skills shipped inside vendor packages into a project-local
-directory (default `.agents/skills/`).
+A **Composer plugin** that downloads AI Skills from your Composer/vendor packages **and** from
+arbitrary Git repositories (GitHub today, added with `skills:add`), then keeps them synced into
+a project-local directory (default `.agents/skills/`).
 
 An *AI Skill* is a directory containing a `SKILL.md` plus any auxiliary files (templates,
 examples, fixtures). The directory name is the skill's identity; coding-agent tools read
 `SKILL.md` to learn project-specific instructions, conventions, and recipes.
 
-`llm/skills` distributes those instruction bundles as ordinary Composer dependencies and
-assembles them in the consumer project — on demand or automatically on `composer install` /
-`update`.
+Skills are assembled in the consumer project on demand, or automatically on `composer install` /
+`update`. A package doesn't even have to declare anything: skills are
+[auto-discovered](#auto-discovery) by their `SKILL.md` files wherever they live.
 
 
 ## Install
@@ -54,7 +55,7 @@ get fresh skills with no further setup. To opt out, set `"auto-sync": false` in 
 `composer install --no-scripts` also suppresses the auto-run for a single invocation without
 changing the config.
 
-### Global installation
+### Global composer installation
 
 Install once and use the `skills:*` commands in any project:
 
@@ -96,7 +97,7 @@ skills — see [Remote sources](#remote-sources).
 | `--target=PATH`, `-t` | both   | Override the configured target directory for this run.                                                                                                             |
 | `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces the configured aliases entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
-| `--discovery`         | both   | Include packages that ship a `skills/` directory but do not declare `extra.skills`.                                                                                |
+| `--discovery`         | both   | Include packages that ship `SKILL.md` files but do not declare `extra.skills` (see [Auto-discovery](#auto-discovery)).                                              |
 | `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Remote sources](#remote-sources).                                                            |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
@@ -334,7 +335,7 @@ Bare `vendor` without `/` is rejected as ambiguous.
   without consulting the trust list. Naming a vendor wildcard (`acme/*`) extends the grant to
   every package matching the pattern.
 - **Named is also implicit auto-discovery.** If the named package does not declare
-  `extra.skills`, the plugin still scans its `skills/` directory — discovery is enabled for
+  `extra.skills`, the plugin still scans it for `SKILL.md` files — discovery is enabled for
   that package only.
 - **Direct dependencies are implicit trust.** A package the consumer chose to depend on
   (`require` / `require-dev`) does not need a trust pattern: the dependency declaration is
@@ -377,7 +378,7 @@ The command:
 1. parses the input via the resolved adapter (currently `github`);
 2. resolves the ref — explicit value wins verbatim; without `--ref` the adapter picks the highest stable tag, falling back to the highest prerelease tag, then to the default branch HEAD;
 3. downloads the archive into `vendor/llm-skills/cache/...` (gitignored by virtue of vendor);
-4. validates that the archive ships a `composer.json` with `extra.skills.source`;
+4. validates that the archive is a donor — either a `composer.json` with `extra.skills.source`, or (for bare skill repos) at least one `SKILL.md` found by [auto-discovery](#auto-discovery);
 5. upserts the entry into `skills.json` `remote[]` (stable-sorted by `(from, host, package)`, atomic write — falls back to `unlink + rename` on Windows where `rename()` refuses to overwrite an existing destination);
 6. runs a single-entry sync so the new skills land in the target right away — same ergonomics as `composer require`. Suppress with `--no-sync`.
 
@@ -446,24 +447,59 @@ For the full architectural rationale, the version-resolution cascade, the cache 
 
 ## Auto-discovery
 
-When a package does not declare `extra.skills` but ships a `skills/` directory at its install
-root, `llm/skills` can still pick up the skills inside. Opt in one of three ways:
+When a package does not declare `extra.skills` but ships `SKILL.md` files anyway, `llm/skills`
+can still pick up the skills inside. Opt in one of three ways:
 
 - `--discovery` flag on the command line (for a single run);
 - `"discovery": true` in `skills.json` (always on);
 - Name the package as a positional argument (implicit, per-package — see [Shortcuts](#shortcuts)).
 
+### How skills are found
+
+Discovery looks for the *files* (`SKILL.md`), not a single hard-coded folder, so skills are
+found wherever a package keeps them. A directory holding a `SKILL.md` **is** a skill; the
+scanner never descends into one (a skill cannot contain a nested skill).
+
+1. **Well-known roots first.** Each of these conventional roots is probed, and inside it both
+   the flat layout (`<root>/<name>/`) and the one-level catalog layout
+   (`<root>/<category>/<name>/`) are accepted:
+
+   ```
+   .agents/skills/   .claude/skills/   .cursor/skills/   skills/   resources/skills/
+   ```
+
+2. **Recursive fallback.** Only if *none* of those roots yields a skill does the scanner walk
+   the rest of the package tree to find `SKILL.md` files in non-conventional locations (e.g.
+   `maintenance/skills/<name>/`). The walk is bounded — it caps depth and skips `vendor/`,
+   `node_modules/`, `.git/`, hidden directories, and nested packages (any directory with its
+   own `composer.json`).
+
+All of these are discovered (no `extra.skills` anywhere):
+
 ```
-acme/skills-undeclared/
-├── composer.json   # no extra.skills
+acme/skills-undeclared/        # flat, well-known root
 └── skills/
     └── auto-skill/SKILL.md
+
+nested/skills-tree/            # multiple roots + catalog layout
+├── .claude/skills/
+│   └── hidden-claude/SKILL.md
+└── skills/
+    └── php/
+        └── hidden-catalog/SKILL.md
+
+acme/maintenance/              # recursive fallback (nothing in a well-known root)
+└── maintenance/skills/
+    └── triage/SKILL.md
 ```
 
 ```bash
-composer skills:update --discovery            # picks up auto-skill
-composer skills:update acme/skills-undeclared # also picks up auto-skill (named ⇒ trust + discovery)
+composer skills:update --discovery            # picks up every skill above
+composer skills:update acme/skills-undeclared # picks up auto-skill only (named ⇒ trust + discovery)
 ```
+
+The same scan powers `skills:add` for remote repositories that ship bare skills without a
+Composer manifest.
 
 Auto-discovered donors still pass through the trust filter unless they were named on the CLI.
 A junction or symlink that escapes the package root is silently rejected.

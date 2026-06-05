@@ -37,6 +37,10 @@ use Testo\Test;
  * - `spiral/skills-demo`   — vendor (`spiral/*`) is in the **built-in** trusted list.
  *                            Used to verify built-in trust and `trusted-replace: true`
  *                            behaviour. One `demo` skill.
+ * - `nested/skills-tree`   — undeclared (no `extra.skills`); ships skills in
+ *                            non-`skills/` locations — `.claude/skills/hidden-claude/`
+ *                            and a catalog layout `skills/php/hidden-catalog/` — to
+ *                            exercise recursive `SKILL.md` auto-discovery.
  *
  * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro"]`
  * with the default `trusted-replace: false` — so built-in patterns still apply.
@@ -597,6 +601,43 @@ final class SkillsSyncTest
             \str_contains($combined, '[hint]'),
             'hint must not appear when --discovery is active. Got: ' . $combined,
         );
+    }
+
+    public function discoveryFindsSkillShippedUnderDotClaudeOfUndeclaredPackage(): void
+    {
+        // nested/skills-tree ships `.claude/skills/hidden-claude/` and no
+        // extra.skills. The recursive scanner must find it even though it does
+        // not live under the conventional `skills/` root.
+        $process = $this->runSync('--discovery', '--trust=nested/skills-tree');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/hidden-claude/SKILL.md'),
+            'skill under .claude/skills must be discovered. stderr: ' . $process->getErrorOutput(),
+        );
+    }
+
+    public function discoveryFindsSkillInCatalogLayoutTwoLevelsDeep(): void
+    {
+        // `skills/php/hidden-catalog/SKILL.md` is a catalog layout
+        // (<container>/<category>/<name>/) the single-level probe could not see.
+        $process = $this->runSync('--discovery', '--trust=nested/skills-tree');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/hidden-catalog/SKILL.md'),
+            'catalog-layout skill must be discovered. stderr: ' . $process->getErrorOutput(),
+        );
+    }
+
+    public function withoutDiscoveryRecursivelyDiscoverableSkillsAreNotSynced(): void
+    {
+        // Same opt-in gate as the flat `skills/` case: nothing from
+        // nested/skills-tree lands unless --discovery is on.
+        $this->runSync();
+
+        Assert::false(\is_file(self::TARGET_DIR . '/hidden-claude/SKILL.md'));
+        Assert::false(\is_file(self::TARGET_DIR . '/hidden-catalog/SKILL.md'));
     }
 
     public function namingAnUndeclaredPackageAutoEnablesDiscoveryForItOnly(): void

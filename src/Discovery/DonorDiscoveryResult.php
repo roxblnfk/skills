@@ -12,9 +12,10 @@ use LLM\Skills\Config\VendorConfig;
  * Four channels:
  *
  * - `donors`       — every successfully mapped **declared** donor package.
- * - `discoverable` — donors synthesised by {@see AutoDiscoveryProbe} for
- *                    packages that do not declare `extra.skills` but ship a
- *                    `skills/` directory. Always populated regardless of the
+ * - `discoverable` — donors synthesised by {@see SkillTreeScanner} for
+ *                    packages that do not declare `extra.skills` but ship
+ *                    `SKILL.md` files in a conventional (or, as a fallback,
+ *                    any) location. Always populated regardless of the
  *                    `--discovery` flag: when the flag is off these are
  *                    ignored for sync but their count drives the
  *                    "rerun with --discovery" hint.

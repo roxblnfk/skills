@@ -15,6 +15,7 @@
         "acme/skills-broken": "@dev",
         "acme/skills-rootlike": "@dev",
         "acme/skills-undeclared": "@dev",
+        "nested/skills-tree": "@dev",
         "spiral/skills-demo": "@dev",
         "transit/untrusted-relay": "@dev"
     },

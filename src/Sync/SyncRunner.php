@@ -14,7 +14,6 @@ use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
-use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\DiscoveryResolver;
 use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Provider\ProviderId;
@@ -360,10 +359,9 @@ final readonly class SyncRunner
 
         if ($undeclaredCandidates !== []) {
             $io->write(\sprintf(
-                '<comment>[hint] %d package(s) ship undeclared skills under %s/. '
+                '<comment>[hint] %d package(s) ship undeclared skills. '
                 . 'Rerun with --discovery (-d) to include them, or set extra.skills.discovery: true.</comment>',
                 \count($undeclaredCandidates),
-                AutoDiscoveryProbe::SOURCE_DIR,
             ));
         }
     }

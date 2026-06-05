@@ -30,7 +30,7 @@ final readonly class DonorDiscovery
      */
     public function __construct(
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
-        private AutoDiscoveryProbe $probe = new AutoDiscoveryProbe(),
+        private SkillTreeScanner $scanner = new SkillTreeScanner(),
     ) {}
 
     public function discover(Composer $composer): DonorDiscoveryResult
@@ -52,14 +52,8 @@ final readonly class DonorDiscovery
                     continue;
                 }
                 $packageRoot = Path::create($installPath);
-                $source = $this->probe->probe($packageRoot);
-                if ($source !== null) {
-                    $discoverable[] = new VendorConfig(
-                        packageName: $name,
-                        packageRoot: $packageRoot,
-                        source: $source,
-                        discovered: true,
-                    );
+                foreach ($this->discoverDonors($name, $packageRoot) as $donor) {
+                    $discoverable[] = $donor;
                 }
                 continue;
             }
@@ -88,5 +82,44 @@ final readonly class DonorDiscovery
             malformed: $malformed,
             discoverable: $discoverable,
         );
+    }
+
+    /**
+     * Build the auto-discovered donor(s) for a package that does not declare
+     * `extra.skills`. {@see SkillTreeScanner} finds the skill directories; here
+     * they are grouped by their container so each conventional root (or catalog
+     * category) becomes one donor row carrying its own `source`. The explicit
+     * skill directories travel on {@see VendorConfig::$discoveredSkillDirs} so
+     * the enumerator can honour catalog depth that the immediate-subdir model
+     * cannot express.
+     *
+     * @param non-empty-string $packageName
+     *
+     * @return list<VendorConfig>
+     */
+    private function discoverDonors(string $packageName, Path $packageRoot): array
+    {
+        /** @var array<non-empty-string, list<Path>> $byContainer preserves first-seen order */
+        $byContainer = [];
+        foreach ($this->scanner->scan($packageRoot) as $skill) {
+            $byContainer[$skill->container][] = $skill->dir;
+        }
+
+        $donors = [];
+        foreach ($byContainer as $container => $dirs) {
+            // A numeric container name (e.g. a category dir literally named
+            // "2024") would have been coerced to an int array key — cast back.
+            $source = (string) $container;
+            /** @var non-empty-string $source */
+            $donors[] = new VendorConfig(
+                packageName: $packageName,
+                packageRoot: $packageRoot,
+                source: $source,
+                discovered: true,
+                discoveredSkillDirs: $dirs,
+            );
+        }
+
+        return $donors;
     }
 }

@@ -272,15 +272,16 @@ final readonly class InspectionBuilder
         array $conflictMap,
         array $installedByName,
     ): array {
-        // Group the flat skills list by donor name for fast lookup.
-        $skillsByDonor = [];
-        foreach ($approvedSkills as $skill) {
-            $skillsByDonor[$skill->packageName][] = $skill;
-        }
-
         $result = [];
         foreach ($approvedDonors as $donor) {
-            $donorSkills = $skillsByDonor[$donor->packageName] ?? [];
+            // A single package can yield several discovered donor rows — one
+            // per container (`.claude/skills`, `skills/<category>`, …). Assign
+            // each skill to the row it actually came from so the same skill is
+            // not listed under every row of its package.
+            $donorSkills = \array_values(\array_filter(
+                $approvedSkills,
+                fn(Skill $skill): bool => $this->skillBelongsToDonor($skill, $donor),
+            ));
             $skillInspections = [];
             foreach ($donorSkills as $skill) {
                 $skillInspections[] = new SkillInspection(
@@ -299,6 +300,34 @@ final readonly class InspectionBuilder
         }
 
         return $result;
+    }
+
+    /**
+     * Decide whether `$skill` was produced by `$donor`. Declared donors are
+     * one-per-package, so the package name suffices. Auto-discovered donors may
+     * be several per package (one per container); a skill belongs to the row
+     * whose explicit directory list contains its source directory.
+     *
+     * @psalm-mutation-free
+     */
+    private function skillBelongsToDonor(Skill $skill, VendorConfig $donor): bool
+    {
+        if ($skill->packageName !== $donor->packageName) {
+            return false;
+        }
+
+        if ($donor->discoveredSkillDirs === null) {
+            return true;
+        }
+
+        $skillDir = (string) $skill->sourceDir;
+        foreach ($donor->discoveredSkillDirs as $dir) {
+            if ((string) $dir === $skillDir) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -362,9 +391,10 @@ final readonly class InspectionBuilder
     /**
      * @param list<\LLM\Skills\Discovery\MalformedDonor> $malformed
      * @param list<string> $enumerationWarnings raw text from {@see SkillEnumerator}
-     * @param list<VendorConfig> $unactivatedDiscoverable packages that ship a `skills/` root but
-     *         were not promoted into the run (because `--discovery` is off); listed under
-     *         `not-declared` so the user sees their names alongside the actionable hint
+     * @param list<VendorConfig> $unactivatedDiscoverable packages that ship undeclared skills
+     *         (found by {@see \LLM\Skills\Discovery\SkillTreeScanner}) but were not promoted
+     *         into the run (because `--discovery` is off); listed under `not-declared` so the
+     *         user sees their names alongside the actionable hint
      *
      * @return list<SkippedDonor>
      *

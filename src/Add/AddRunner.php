@@ -9,7 +9,6 @@ use Internal\Path;
 use LLM\Skills\Config\AddOptions;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\RemoteEntry;
-use LLM\Skills\Discovery\AutoDiscoveryProbe;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -19,6 +18,7 @@ use LLM\Skills\Discovery\Provider\Remote\Adapter\UnknownAdapterException;
 use LLM\Skills\Discovery\Provider\Remote\RefResolver;
 use LLM\Skills\Discovery\Provider\Remote\RemoteFetchException;
 use LLM\Skills\Discovery\Provider\Remote\RemoteFetcher;
+use LLM\Skills\Discovery\SkillTreeScanner;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -63,7 +63,7 @@ final readonly class AddRunner
         private SkillsJsonWriter $writer = new SkillsJsonWriter(),
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
         private RefResolver $refResolver = new RefResolver(),
-        private AutoDiscoveryProbe $autoDiscovery = new AutoDiscoveryProbe(),
+        private SkillTreeScanner $scanner = new SkillTreeScanner(),
     ) {}
 
     /**
@@ -354,16 +354,16 @@ final readonly class AddRunner
         }
 
         // Composer manifest is missing or non-conforming. Fall through to
-        // auto-discovery: require a `skills/` directory at the root, and
-        // synthesise the donor's name from the adapter-side identifier.
-        if ($this->autoDiscovery->probe($extractedRoot) === null) {
+        // auto-discovery: require at least one SKILL.md somewhere in the
+        // archive, and synthesise the donor's name from the adapter-side
+        // identifier.
+        if ($this->scanner->scan($extractedRoot) === []) {
             $io->writeError(\sprintf(
                 '<error>[llm/skills] fetched archive for %s:%s ships neither a composer.json '
-                . 'with extra.skills.source nor a `%s/` directory at the root — '
+                . 'with extra.skills.source nor any SKILL.md files — '
                 . 'cannot register as a skill donor</error>',
                 $adapterId,
                 $parsed->package ?? $parsed->url ?? $parsed->from,
-                AutoDiscoveryProbe::SOURCE_DIR,
             ));
             return null;
         }
@@ -371,10 +371,9 @@ final readonly class AddRunner
         $synthesisedName = $packageName ?? $parsed->package;
         if ($synthesisedName === null) {
             $io->writeError(\sprintf(
-                '<error>[llm/skills] fetched archive has a `%s/` directory but no package '
+                '<error>[llm/skills] fetched archive ships SKILL.md files but no package '
                 . 'name to register it under (composer.json missing AND --from=%s did not '
                 . 'derive a vendor/repo identifier)</error>',
-                AutoDiscoveryProbe::SOURCE_DIR,
                 $adapterId,
             ));
             return null;

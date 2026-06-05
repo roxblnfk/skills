@@ -109,11 +109,11 @@ final class RemoteProviderTest
         Assert::true(\str_contains($result->warnings[0], $ref->describe()));
     }
 
-    public function warnsWhenNeitherComposerJsonNorSkillsDirIsPresent(): void
+    public function warnsWhenNeitherComposerJsonNorSkillMdIsPresent(): void
     {
-        // No composer.json AND no skills/ directory — both donor
-        // shapes (Composer-shaped and bare skill-repo) fail their
-        // probe, so the provider emits a single combined warning.
+        // No composer.json AND no SKILL.md anywhere — both donor shapes
+        // (Composer-shaped and bare skill-repo) fail, so the provider
+        // emits a single combined warning.
         $extracted = $this->makeExtracted('archive-without-anything');
 
         $provider = $this->providerReturning($extracted);
@@ -122,7 +122,7 @@ final class RemoteProviderTest
         Assert::same($result->donors, []);
         Assert::count($result->warnings, 1);
         Assert::true(\str_contains($result->warnings[0], 'neither a composer.json'));
-        Assert::true(\str_contains($result->warnings[0], 'skills/'));
+        Assert::true(\str_contains($result->warnings[0], 'SKILL.md'));
     }
 
     public function autoDiscoversBareSkillsRepoFromPackageHint(): void
@@ -133,7 +133,7 @@ final class RemoteProviderTest
         // adapter-side identifier, e.g. GitHub repo path) for the
         // donor's name and synthesises a discoverable VendorConfig.
         $extracted = $this->makeExtracted('bare-skill-repo');
-        \mkdir($extracted . '/skills', 0o777, true);
+        $this->writeSkill($extracted);
 
         $provider = $this->providerReturning($extracted, packageHint: 'acme/skills');
         $result = $provider->discover($this->projectRoot());
@@ -148,12 +148,29 @@ final class RemoteProviderTest
         Assert::same($result->warnings, []);
     }
 
+    public function autoDiscoversSkillsNestedBelowConventionalRoots(): void
+    {
+        // Mirrors ArtemProshkovskiy/laravel-maintenance-skills: no
+        // composer.json, and the skill lives at `maintenance/skills/<name>/`.
+        // The single-root probe missed this; the recursive scan finds it.
+        $extracted = $this->makeExtracted('nested-skill-repo');
+        $this->writeSkill($extracted, 'maintenance/skills/composer-dependency-triage');
+
+        $provider = $this->providerReturning($extracted, packageHint: 'artem/maintenance');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'artem/maintenance');
+        Assert::false($result->donors[0]->discovered);
+        Assert::same($result->warnings, []);
+    }
+
     public function warnsWhenBareSkillsRepoHasNoPackageHint(): void
     {
         // `skills/` is present but the ref carries no `packageHint` —
         // no stable identifier to register the donor under.
         $extracted = $this->makeExtracted('orphan-skill-repo');
-        \mkdir($extracted . '/skills', 0o777, true);
+        $this->writeSkill($extracted);
 
         $provider = $this->providerReturning($extracted, packageHint: null);
         $result = $provider->discover($this->projectRoot());
@@ -203,7 +220,7 @@ final class RemoteProviderTest
             'no-name',
             \json_encode(['extra' => ['skills' => ['source' => 'skills']]]),
         );
-        \mkdir($extracted . '/skills', 0o777, true);
+        $this->writeSkill($extracted);
 
         $provider = $this->providerReturning($extracted, packageHint: 'acme/skills');
         $result = $provider->discover($this->projectRoot());
@@ -220,7 +237,7 @@ final class RemoteProviderTest
             'flat-name',
             \json_encode(['name' => 'flat', 'extra' => ['skills' => ['source' => 'skills']]]),
         );
-        \mkdir($extracted . '/skills', 0o777, true);
+        $this->writeSkill($extracted);
 
         $provider = $this->providerReturning($extracted, packageHint: 'acme/skills');
         $result = $provider->discover($this->projectRoot());
@@ -405,6 +422,17 @@ final class RemoteProviderTest
             \file_put_contents($dir . '/composer.json', $contents);
         }
         return Path::create($dir);
+    }
+
+    /**
+     * Drop a real skill (a directory holding `SKILL.md`) into an extracted
+     * archive so the recursive auto-discovery scanner has something to find.
+     */
+    private function writeSkill(Path $extracted, string $relDir = 'skills/example'): void
+    {
+        $dir = (string) $extracted . '/' . $relDir;
+        \mkdir($dir, 0o777, true);
+        \file_put_contents($dir . '/SKILL.md', "---\nname: example\n---\nbody");
     }
 
     /**
