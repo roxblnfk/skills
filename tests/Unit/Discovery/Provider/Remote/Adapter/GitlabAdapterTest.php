@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote\Adapter;
 
 use LLM\Skills\Config\RemoteEntry;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
@@ -16,32 +16,46 @@ use Testo\Expect;
 use Testo\Test;
 
 /**
- * Unit coverage for {@see GithubAdapter}. Uses a stub
- * {@see HttpClient} that returns canned responses keyed by URL — no
- * real HTTP traffic. Verifies both the parsing branch
- * ({@see GithubAdapter::parseAddInput()}, no IO at all) and the
- * resolve branch ({@see GithubAdapter::resolve()}, which makes
- * up to two API calls per entry).
+ * Unit coverage for {@see GitlabAdapter}. Uses the shared
+ * {@see InMemoryHttpClient} stub that returns canned responses keyed
+ * by URL — no real HTTP traffic. Verifies both the parsing branch
+ * ({@see GitlabAdapter::parseAddInput()}, no IO at all) and the
+ * resolve branch ({@see GitlabAdapter::resolve()}, which makes up to
+ * two API calls per entry).
+ *
+ * The cases mirror {@see GithubAdapterTest}; the GitLab-specific
+ * differences worth their own probes are the `/api/v4` base, the
+ * URL-encoded project id (`group%2Fproject`), nested-group package
+ * paths, and the `archive.zip?sha=` endpoint.
  */
 #[Test]
-#[Covers(GithubAdapter::class)]
-#[Covers(ParsedAddInput::class)]
-#[Covers(RemoteResolveException::class)]
-final class GithubAdapterTest
+#[Covers(GitlabAdapter::class)]
+final class GitlabAdapterTest
 {
     // ── parseAddInput: shorthand and URLs ──────────────────────────
 
-    public function shorthandOwnerSlashRepoIsParsed(): void
+    public function shorthandGroupSlashProjectIsParsed(): void
     {
         $adapter = self::adapter();
 
         $parsed = $adapter->parseAddInput('acme/skills');
 
-        Assert::same($parsed->from, 'github');
+        Assert::same($parsed->from, 'gitlab');
         Assert::same($parsed->package, 'acme/skills');
         Assert::same($parsed->host, null);
         Assert::same($parsed->ref, null);
         Assert::same($parsed->url, null);
+    }
+
+    public function nestedGroupShorthandIsParsed(): void
+    {
+        // GitLab supports subgroups — three-or-more segments are valid,
+        // unlike GitHub's strict owner/repo.
+        $adapter = self::adapter();
+
+        $parsed = $adapter->parseAddInput('group/subgroup/skills');
+
+        Assert::same($parsed->package, 'group/subgroup/skills');
     }
 
     public function shorthandWithEmbeddedRef(): void
@@ -56,8 +70,6 @@ final class GithubAdapterTest
 
     public function refOverrideTakesPrecedenceOverEmbedded(): void
     {
-        // `--ref` is allowed to win when it equals the embedded ref;
-        // the two only conflict when they disagree.
         $adapter = self::adapter();
 
         $parsed = $adapter->parseAddInput('acme/skills@v1.2.3', refOverride: 'v1.2.3');
@@ -73,34 +85,44 @@ final class GithubAdapterTest
         self::adapter()->parseAddInput('acme/skills@v1.2.3', refOverride: 'v2.0.0');
     }
 
-    public function fullGithubUrlIsParsed(): void
+    public function fullGitlabUrlIsParsed(): void
     {
         $adapter = self::adapter();
 
-        $parsed = $adapter->parseAddInput('https://github.com/acme/skills');
+        $parsed = $adapter->parseAddInput('https://gitlab.com/acme/skills');
 
         Assert::same($parsed->package, 'acme/skills');
-        Assert::same($parsed->host, null, 'github.com is left implicit');
+        Assert::same($parsed->host, null, 'gitlab.com is left implicit');
     }
 
-    public function fullGheUrlIsParsedWithExplicitHost(): void
+    public function fullNestedGroupUrlIsParsed(): void
     {
-        // GHE URLs MUST keep the host explicit so the adapter can build
-        // the right /api/v3 base later. github.com is the only one that
-        // gets implicit treatment.
         $adapter = self::adapter();
 
-        $parsed = $adapter->parseAddInput('https://github.corp.example.com/team/skills');
+        $parsed = $adapter->parseAddInput('https://gitlab.com/group/subgroup/skills');
+
+        Assert::same($parsed->package, 'group/subgroup/skills');
+        Assert::same($parsed->host, null);
+    }
+
+    public function fullSelfHostedUrlIsParsedWithExplicitHost(): void
+    {
+        // Self-hosted URLs MUST keep the host explicit so the adapter
+        // can build the right /api/v4 base later. gitlab.com is the
+        // only one that gets implicit treatment.
+        $adapter = self::adapter();
+
+        $parsed = $adapter->parseAddInput('https://gitlab.corp.example.com/team/skills');
 
         Assert::same($parsed->package, 'team/skills');
-        Assert::same($parsed->host, 'https://github.corp.example.com');
+        Assert::same($parsed->host, 'https://gitlab.corp.example.com');
     }
 
     public function gitSuffixIsStripped(): void
     {
         $adapter = self::adapter();
 
-        $parsed = $adapter->parseAddInput('https://github.com/acme/skills.git');
+        $parsed = $adapter->parseAddInput('https://gitlab.com/acme/skills.git');
 
         Assert::same($parsed->package, 'acme/skills');
     }
@@ -111,8 +133,8 @@ final class GithubAdapterTest
             ->withMessageContaining('conflicts with URL host');
 
         self::adapter()->parseAddInput(
-            'https://github.com/acme/skills',
-            hostOverride: 'https://github.corp.example.com',
+            'https://gitlab.com/acme/skills',
+            hostOverride: 'https://gitlab.corp.example.com',
         );
     }
 
@@ -127,43 +149,42 @@ final class GithubAdapterTest
     public function shorthandWithoutSlashThrows(): void
     {
         Expect::exception(\InvalidArgumentException::class)
-            ->withMessageContaining('owner/repo');
+            ->withMessageContaining('group/project');
 
         self::adapter()->parseAddInput('flat-name');
     }
 
-    public function shorthandWithExtraSlashThrows(): void
+    public function shorthandWithEmptySegmentThrows(): void
     {
         Expect::exception(\InvalidArgumentException::class)
-            ->withMessageContaining('owner/repo');
+            ->withMessageContaining('group/project');
 
-        self::adapter()->parseAddInput('a/b/c');
+        self::adapter()->parseAddInput('group//skills');
     }
 
-    // ── apiBaseFor: github.com vs GHE ──────────────────────────────
+    // ── apiBaseFor: gitlab.com vs self-hosted ──────────────────────
 
-    public function apiBaseForGithubComUsesDefault(): void
+    public function apiBaseForGitlabComUsesDefault(): void
     {
         $adapter = self::adapter();
 
-        Assert::same($adapter->apiBaseFor(null), 'https://api.github.com');
-        Assert::same($adapter->apiBaseFor('https://github.com'), 'https://api.github.com');
+        Assert::same($adapter->apiBaseFor(null), 'https://gitlab.com/api/v4');
+        Assert::same($adapter->apiBaseFor('https://gitlab.com'), 'https://gitlab.com/api/v4');
     }
 
-    public function apiBaseForGheAppendsApiV3(): void
+    public function apiBaseForSelfHostedAppendsApiV4(): void
     {
         $adapter = self::adapter();
 
         Assert::same(
-            $adapter->apiBaseFor('https://github.corp.example.com'),
-            'https://github.corp.example.com/api/v3',
+            $adapter->apiBaseFor('https://gitlab.corp.example.com'),
+            'https://gitlab.corp.example.com/api/v4',
         );
         // Trailing slash on stored host gets normalised away — both
-        // shapes produce the same API base, so swapping one for the
-        // other isn't a silent breakage.
+        // shapes produce the same API base.
         Assert::same(
-            $adapter->apiBaseFor('https://github.corp.example.com/'),
-            'https://github.corp.example.com/api/v3',
+            $adapter->apiBaseFor('https://gitlab.corp.example.com/'),
+            'https://gitlab.corp.example.com/api/v4',
         );
     }
 
@@ -172,41 +193,58 @@ final class GithubAdapterTest
     public function resolveExplicitTagSkipsApiCalls(): void
     {
         // A literal tag (not a constraint) doesn't need a tag listing
-        // — the adapter just hits zipball/<tag> directly. The stub
-        // would throw on any GET, so reaching the ref unchanged proves
-        // no API was called.
+        // — the adapter just hits archive.zip?sha=<tag> directly. The
+        // stub would throw on any GET, so reaching the ref unchanged
+        // proves no API was called.
         $http = new InMemoryHttpClient([]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills', ref: 'v1.2.3'));
 
         Assert::same($ref->ref, 'v1.2.3');
-        Assert::true(\str_ends_with($ref->url, '/repos/acme/skills/zipball/v1.2.3'));
+        Assert::true(\str_ends_with(
+            $ref->url,
+            '/projects/acme%2Fskills/repository/archive.zip?sha=v1.2.3',
+        ));
         Assert::same($http->callCount(), 0);
+    }
+
+    public function resolveEncodesNestedGroupProjectId(): void
+    {
+        // Every path separator in a nested-group package collapses to
+        // %2F in the API project id.
+        $http = new InMemoryHttpClient([]);
+        $adapter = new GitlabAdapter($http);
+
+        $ref = $adapter->resolve(self::entry('group/subgroup/skills', ref: 'main'));
+
+        Assert::true(\str_contains(
+            $ref->url,
+            '/projects/group%2Fsubgroup%2Fskills/repository/archive.zip?sha=main',
+        ));
     }
 
     public function resolveBranchRefIsTreatedAsLiteral(): void
     {
         $http = new InMemoryHttpClient([]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills', ref: 'main'));
 
         Assert::same($ref->ref, 'main');
-        Assert::true(\str_contains($ref->url, '/zipball/main'));
+        Assert::true(\str_contains($ref->url, 'archive.zip?sha=main'));
     }
 
-    public function resolveZipballUrlEncodesSpecialChars(): void
+    public function resolveArchiveUrlEncodesSpecialChars(): void
     {
-        // Tag names with `/` (e.g. `release/2024.01`) must round-trip
-        // safely through the URL path segment. rawurlencode handles
-        // this.
+        // Tag names with `/` (e.g. `release/2024`) must round-trip
+        // safely through the sha query parameter.
         $http = new InMemoryHttpClient([]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills', ref: 'release/2024'));
 
-        Assert::true(\str_contains($ref->url, '/zipball/release%2F2024'));
+        Assert::true(\str_contains($ref->url, 'sha=release%2F2024'));
     }
 
     // ── resolve: caret constraint ──────────────────────────────────
@@ -214,11 +252,11 @@ final class GithubAdapterTest
     public function resolveCaretPicksHighestMatchingTag(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse([
+            self::tagsUrl('acme%2Fskills') => self::tagsResponse([
                 'v1.2.3', 'v1.5.0', 'v2.0.0', 'v0.9.0',
             ]),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills', ref: '^1.2.0'));
 
@@ -228,9 +266,9 @@ final class GithubAdapterTest
     public function resolveCaretNoMatchingTagThrows(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse(['v2.0.0', 'v3.0.0']),
+            self::tagsUrl('acme%2Fskills') => self::tagsResponse(['v2.0.0', 'v3.0.0']),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         Expect::exception(RemoteResolveException::class)
             ->withMessageContaining('no tag in acme/skills matches');
@@ -243,11 +281,11 @@ final class GithubAdapterTest
     public function resolveNullRefPicksHighestStableTag(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse([
+            self::tagsUrl('acme%2Fskills') => self::tagsResponse([
                 'v0.9.0', 'v1.2.3', 'v2.0.0-rc.1',
             ]),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills'));
 
@@ -257,11 +295,11 @@ final class GithubAdapterTest
     public function resolveNullRefFallsBackToHighestPrereleaseWhenNoStable(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse([
+            self::tagsUrl('acme%2Fskills') => self::tagsResponse([
                 'v1.0.0-rc.1', 'v1.0.0-rc.2',
             ]),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills'));
 
@@ -271,54 +309,51 @@ final class GithubAdapterTest
     public function resolveNullRefFallsBackToDefaultBranchWhenNoTags(): void
     {
         // Cascade step 3: tag listing returns []; the adapter then
-        // queries /repos/{owner}/{repo} for default_branch.
+        // queries /projects/{id} for default_branch.
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse([]),
-            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'trunk']),
+            self::tagsUrl('acme%2Fskills') => self::tagsResponse([]),
+            'https://gitlab.com/api/v4/projects/acme%2Fskills' => self::okJson(['default_branch' => 'trunk']),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills'));
 
         Assert::same($ref->ref, 'trunk');
-        Assert::true(\str_contains($ref->url, '/zipball/trunk'));
+        Assert::true(\str_contains($ref->url, 'archive.zip?sha=trunk'));
     }
 
     public function resolveCascadeIgnoresNonSemverTags(): void
     {
-        // Tags like `nightly` / `latest` / `2024-01-01` are not
-        // semver-shape and must be invisible to the cascade — the
-        // adapter falls through to default branch.
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse(['nightly', '2024-01-01']),
-            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::tagsUrl('acme%2Fskills') => self::tagsResponse(['nightly', '2024-01-01']),
+            'https://gitlab.com/api/v4/projects/acme%2Fskills' => self::okJson(['default_branch' => 'main']),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry('acme/skills'));
 
         Assert::same($ref->ref, 'main');
     }
 
-    // ── resolve: GHE base URL ──────────────────────────────────────
+    // ── resolve: self-hosted base URL ──────────────────────────────
 
-    public function resolveUsesGheApiBaseWhenHostIsSet(): void
+    public function resolveUsesSelfHostedApiBaseWhenHostIsSet(): void
     {
         $http = new InMemoryHttpClient([
-            'https://github.corp.example.com/api/v3/repos/team/skills/tags?per_page=100' =>
+            'https://gitlab.corp.example.com/api/v4/projects/team%2Fskills/repository/tags?per_page=100' =>
                 self::tagsResponse(['v1.0.0']),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         $ref = $adapter->resolve(self::entry(
             'team/skills',
-            host: 'https://github.corp.example.com',
+            host: 'https://gitlab.corp.example.com',
         ));
 
         Assert::same($ref->ref, 'v1.0.0');
         Assert::true(\str_contains(
             $ref->url,
-            'github.corp.example.com/api/v3/repos/team/skills/zipball/v1.0.0',
+            'gitlab.corp.example.com/api/v4/projects/team%2Fskills/repository/archive.zip?sha=v1.0.0',
         ));
     }
 
@@ -327,10 +362,10 @@ final class GithubAdapterTest
     public function resolveHttp404Throws(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/missing/tags?per_page=100' =>
-                new HttpResponse(statusCode: 404, body: '{"message":"Not Found"}'),
+            self::tagsUrl('acme%2Fmissing') =>
+                new HttpResponse(statusCode: 404, body: '{"message":"404 Project Not Found"}'),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         Expect::exception(RemoteResolveException::class)
             ->withMessageContaining('returned HTTP 404');
@@ -341,10 +376,10 @@ final class GithubAdapterTest
     public function resolveTransportErrorWraps(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' =>
-                new HttpException('https://api.github.com/repos/acme/skills/tags?per_page=100', 'connection refused'),
+            self::tagsUrl('acme%2Fskills') =>
+                new HttpException(self::tagsUrl('acme%2Fskills'), 'connection refused'),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         Expect::exception(RemoteResolveException::class)
             ->withMessageContaining('connection refused');
@@ -355,10 +390,10 @@ final class GithubAdapterTest
     public function resolveInvalidJsonThrows(): void
     {
         $http = new InMemoryHttpClient([
-            'https://api.github.com/repos/acme/skills/tags?per_page=100' =>
+            self::tagsUrl('acme%2Fskills') =>
                 new HttpResponse(statusCode: 200, body: '{not json'),
         ]);
-        $adapter = new GithubAdapter($http);
+        $adapter = new GitlabAdapter($http);
 
         Expect::exception(RemoteResolveException::class)
             ->withMessageContaining('invalid JSON');
@@ -374,7 +409,7 @@ final class GithubAdapterTest
             ->withMessageContaining('adapter id mismatch');
 
         $adapter->resolve(new RemoteEntry(
-            from: 'gitlab',
+            from: 'github',
             package: 'acme/x',
             url: null,
             host: null,
@@ -382,31 +417,11 @@ final class GithubAdapterTest
         ));
     }
 
-    public function remoteEntryConstructorRejectsBothPackageAndUrlNull(): void
-    {
-        // The "package required for github" check used to live in
-        // GithubAdapter::resolve(), but RemoteEntry's constructor now
-        // refuses entries where neither `package` nor `url` is set —
-        // a malformed github entry can no longer reach the adapter.
-        // Keep the test as the lower-tier invariant probe so the
-        // VO's contract stays covered here.
-        Expect::exception(\InvalidArgumentException::class)
-            ->withMessageContaining('neither set');
-
-        new RemoteEntry(
-            from: 'github',
-            package: null,
-            url: null,
-            host: null,
-            ref: null,
-        );
-    }
-
     // ── helpers ────────────────────────────────────────────────────
 
-    private static function adapter(): GithubAdapter
+    private static function adapter(): GitlabAdapter
     {
-        return new GithubAdapter(new InMemoryHttpClient([]));
+        return new GitlabAdapter(new InMemoryHttpClient([]));
     }
 
     /**
@@ -417,12 +432,22 @@ final class GithubAdapterTest
     private static function entry(string $package, ?string $host = null, ?string $ref = null): RemoteEntry
     {
         return new RemoteEntry(
-            from: 'github',
+            from: 'gitlab',
             package: $package,
             url: null,
             host: $host,
             ref: $ref,
         );
+    }
+
+    /**
+     * @param non-empty-string $encodedProjectId already-URL-encoded id, e.g. `acme%2Fskills`
+     *
+     * @return non-empty-string
+     */
+    private static function tagsUrl(string $encodedProjectId): string
+    {
+        return 'https://gitlab.com/api/v4/projects/' . $encodedProjectId . '/repository/tags?per_page=100';
     }
 
     /**

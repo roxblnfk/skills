@@ -12,6 +12,7 @@ use Composer\Util\HttpDownloader;
 use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
@@ -122,7 +123,10 @@ final readonly class DonorProviderBuilder
             new HttpDownloader(new NullIO(), $config),
         );
 
-        $registry = new HostAdapterRegistry(new GithubAdapter($httpClient));
+        $registry = new HostAdapterRegistry(
+            new GithubAdapter($httpClient),
+            new GitlabAdapter($httpClient),
+        );
         $source = new SkillsJsonRemoteDonorSource($registry, $this->mapper);
         $fetcher = new HttpArchiveFetcher(
             $httpClient,

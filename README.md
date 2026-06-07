@@ -11,7 +11,7 @@
 <br />
 
 A **Composer plugin** that downloads AI Skills from your Composer/vendor packages **and** from
-arbitrary Git repositories (GitHub today, added with `skills:add`), then keeps them synced into
+arbitrary Git repositories (GitHub and GitLab, added with `skills:add`), then keeps them synced into
 a project-local directory (default `.agents/skills/`).
 
 An *AI Skill* is a directory containing a `SKILL.md` plus any auxiliary files (templates,
@@ -352,7 +352,7 @@ Shipped in [`resources/trusted-composer.txt`](resources/trusted-composer.txt); e
 `llm/skills` reads donors from two axes:
 
 - **Local providers** — walk a manifest the project already owns. Today only `composer`; `npm` and `go` are reserved in the vocabulary but ship later.
-- **Remote providers** — fetch an explicit ref from a URL (currently GitHub; the format is forward-compatible with GitLab, Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`).
+- **Remote providers** — fetch an explicit ref from a URL (currently GitHub and GitLab; the format is forward-compatible with Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`).
 
 Both axes coexist. When the same package name arrives via both, the **remote entry wins** (you typed it; the transitive Composer pickup is treated as stale) and the displaced donor is logged under `-v`.
 
@@ -363,9 +363,11 @@ composer skills:add acme/skills                               # latest stable, w
 composer skills:add acme/skills --ref=v1.2.3                  # pinned tag
 composer skills:add 'acme/skills@main'                        # branch HEAD
 composer skills:add https://github.com/acme/skills            # full URL; adapter inferred from host
-composer skills:add team/skills --from=gitlab                 # use a different adapter
+composer skills:add team/skills --from=gitlab                 # GitLab donor (group/project shorthand)
 composer skills:add team/skills \
         --host=https://github.corp.example.com                # GitHub Enterprise
+composer skills:add team/skills --from=gitlab \
+        --host=https://gitlab.corp.example.com                # self-hosted GitLab
 composer skills:add acme/skills \
         --skill=code-review --skill=refactor                  # only these two skills
 composer skills:add acme/skills --no-sync                     # only edit skills.json
@@ -375,7 +377,7 @@ composer skills:add acme/skills --no-sync                     # only edit skills
 
 The command:
 
-1. parses the input via the resolved adapter (currently `github`);
+1. parses the input via the resolved adapter (`github` or `gitlab`);
 2. resolves the ref — explicit value wins verbatim; without `--ref` the adapter picks the highest stable tag, falling back to the highest prerelease tag, then to the default branch HEAD;
 3. downloads the archive into `vendor/llm-skills/cache/...` (gitignored by virtue of vendor);
 4. validates that the archive is a donor — either a `composer.json` with `extra.skills.source`, or (for bare skill repos) at least one `SKILL.md` found by [auto-discovery](#auto-discovery);

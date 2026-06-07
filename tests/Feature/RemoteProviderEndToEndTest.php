@@ -6,6 +6,7 @@ namespace LLM\Skills\Tests\Feature;
 
 use Internal\Path;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpClient;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpResponse;
@@ -45,6 +46,7 @@ use Testo\Test;
 #[Covers(RemoteProvider::class)]
 #[Covers(SkillsJsonRemoteDonorSource::class)]
 #[Covers(GithubAdapter::class)]
+#[Covers(GitlabAdapter::class)]
 #[Covers(HttpArchiveFetcher::class)]
 final class RemoteProviderEndToEndTest
 {
@@ -110,6 +112,64 @@ final class RemoteProviderEndToEndTest
 
         // The donor's package root is the cache path the fetcher
         // returned. Verify the extracted skill file actually landed.
+        $skillFile = (string) $result->donors[0]->sourcePath()->join('hello/SKILL.md');
+        Assert::true(\is_file($skillFile), 'extracted skill file must exist at ' . $skillFile);
+        Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
+    }
+
+    public function gitlabRemoteEntryResolvesFetchesAndProducesDonor(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // Same end-to-end shape as the GitHub success case, but through
+        // the GitLab adapter. The point worth pinning here is the
+        // GitLab-specific download URL: a `archive.zip?sha=<ref>`
+        // endpoint with a URL-encoded project id (`acme%2Fskills`) and
+        // a query string — unlike GitHub's path-only zipball URL. The
+        // fetcher and cache must carry that URL through unchanged.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'remote' => [
+                ['from' => 'gitlab', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        // GitLab archives wrap everything in a single top-level dir
+        // named `{project}-{ref}-{sha}`; the exact name is irrelevant to
+        // the fetcher, which only requires there to be exactly one.
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'skills-v1.0.0-0abc123def',
+            files: [
+                'composer.json' => \json_encode([
+                    'name' => 'acme/skills',
+                    'extra' => ['skills' => ['source' => 'skills']],
+                ], \JSON_THROW_ON_ERROR),
+                'skills/hello/SKILL.md' => "---\nname: hello\n---\nhi",
+            ],
+        );
+
+        $http = self::stubHttp([
+            // Literal `v1.0.0` resolves directly to the archive endpoint
+            // — no tag listing needed.
+            'https://gitlab.com/api/v4/projects/acme%2Fskills/repository/archive.zip?sha=v1.0.0' =>
+                new HttpResponse(statusCode: 200, body: $zipBytes),
+        ]);
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry(new GitlabAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        Assert::true($provider->isActive(Path::create($this->tmp)));
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
+        Assert::same($result->donors[0]->provenance, 'gitlab');
+        Assert::true($result->donors[0]->implicitTrust);
+
         $skillFile = (string) $result->donors[0]->sourcePath()->join('hello/SKILL.md');
         Assert::true(\is_file($skillFile), 'extracted skill file must exist at ' . $skillFile);
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));

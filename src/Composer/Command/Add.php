@@ -14,6 +14,7 @@ use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
@@ -26,9 +27,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 /**
  * Composer plugin entrypoint for `skills:add` (alias `skills:a`).
  *
- * Wires the {@see AddRunner} with a registry containing every v1
- * adapter (currently just GitHub) plus a real Composer-backed
- * fetcher so credentials in `auth.json` apply.
+ * Wires the {@see AddRunner} with a registry containing every
+ * adapter (GitHub, GitLab) plus a real Composer-backed fetcher so
+ * credentials in `auth.json` apply.
  *
  * After the runner returns SUCCESS, the entrypoint optionally
  * triggers a single-entry sync (via {@see SyncRunner}) so the new
@@ -58,7 +59,10 @@ final class Add extends BaseCommand
         $composer = $this->requireComposer();
         $projectRoot = Path::create(\getcwd() ?: '.');
         $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $composer->getConfig()));
-        $registry = new HostAdapterRegistry(new GithubAdapter($http));
+        $registry = new HostAdapterRegistry(
+            new GithubAdapter($http),
+            new GitlabAdapter($http),
+        );
         $fetcher = new HttpArchiveFetcher($http, $projectRoot, self::cacheBuilderFor($composer));
 
         $runner = new AddRunner($registry, $fetcher);

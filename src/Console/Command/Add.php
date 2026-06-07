@@ -17,6 +17,7 @@ use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
@@ -73,7 +74,10 @@ final class Add extends Command
         // which still loads the user-wide `~/.composer/auth.json`.
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
         $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $config));
-        $registry = new HostAdapterRegistry(new GithubAdapter($http));
+        $registry = new HostAdapterRegistry(
+            new GithubAdapter($http),
+            new GitlabAdapter($http),
+        );
         $fetcher = new HttpArchiveFetcher($http, $projectRoot, self::cacheBuilderFor($config));
 
         $runner = new AddRunner($registry, $fetcher);
