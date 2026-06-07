@@ -9,7 +9,6 @@ use Composer\Config;
 use Composer\Factory;
 use Composer\IO\ConsoleIO;
 use Composer\IO\NullIO;
-use Composer\Util\HttpDownloader;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Config\RemoteEntry;
@@ -73,7 +72,7 @@ final class Add extends Command
         // back to a default Config built via `Factory::createConfig()`,
         // which still loads the user-wide `~/.composer/auth.json`.
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
-        $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $config));
+        $http = ComposerHttpClient::fromConfig($config);
         $registry = new HostAdapterRegistry(
             new GithubAdapter($http),
             new GitlabAdapter($http),

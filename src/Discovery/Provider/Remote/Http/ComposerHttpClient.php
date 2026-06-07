@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Discovery\Provider\Remote\Http;
 
+use Composer\Config;
 use Composer\Downloader\TransportException;
+use Composer\IO\IOInterface;
+use Composer\IO\NullIO;
 use Composer\Util\HttpDownloader;
 
 /**
@@ -36,6 +39,45 @@ final readonly class ComposerHttpClient implements HttpClient
     public function __construct(
         private HttpDownloader $downloader,
     ) {}
+
+    /**
+     * Build a client whose downloader can actually authenticate.
+     *
+     * Composer keeps credentials on the **IO**, not the {@see Config}:
+     * `auth.json` / `COMPOSER_AUTH` tokens (`github-oauth`,
+     * `gitlab-token`, `http-basic`, `bearer`, …) only reach a request
+     * after {@see IOInterface::loadConfiguration()} has parsed the
+     * config into the IO's authentication store. A bare
+     * `new HttpDownloader(new NullIO(), $config)` therefore sends every
+     * request anonymously — fine for public repos, but a private GitLab
+     * project answers anonymous API calls with `404 Project Not Found`
+     * (it never even gets the `401` that would trigger Composer's
+     * auth-retry), so the fetch fails no matter how the token is
+     * configured.
+     *
+     * Loading the config into the IO here fixes that. As a bonus,
+     * {@see IOInterface::loadConfiguration()} implicitly registers any
+     * host that has a `gitlab-token` / `github-oauth` entry into the
+     * matching `*-domains` list, so a self-hosted host needs only the
+     * token, not a separate `gitlab-domains` entry.
+     *
+     * A {@see NullIO} is used by default so the fetch stays
+     * non-interactive (no credential prompts mid-sync); the stored
+     * token is all we need. A malformed token in `auth.json` must not
+     * abort discovery/sync, so a load failure degrades to anonymous —
+     * the private fetch then surfaces the 404 + auth hint.
+     */
+    public static function fromConfig(Config $config, ?IOInterface $io = null): self
+    {
+        $io ??= new NullIO();
+        try {
+            $io->loadConfiguration($config);
+        } catch (\Throwable) {
+            // Proceed unauthenticated; a private fetch will report the
+            // 404/401 with the adapter's auth hint.
+        }
+        return new self(new HttpDownloader($io, $config));
+    }
 
     #[\Override]
     public function get(string $url, array $headers = []): HttpResponse

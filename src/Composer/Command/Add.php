@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace LLM\Skills\Composer\Command;
 
 use Composer\Command\BaseCommand;
-use Composer\IO\NullIO;
-use Composer\Util\HttpDownloader;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Config\RemoteEntry;
@@ -58,7 +56,7 @@ final class Add extends BaseCommand
 
         $composer = $this->requireComposer();
         $projectRoot = Path::create(\getcwd() ?: '.');
-        $http = new ComposerHttpClient(new HttpDownloader(new NullIO(), $composer->getConfig()));
+        $http = ComposerHttpClient::fromConfig($composer->getConfig());
         $registry = new HostAdapterRegistry(
             new GithubAdapter($http),
             new GitlabAdapter($http),

@@ -8,7 +8,6 @@ use Composer\Composer;
 use Composer\Config;
 use Composer\Factory;
 use Composer\IO\NullIO;
-use Composer\Util\HttpDownloader;
 use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
@@ -119,9 +118,7 @@ final readonly class DonorProviderBuilder
     private function buildRemoteProvider(?Composer $composer): RemoteProvider
     {
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
-        $httpClient = new ComposerHttpClient(
-            new HttpDownloader(new NullIO(), $config),
-        );
+        $httpClient = ComposerHttpClient::fromConfig($config);
 
         $registry = new HostAdapterRegistry(
             new GithubAdapter($httpClient),
