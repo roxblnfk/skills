@@ -97,8 +97,13 @@ final readonly class GitlabAdapter implements HostAdapter
      * - `group/project` — shorthand, defaults to `gitlab.com`.
      * - `group/subgroup/project` — nested groups are allowed.
      * - `group/project@ref` — shorthand with explicit ref.
-     * - `https://gitlab.com/group/project` — full URL.
+     * - `https://gitlab.com/group/project` — full HTTP(S) URL.
      * - `https://gitlab.com/group/project.git` — `.git` suffix tolerated.
+     * - `ssh://git@gitlab.com/group/project.git` — SSH URL.
+     * - `git@gitlab.com:group/project.git` — SCP-style clone URL (the
+     *   form `git clone` prints). The SSH host becomes the
+     *   `https://<host>` API host — the archive is still fetched over
+     *   the HTTPS API, not over SSH.
      *
      * `$refOverride` and the embedded `@ref` cannot both be set —
      * conflicting ref sources are rejected with an error.
@@ -121,29 +126,29 @@ final readonly class GitlabAdapter implements HostAdapter
         $ref = $refOverride;
         $packageRaw = null;
 
-        // Case 1: full URL. Try to extract host + project path from it.
-        // The path is captured greedily (minus a trailing `.git` and
-        // any query/fragment) because GitLab projects can live under
-        // nested groups — `group/subgroup/project` is one valid path.
-        // Delimiter is `~` because the pattern's character class
-        // contains `#`, which would otherwise close a `#`-delimited
-        // regex mid-pattern.
+        // Each URL form extracts host + project path; the path is
+        // captured greedily (minus a trailing `.git` and any
+        // query/fragment) because GitLab projects can live under nested
+        // groups — `group/subgroup/project` is one valid path. Delimiter
+        // is `~` because the patterns contain `#`, which would otherwise
+        // close a `#`-delimited regex mid-pattern.
         if (\preg_match('~^(https?://[^/]+)/(.+?)(?:\.git)?(?:[?\#].*)?$~', $input, $m) === 1) {
-            $extractedHost = $m[1];
+            // Case 1a: full HTTP(S) URL.
+            $host = self::reconcileHost($host, $m[1]);
             $packageRaw = $m[2];
-            if ($host !== null && $host !== $extractedHost) {
-                throw new \InvalidArgumentException(\sprintf(
-                    'gitlab adapter: --host=%s conflicts with URL host %s',
-                    $host,
-                    $extractedHost,
-                ));
-            }
-            // For gitlab.com URLs we leave host implicit so it defaults
-            // to DEFAULT_HOST; only self-hosted hosts get an explicit
-            // value to keep the stored config terse.
-            if ($host === null && $extractedHost !== self::DEFAULT_HOST && $extractedHost !== '') {
-                $host = $extractedHost;
-            }
+        } elseif (\preg_match('~^ssh://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+?)(?:\.git)?/?$~', $input, $m) === 1) {
+            // Case 1b: `ssh://[user@]host[:port]/group/project(.git)`.
+            $host = self::reconcileHost($host, 'https://' . $m[1]);
+            $packageRaw = $m[2];
+        } elseif (
+            \preg_match('~^(?:[^@/\s]+@)?([^@/:\s]+):(.+?)(?:\.git)?$~', $input, $m) === 1
+            && \str_contains($m[2], '/')
+        ) {
+            // Case 1c: SCP-style `[user@]host:group/project(.git)`. The
+            // path-must-contain-a-slash guard keeps a plain `host:thing`
+            // (no project path) from being mistaken for a clone URL.
+            $host = self::reconcileHost($host, 'https://' . $m[1]);
+            $packageRaw = $m[2];
         } elseif (\strpos($input, '@') !== false) {
             // Case 2a: shorthand with embedded ref.
             [$pkgPart, $refPart] = \explode('@', $input, 2);
@@ -252,6 +257,37 @@ final readonly class GitlabAdapter implements HostAdapter
             return self::DEFAULT_API_BASE;
         }
         return $trimmed . '/api/v4';
+    }
+
+    /**
+     * Merge an explicit `--host` override with the host extracted from
+     * a URL. Conflicts are rejected; a host that equals
+     * {@see self::DEFAULT_HOST} is left implicit (stored as `null`) so
+     * `gitlab.com` config stays terse. Self-hosted hosts are kept.
+     *
+     * @param non-empty-string|null $hostOverride
+     * @param string $extractedHost full `scheme://host` extracted from the input
+     *
+     * @return non-empty-string|null
+     *
+     * @psalm-pure
+     */
+    private static function reconcileHost(?string $hostOverride, string $extractedHost): ?string
+    {
+        if ($hostOverride !== null && $hostOverride !== $extractedHost) {
+            throw new \InvalidArgumentException(\sprintf(
+                'gitlab adapter: --host=%s conflicts with URL host %s',
+                $hostOverride,
+                $extractedHost,
+            ));
+        }
+        if ($hostOverride !== null) {
+            return $hostOverride;
+        }
+        if ($extractedHost !== self::DEFAULT_HOST && $extractedHost !== '') {
+            return $extractedHost;
+        }
+        return null;
     }
 
     /**

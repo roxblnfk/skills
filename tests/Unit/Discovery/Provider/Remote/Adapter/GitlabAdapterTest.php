@@ -127,6 +127,54 @@ final class GitlabAdapterTest
         Assert::same($parsed->package, 'acme/skills');
     }
 
+    public function scpStyleCloneUrlWithSubgroupIsParsed(): void
+    {
+        // Regression for the SCP-style `git clone` URL of a project that
+        // lives in a subgroup — the form users paste verbatim. The SSH
+        // host becomes the HTTPS API host (the archive is fetched over
+        // the API, not over SSH).
+        $adapter = self::adapter();
+
+        $parsed = $adapter->parseAddInput('git@gitlab.corp.example.com:backend/be-libs/skills.git');
+
+        Assert::same($parsed->package, 'backend/be-libs/skills');
+        Assert::same($parsed->host, 'https://gitlab.corp.example.com');
+    }
+
+    public function scpStyleGitlabComUrlLeavesHostImplicit(): void
+    {
+        // gitlab.com is the only host left implicit, mirroring the
+        // HTTP-URL behaviour.
+        $adapter = self::adapter();
+
+        $parsed = $adapter->parseAddInput('git@gitlab.com:acme/skills.git');
+
+        Assert::same($parsed->package, 'acme/skills');
+        Assert::same($parsed->host, null);
+    }
+
+    public function sshUrlIsParsed(): void
+    {
+        $adapter = self::adapter();
+
+        $parsed = $adapter->parseAddInput('ssh://git@gitlab.corp.example.com/backend/be-libs/skills.git');
+
+        Assert::same($parsed->package, 'backend/be-libs/skills');
+        Assert::same($parsed->host, 'https://gitlab.corp.example.com');
+    }
+
+    public function sshUrlWithPortStripsThePort(): void
+    {
+        // A custom SSH port has no bearing on the HTTPS API host — it
+        // must not leak into the stored host value.
+        $adapter = self::adapter();
+
+        $parsed = $adapter->parseAddInput('ssh://git@gitlab.corp.example.com:2222/group/skills.git');
+
+        Assert::same($parsed->package, 'group/skills');
+        Assert::same($parsed->host, 'https://gitlab.corp.example.com');
+    }
+
     public function hostOverrideConflictingWithUrlHostThrows(): void
     {
         Expect::exception(\InvalidArgumentException::class)
