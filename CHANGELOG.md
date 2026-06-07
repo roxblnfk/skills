@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0](https://github.com/roxblnfk/skills/compare/1.6.0...1.7.0) (2026-06-07)
+
+
+### Features
+
+* hint at GitLab auth setup on 401/403/404 ([631d92b](https://github.com/roxblnfk/skills/commit/631d92b76d88c7d653281a9de0a8b0fd6638a527))
+
+
+### Bug Fixes
+
+* parse GitLab SSH/SCP clone URLs in gitlab adapter ([04810fe](https://github.com/roxblnfk/skills/commit/04810fee15d88f2eba524ed7ca2fb4318c5a1354))
+
 ## [1.6.0](https://github.com/roxblnfk/skills/compare/1.5.0...1.6.0) (2026-06-07)
 
 
