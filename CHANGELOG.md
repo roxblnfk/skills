@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/roxblnfk/skills/compare/1.5.0...1.6.0) (2026-06-07)
+
+
+### Features
+
+* GitLab remote skill provider (gitlab adapter) ([#18](https://github.com/roxblnfk/skills/issues/18)) ([884f6d0](https://github.com/roxblnfk/skills/commit/884f6d00d4ad7fa98de84772336ffbba95dca936))
+
 ## [1.5.0](https://github.com/roxblnfk/skills/compare/1.4.0...1.5.0) (2026-06-05)
 
 
