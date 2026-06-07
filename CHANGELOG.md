@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/roxblnfk/skills/compare/1.7.0...1.7.1) (2026-06-07)
+
+
+### Bug Fixes
+
+* load auth tokens into the IO so private remote fetches authenticate ([8ddc9a8](https://github.com/roxblnfk/skills/commit/8ddc9a8ac50b9138dc00539757b43ba4b13a509c))
+
 ## [1.7.0](https://github.com/roxblnfk/skills/compare/1.6.0...1.7.0) (2026-06-07)
 
 
