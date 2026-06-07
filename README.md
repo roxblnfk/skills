@@ -423,6 +423,15 @@ A donor often ships more skills than you want in a given project. The optional `
 
 Remote adapters reuse Composer's `auth.json` / `COMPOSER_AUTH` plumbing — no new credential surfaces. A GitHub token configured for `composer require` works as-is for `skills:add`.
 
+**Self-hosted GitLab.** A private GitLab project answers unauthenticated API calls with `404 Project Not Found` (it hides private projects rather than returning `401`), so the fetch fails until Composer has a token *and* knows the host is a GitLab instance. Composer only attaches the token to hosts listed in `gitlab-domains`:
+
+```bash
+composer config --global gitlab-domains gitlab.example.com
+composer config --global gitlab-token.gitlab.example.com <personal-access-token>   # scope: read_api
+```
+
+Public projects (and everything on `gitlab.com`) need no setup.
+
 ### Archive safety
 
 Remote archives are downloaded from a user-configurable `host`, so every zip entry name is validated **before** extraction. Absolute paths (`/foo`, `C:/foo`), `..` segments (`../etc/passwd`), backslash-rooted paths (`\\server\share`), and NUL bytes are rejected as a malformed archive; the fetcher emits a per-ref `-v` warning and never writes to disk. The scratch directory used during extraction is cleaned in a `finally` regardless of success.

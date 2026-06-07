@@ -421,6 +421,43 @@ final class GitlabAdapterTest
         $adapter->resolve(self::entry('acme/missing'));
     }
 
+    public function resolve404AppendsAuthHintForPrivateProjects(): void
+    {
+        // GitLab masks a private project behind a 404, so the error must
+        // point the user at Composer's GitLab auth config rather than
+        // leaving them to guess. The hint names the concrete host.
+        $http = new InMemoryHttpClient([
+            'https://gitlab.corp.example.com/api/v4/projects/backend%2Fbe-libs%2Fskills/repository/tags?per_page=100' =>
+                new HttpResponse(statusCode: 404, body: '{"message":"404 Project Not Found"}'),
+        ]);
+        $adapter = new GitlabAdapter($http);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('gitlab-token.gitlab.corp.example.com');
+
+        $adapter->resolve(self::entry('backend/be-libs/skills', host: 'https://gitlab.corp.example.com'));
+    }
+
+    public function transport404AlsoAppendsAuthHint(): void
+    {
+        // Composer's HttpDownloader raises on 4xx, so the 404 arrives as
+        // a transport exception, not a 404 response — the hint must fire
+        // on that path too.
+        $url = self::tagsUrl('acme%2Fsecret');
+        $http = new InMemoryHttpClient([
+            $url => new HttpException(
+                $url,
+                'The "' . $url . '" file could not be downloaded (HTTP/2 404 ): {"message":"404 Project Not Found"}',
+            ),
+        ]);
+        $adapter = new GitlabAdapter($http);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('gitlab-domains gitlab.com');
+
+        $adapter->resolve(self::entry('acme/secret'));
+    }
+
     public function resolveTransportErrorWraps(): void
     {
         $http = new InMemoryHttpClient([

@@ -331,6 +331,63 @@ final readonly class GitlabAdapter implements HostAdapter
     }
 
     /**
+     * Heuristic: does the transport message carry a 401 / 403 / 404
+     * status? Those three are the ones an access-token would fix (GitLab
+     * masks private projects as 404), so they trigger the auth hint.
+     *
+     * @psalm-pure
+     */
+    private static function looksLikeAuthFailure(string $message): bool
+    {
+        return \preg_match('~\b(401|403|404)\b~', $message) === 1;
+    }
+
+    /**
+     * A one-line pointer at Composer's GitLab auth config, appended to
+     * 401/403/404 errors. Self-hosted GitLab needs both the host
+     * registered as a GitLab instance AND a token; without the
+     * `gitlab-domains` entry Composer never attaches the token, so the
+     * private project keeps 404-ing.
+     *
+     * @psalm-pure
+     */
+    private static function authHint(RemoteEntry $entry): string
+    {
+        $host = self::bareHost($entry->host);
+        return \sprintf(
+            ' — if the project is private, authorize this host with Composer: '
+            . '`composer config --global gitlab-domains %s` and '
+            . '`composer config --global gitlab-token.%s <token>` '
+            . '(a personal access token with the read_api scope)',
+            $host,
+            $host,
+        );
+    }
+
+    /**
+     * Bare hostname for the auth hint — `gitlab.example.com`, not the
+     * full `https://gitlab.example.com`. Falls back to the public host
+     * when the entry stores none.
+     *
+     * @param non-empty-string|null $host
+     *
+     * @return non-empty-string
+     *
+     * @psalm-pure
+     */
+    private static function bareHost(?string $host): string
+    {
+        if ($host === null) {
+            return 'gitlab.com';
+        }
+        $parsed = \parse_url($host, \PHP_URL_HOST);
+        if (\is_string($parsed) && $parsed !== '') {
+            return $parsed;
+        }
+        return $host;
+    }
+
+    /**
      * @param non-empty-string $apiBase
      * @param non-empty-string $package group/project
      */
@@ -470,13 +527,25 @@ final readonly class GitlabAdapter implements HostAdapter
                 'User-Agent' => 'llm-skills',
             ]);
         } catch (HttpException $e) {
+            // Composer's HttpDownloader raises on 4xx/5xx, so a private
+            // project (which GitLab reports as 404, not 401/403, to
+            // avoid leaking its existence) lands here rather than in the
+            // status check below. Sniff the status out of the message so
+            // the auth hint still fires.
             $msg = $e->getMessage();
-            throw new RemoteResolveException($entry, $msg !== '' ? $msg : 'transport failure', $e);
+            $reason = $msg !== '' ? $msg : 'transport failure';
+            if (self::looksLikeAuthFailure($msg)) {
+                $reason .= self::authHint($entry);
+            }
+            throw new RemoteResolveException($entry, $reason, $e);
         }
 
         if (!$response->isSuccess()) {
-            /** @var non-empty-string $reason */
             $reason = \sprintf('%s returned HTTP %d', $url, $response->statusCode);
+            if (\in_array($response->statusCode, [401, 403, 404], true)) {
+                $reason .= self::authHint($entry);
+            }
+            /** @var non-empty-string $reason */
             throw new RemoteResolveException($entry, $reason);
         }
         return $response;
