@@ -96,6 +96,7 @@ final readonly class SyncPlanner
         }
 
         $target = $this->resolveTarget($project, $options, $projectRoot);
+        $this->assertNotProjectRoot($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
         if (!$project->externalTarget) {
             $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
         }
@@ -172,6 +173,32 @@ final readonly class SyncPlanner
             $context,
             $raw,
             $resolved,
+            $projectRoot,
+            $context,
+        ));
+    }
+
+    /**
+     * @param non-empty-string $context human-readable label of the config field, e.g. `target`
+     * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
+     *        the user can locate the offending entry in their config
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function assertNotProjectRoot(
+        Path $resolved,
+        Path $projectRoot,
+        string $context,
+        string $raw,
+    ): void {
+        if ((string) $resolved !== (string) $projectRoot) {
+            return;
+        }
+
+        throw new MalformedProjectConfig(\sprintf(
+            '%s "%s" resolves to the project root "%s"; %s must point to a directory inside or outside the project root',
+            $context,
+            $raw,
             $projectRoot,
             $context,
         ));

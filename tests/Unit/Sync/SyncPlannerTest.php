@@ -378,6 +378,27 @@ final class SyncPlannerTest
         );
     }
 
+    public function projectRootTargetIsRejectedEvenWhenExternalTargetsAreAllowed(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('resolves to the project root');
+
+        $project = new ProjectConfig(
+            target: '.',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            externalTarget: true,
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
     public function aliasesDefaultToEmptyListWhenNeitherConfigNorCliProvidesThem(): void
     {
         $plan = $this->planner()->plan(
