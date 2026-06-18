@@ -184,6 +184,8 @@ final readonly class SyncPlanner
      *        the user can locate the offending entry in their config
      *
      * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
      */
     private function assertNotProjectRoot(
         Path $resolved,
