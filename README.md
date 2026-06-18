@@ -175,6 +175,7 @@ where to put it, who to trust, whether to auto-sync.
   "trusted-replace": false,
   "discovery": false,
   "auto-sync": true,
+  "allow-external-target": false,
 
   "local":  { "composer": true },
   "remote": [
@@ -193,6 +194,7 @@ where to put it, who to trust, whether to auto-sync.
 | `trusted-replace` | bool        | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
 | `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
+| `allow-external-target` | bool   | `false`          | Allow `target` to resolve outside the project root. Aliases stay project-contained.     |
 | `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Remote sources](#remote-sources). |
 | `remote`          | object[]    | `[]`             | Explicit remote donor refs. Managed by `skills:add`; documented in [Remote sources](#remote-sources). |
 

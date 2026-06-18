@@ -39,6 +39,7 @@ final readonly class ProjectConfig
      * @param bool $autoSync when true, the plugin runs `skills:update` automatically after
      *         every `composer install` / `composer update`, removing the need to wire up
      *         `scripts.post-install-cmd` and `scripts.post-update-cmd` by hand
+     * @param bool $allowExternalTarget when true, `target` may resolve outside the project root
      * @param array<non-empty-string, bool> $local local-provider toggles. Keys are provider ids
      *         from {@see ProviderId::LOCAL_IDS}; values turn the provider on/off. Absent keys
      *         fall back to {@see ProviderId::defaultLocalEnabled()} — `composer` defaults to
@@ -57,6 +58,7 @@ final readonly class ProjectConfig
         public bool $discovery = false,
         public array $aliases = [],
         public bool $autoSync = true,
+        public bool $allowExternalTarget = false,
         public array $local = [],
         public array $remote = [],
     ) {}
@@ -76,6 +78,7 @@ final readonly class ProjectConfig
             discovery: false,
             aliases: [],
             autoSync: true,
+            allowExternalTarget: false,
             local: [],
             remote: [],
         );
@@ -112,6 +115,7 @@ final readonly class ProjectConfig
             $this->discovery,
             $this->aliases,
             $this->autoSync,
+            $this->allowExternalTarget,
             $this->local,
             $this->remote,
         );
@@ -131,6 +135,7 @@ final readonly class ProjectConfig
             $this->discovery,
             $aliases,
             $this->autoSync,
+            $this->allowExternalTarget,
             $this->local,
             $this->remote,
         );

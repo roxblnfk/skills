@@ -56,6 +56,7 @@ final readonly class ProjectConfigMapper
         'trusted-replace',
         'discovery',
         'auto-sync',
+        'allow-external-target',
         'local',
         'remote',
     ];
@@ -314,6 +315,13 @@ final readonly class ProjectConfigMapper
             );
         }
 
+        $allowExternalTarget = $skills['allow-external-target'] ?? false;
+        if (!\is_bool($allowExternalTarget)) {
+            throw new MalformedProjectConfig(
+                self::field($prefix, 'allow-external-target') . ' must be a boolean',
+            );
+        }
+
         $local = $this->mapLocal($skills['local'] ?? [], $prefix);
         $remote = $this->mapRemote($skills['remote'] ?? [], $prefix);
 
@@ -324,6 +332,7 @@ final readonly class ProjectConfigMapper
             discovery: $discovery,
             aliases: $aliases,
             autoSync: $autoSync,
+            allowExternalTarget: $allowExternalTarget,
             local: $local,
             remote: $remote,
         );

@@ -51,6 +51,11 @@
             "description": "When true (default), the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
             "default": true
         },
+        "allow-external-target": {
+            "type": "boolean",
+            "description": "When true, target may resolve outside the project root. Default: false keeps target writes contained inside the project root.",
+            "default": false
+        },
         "local": {
             "type": "object",
             "description": "Per-local-provider on/off toggles. Keys must come from the locked vocabulary (composer, npm, go). Absent keys fall back to per-provider defaults: composer enabled, others disabled until their provider implementation lands.",

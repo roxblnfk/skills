@@ -322,6 +322,28 @@ final class ProjectConfigMapperTest
         (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => 'yes']]);
     }
 
+    public function allowExternalTargetDefaultsToFalse(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::same($cfg->allowExternalTarget, false);
+    }
+
+    public function allowExternalTargetIsMappedWhenTrue(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['allow-external-target' => true]]);
+
+        Assert::same($cfg->allowExternalTarget, true);
+    }
+
+    public function allowExternalTargetNonBoolThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.allow-external-target');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['allow-external-target' => 'yes']]);
+    }
+
     // ── forProject(): decision tree between skills.json and inline ──────
 
     public function forProjectFallsBackToInlineWhenSkillsJsonAbsent(): void

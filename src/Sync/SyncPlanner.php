@@ -96,7 +96,9 @@ final readonly class SyncPlanner
         }
 
         $target = $this->resolveTarget($project, $options, $projectRoot);
-        $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
+        if (!$project->allowExternalTarget) {
+            $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
+        }
 
         return new SyncPlan(
             approvedDonors: $approved,
@@ -129,7 +131,8 @@ final readonly class SyncPlanner
     }
 
     /**
-     * Reject paths that resolve outside the project root.
+     * Reject paths that resolve outside the project root unless the target
+     * explicitly opted into external writes.
      *
      * The project's own `composer.json` is trusted input (the user
      * wrote it), so this is not a sandbox boundary against malicious

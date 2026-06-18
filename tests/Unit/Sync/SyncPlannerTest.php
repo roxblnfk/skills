@@ -326,6 +326,58 @@ final class SyncPlannerTest
         );
     }
 
+    public function targetWithDotDotEscapeIsAcceptedWhenExternalTargetsAreAllowed(): void
+    {
+        $project = new ProjectConfig(
+            target: '../.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            allowExternalTarget: true,
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/some/.agents/skills'),
+        );
+    }
+
+    public function cliTargetOutsideProjectRootIsAcceptedWhenExternalTargetsAreAllowed(): void
+    {
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: '/tmp/skills',
+            interactive: false,
+        );
+        $project = new ProjectConfig(
+            target: ProjectConfig::DEFAULT_TARGET,
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            allowExternalTarget: true,
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: $options,
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/tmp/skills'),
+        );
+    }
+
     public function aliasesDefaultToEmptyListWhenNeitherConfigNorCliProvidesThem(): void
     {
         $plan = $this->planner()->plan(
@@ -406,6 +458,27 @@ final class SyncPlannerTest
             ->withMessageContaining('outside the project root');
 
         $project = ProjectConfig::default()->withAliases(['../escape']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aliasWithDotDotEscapeIsRejectedEvenWhenExternalTargetsAreAllowed(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = new ProjectConfig(
+            target: '../.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            aliases: ['../.claude/skills'],
+            allowExternalTarget: true,
+        );
         $this->planner()->plan(
             donors: [],
             project: $project,
