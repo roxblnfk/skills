@@ -196,7 +196,7 @@ final readonly class SyncPlanner
         }
 
         throw new MalformedProjectConfig(\sprintf(
-            '%s "%s" resolves to the project root "%s"; %s must point to a directory inside or outside the project root',
+            '%s "%s" resolves to the project root "%s"; %s must not be the project root itself',
             $context,
             $raw,
             $projectRoot,

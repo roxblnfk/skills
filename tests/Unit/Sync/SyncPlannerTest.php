@@ -381,7 +381,7 @@ final class SyncPlannerTest
     public function projectRootTargetIsRejectedEvenWhenExternalTargetsAreAllowed(): void
     {
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('resolves to the project root');
+            ->withMessageContaining('must not be the project root itself');
 
         $project = new ProjectConfig(
             target: '.',
