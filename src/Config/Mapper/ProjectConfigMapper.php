@@ -56,7 +56,7 @@ final readonly class ProjectConfigMapper
         'trusted-replace',
         'discovery',
         'auto-sync',
-        'allow-external-target',
+        'external-target',
         'local',
         'remote',
     ];
@@ -315,10 +315,10 @@ final readonly class ProjectConfigMapper
             );
         }
 
-        $allowExternalTarget = $skills['allow-external-target'] ?? false;
-        if (!\is_bool($allowExternalTarget)) {
+        $externalTarget = $skills['external-target'] ?? false;
+        if (!\is_bool($externalTarget)) {
             throw new MalformedProjectConfig(
-                self::field($prefix, 'allow-external-target') . ' must be a boolean',
+                self::field($prefix, 'external-target') . ' must be a boolean',
             );
         }
 
@@ -332,7 +332,7 @@ final readonly class ProjectConfigMapper
             discovery: $discovery,
             aliases: $aliases,
             autoSync: $autoSync,
-            allowExternalTarget: $allowExternalTarget,
+            externalTarget: $externalTarget,
             local: $local,
             remote: $remote,
         );

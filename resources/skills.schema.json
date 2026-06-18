@@ -51,7 +51,7 @@
             "description": "When true (default), the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
             "default": true
         },
-        "allow-external-target": {
+        "external-target": {
             "type": "boolean",
             "description": "When true, target may resolve outside the project root. Default: false keeps target writes contained inside the project root.",
             "default": false

@@ -96,7 +96,7 @@ final readonly class SyncPlanner
         }
 
         $target = $this->resolveTarget($project, $options, $projectRoot);
-        if (!$project->allowExternalTarget) {
+        if (!$project->externalTarget) {
             $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
         }
 

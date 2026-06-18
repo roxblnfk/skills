@@ -332,7 +332,7 @@ final class SyncPlannerTest
             target: '../.agents/skills',
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            allowExternalTarget: true,
+            externalTarget: true,
         );
 
         $plan = $this->planner()->plan(
@@ -361,7 +361,7 @@ final class SyncPlannerTest
             target: ProjectConfig::DEFAULT_TARGET,
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            allowExternalTarget: true,
+            externalTarget: true,
         );
 
         $plan = $this->planner()->plan(
@@ -477,7 +477,7 @@ final class SyncPlannerTest
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
             aliases: ['../.claude/skills'],
-            allowExternalTarget: true,
+            externalTarget: true,
         );
         $this->planner()->plan(
             donors: [],
