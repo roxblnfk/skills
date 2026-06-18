@@ -68,6 +68,21 @@ final class ExternalProjectConfigLoaderTest
         Assert::same($result, ['target' => '.agents/skills']);
     }
 
+    public function allowsExternalTargetKey(): void
+    {
+        $this->writeFile([
+            'target' => '../.agents/skills',
+            'external-target' => true,
+        ]);
+
+        $result = (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
+
+        Assert::same($result, [
+            'target' => '../.agents/skills',
+            'external-target' => true,
+        ]);
+    }
+
     public function emptyObjectDecodesAsEmptyArray(): void
     {
         // `{}` is a valid (if uninteresting) skills.json — it means "no

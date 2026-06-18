@@ -131,8 +131,7 @@ final readonly class SyncPlanner
     }
 
     /**
-     * Reject paths that resolve outside the project root unless the target
-     * explicitly opted into external writes.
+     * Reject paths that resolve outside the project root.
      *
      * The project's own `composer.json` is trusted input (the user
      * wrote it), so this is not a sandbox boundary against malicious
@@ -169,11 +168,12 @@ final readonly class SyncPlanner
 
         throw new MalformedProjectConfig(\sprintf(
             '%s "%s" resolves to "%s", which is outside the project root "%s"; '
-            . 'target and aliases must stay inside the project',
+            . '%s must stay inside the project',
             $context,
             $raw,
             $resolved,
             $projectRoot,
+            $context,
         ));
     }
 

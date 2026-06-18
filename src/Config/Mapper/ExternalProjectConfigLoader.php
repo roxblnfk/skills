@@ -53,6 +53,7 @@ final readonly class ExternalProjectConfigLoader
         'trusted-replace',
         'discovery',
         'auto-sync',
+        'external-target',
         'local',
         'remote',
     ];

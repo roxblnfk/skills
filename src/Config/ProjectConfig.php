@@ -27,7 +27,9 @@ final readonly class ProjectConfig
     public const DEFAULT_TARGET = '.agents/skills';
 
     /**
-     * @param non-empty-string $target destination relative to project root
+     * @param non-empty-string $target destination path; relative values resolve from the project root,
+     *         absolute values are accepted, and `externalTarget` controls whether the resolved path may
+     *         leave the project root
      * @param TrustedVendors $trusted patterns from project `extra.skills.trusted`
      * @param bool $trustedReplace when true, skip the built-in trusted list entirely
      * @param bool $discovery when true, treat installed packages without `extra.skills` as
