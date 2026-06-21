@@ -360,6 +360,18 @@ final class ProjectConfigMapperTest
         (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '../api']]);
     }
 
+    public function pathFromRootOfPureDotDotAscentThrows(): void
+    {
+        // path-from-root is a *descent* (where the project sits below the
+        // root), not an ascent. A migrating-from-external-target value like
+        // `../..` is meaningless here and must be rejected — to climb two
+        // levels you declare a two-segment suffix (e.g. `packages/api`).
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('plain path segments');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '../..']]);
+    }
+
     // ── forProject(): decision tree between skills.json and inline ──────
 
     public function forProjectFallsBackToInlineWhenSkillsJsonAbsent(): void
