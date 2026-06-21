@@ -45,6 +45,12 @@ final class InitCliDefinition
                 'f',
                 InputOption::VALUE_NONE,
                 'Overwrite an existing file at the target path.',
+            )
+            ->addOption(
+                'external-target',
+                null,
+                InputOption::VALUE_NONE,
+                'Allow --path to resolve outside the project root (absolute or via "..").',
             );
     }
 
@@ -62,6 +68,7 @@ final class InitCliDefinition
         return new InitOptions(
             path: $rawPath,
             force: (bool) $input->getOption('force'),
+            externalTarget: (bool) $input->getOption('external-target'),
         );
     }
 }

@@ -179,13 +179,17 @@ final readonly class SyncPlanner
     }
 
     /**
+     * Uses {@see Path::match()} rather than a raw string comparison so the
+     * "is this the project root?" test shares the same separator
+     * normalisation and Windows case-insensitivity as
+     * {@see self::assertWithinProject()} — a target like `./` or a
+     * differently-cased absolute path still resolves to the root.
+     *
      * @param non-empty-string $context human-readable label of the config field, e.g. `target`
      * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
      *        the user can locate the offending entry in their config
      *
      * @throws MalformedProjectConfig
-     *
-     * @psalm-pure
      */
     private function assertNotProjectRoot(
         Path $resolved,
@@ -193,7 +197,7 @@ final readonly class SyncPlanner
         string $context,
         string $raw,
     ): void {
-        if ((string) $resolved !== (string) $projectRoot) {
+        if (!$resolved->match($projectRoot)) {
             return;
         }
 

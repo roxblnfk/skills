@@ -223,6 +223,7 @@ editor support. A malformed `skills.json` is **fatal**; a malformed `extra.skill
 composer skills:init                  # migrate eagerly (same effect as a future skills:update)
 composer skills:init --force          # overwrite an existing skills.json
 composer skills:init --path=PATH      # non-default location (won't be auto-discovered)
+composer skills:init --path=PATH --external-target   # allow PATH to resolve outside the project root
 ```
 
 `skills:init` is the explicit version of the migration that `skills:update` runs implicitly.
