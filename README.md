@@ -320,7 +320,8 @@ from a root-level `.agents/skills`:
 ```
 my-monorepo/                  ← agent launched here; skills wanted here
 ├─ .agents/skills/            ← desired target
-└─ packages/api/              ← the Composer project (composer.json + skills.json live here)
+└─ packages/api/              ← the Composer project
+   ├─ composer.json
    └─ skills.json
 ```
 
