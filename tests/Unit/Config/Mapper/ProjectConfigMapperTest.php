@@ -322,26 +322,42 @@ final class ProjectConfigMapperTest
         (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => 'yes']]);
     }
 
-    public function externalTargetDefaultsToFalse(): void
+    public function pathFromRootDefaultsToNull(): void
     {
         $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
 
-        Assert::same($cfg->externalTarget, false);
+        Assert::same($cfg->pathFromRoot, null);
     }
 
-    public function externalTargetIsMappedWhenTrue(): void
+    public function pathFromRootIsMappedWhenSet(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['external-target' => true]]);
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => 'packages/api']]);
 
-        Assert::same($cfg->externalTarget, true);
+        Assert::same($cfg->pathFromRoot, 'packages/api');
     }
 
-    public function externalTargetNonBoolThrows(): void
+    public function pathFromRootNonStringThrows(): void
     {
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('extra.skills.external-target');
+            ->withMessageContaining('extra.skills.path-from-root');
 
-        (new ProjectConfigMapper())->fromExtra(['skills' => ['external-target' => 'yes']]);
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => true]]);
+    }
+
+    public function pathFromRootAbsoluteThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must be a relative path');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '/abs/api']]);
+    }
+
+    public function pathFromRootWithDotDotSegmentThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('plain path segments');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '../api']]);
     }
 
     // ── forProject(): decision tree between skills.json and inline ──────

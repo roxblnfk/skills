@@ -39,9 +39,9 @@ final class SkillsJsonConfigTest
 
     /**
      * A location *outside* the sandbox project root (a sibling of it under
-     * `tests/Sandbox/`). Used by the `external-target` tests, which need a
-     * target that genuinely escapes the project. The relative form
-     * `../sandbox-escape/...` is what goes into config / `--path`.
+     * `tests/Sandbox/`). Used by the `path-from-root` tests, where the
+     * containment root re-anchors to `tests/Sandbox` and the target lands
+     * in a sibling of the project (`sandbox-escape/...` resolved there).
      */
     private const ESCAPE_DIR = Info::PROJECT_DIR . '/../sandbox-escape';
 
@@ -285,41 +285,43 @@ final class SkillsJsonConfigTest
         );
     }
 
-    // ── external-target: opt-in escape of the project root ──────────────
+    // ── path-from-root: re-anchor the containment root ──────────────────
 
     #[WithSkillsJson([
-        'target' => '../sandbox-escape/skills',
-        'external-target' => true,
+        'target' => 'sandbox-escape/skills',
+        'path-from-root' => 'project',
         'trusted' => ['acme/skills-basic'],
     ])]
-    public function externalTargetEscapingProjectRootIsAcceptedWhenOptedIn(): void
+    public function pathFromRootReanchorsTargetAboveTheProjectRoot(): void
     {
-        // With `external-target: true` the containment guard is lifted —
-        // a target that escapes the project root is honoured and the
-        // skills land outside it. This is the positive counterpart to
+        // The sandbox project lives at tests/Sandbox/project. Declaring
+        // path-from-root "project" climbs one verified level to
+        // tests/Sandbox, so a plain (no-`..`) target lands in a sibling of
+        // the project — the positive counterpart to
         // targetEscapingProjectRootViaSkillsJsonIsRejected above.
         $process = $this->runSync();
 
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
         Assert::true(
             \is_file(self::ESCAPE_DIR . '/skills/greeting/SKILL.md'),
-            'skills must be synced to the external target. stderr: ' . $process->getErrorOutput(),
+            'skills must be synced under the re-anchored root. stderr: ' . $process->getErrorOutput(),
         );
     }
 
     #[WithSkillsJson([
-        'target' => '../sandbox-escape/skills',
-        'aliases' => ['../sandbox-escape/alias'],
-        'external-target' => true,
+        'target' => 'sandbox-escape/skills',
+        'aliases' => ['../outside-root'],
+        'path-from-root' => 'project',
         'trusted' => ['acme/skills-basic'],
     ])]
-    public function aliasesStayContainedEvenWhenExternalTargetIsAllowed(): void
+    public function aliasesStayWithinReanchoredRoot(): void
     {
-        // `external-target` relaxes the target only — aliases must still
-        // stay inside the project root. The escaping alias fails the run.
+        // path-from-root widens the boundary to tests/Sandbox, it does not
+        // remove it: the target is legitimately inside that root, but an
+        // alias climbing above it (../outside-root) is still rejected.
         $process = $this->runSync();
 
-        Assert::notSame($process->getExitCode(), 0, 'escaping alias must fail even with external-target');
+        Assert::notSame($process->getExitCode(), 0, 'alias above the re-anchored root must fail');
         Assert::true(
             \str_contains($process->getErrorOutput(), 'outside the project root'),
             'stderr must explain the alias containment failure. Got: ' . $process->getErrorOutput(),
@@ -419,41 +421,6 @@ final class SkillsJsonConfigTest
         );
         $skills = $this->readSkillsJson();
         Assert::true(\array_key_exists('$schema', $skills), 'rewrite must emit fresh stub');
-    }
-
-    public function initRejectsExternalPathWithoutFlag(): void
-    {
-        // `--path` that escapes the project root is rejected by default;
-        // the error points the user at the opt-in flag.
-        $process = $this->runInit('--path', '../sandbox-escape/skills.json');
-
-        Assert::notSame($process->getExitCode(), 0, 'escaping --path must fail without the flag');
-        Assert::true(
-            \str_contains($process->getErrorOutput(), 'external-target'),
-            'error must mention the --external-target opt-in. Got: ' . $process->getErrorOutput(),
-        );
-        Assert::false(
-            \is_file(self::ESCAPE_DIR . '/skills.json'),
-            'no file must be written outside the project root on refusal',
-        );
-    }
-
-    public function initWritesOutsideProjectRootWithExternalTargetFlag(): void
-    {
-        // The opt-in flag lets `skills:init` create its config file
-        // outside the project root, mirroring the sync `external-target`
-        // relaxation.
-        $process = $this->runInit('--path', '../sandbox-escape/skills.json', '--external-target');
-
-        Assert::same(
-            $process->getExitCode(),
-            0,
-            'init --external-target must succeed; stderr: ' . $process->getErrorOutput(),
-        );
-        Assert::true(
-            \is_file(self::ESCAPE_DIR . '/skills.json'),
-            'config file must be written at the external path',
-        );
     }
 
     // ── helpers ────────────────────────────────────────────────────────

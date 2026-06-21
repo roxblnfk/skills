@@ -54,11 +54,10 @@ final readonly class InitRunner
 
     public function run(Path $projectRoot, IOInterface $io, InitOptions $options): int
     {
-        $target = $this->resolveTargetPath($projectRoot, $options->path, $options->externalTarget);
+        $target = $this->resolveTargetPath($projectRoot, $options->path);
         if ($target === null) {
             $io->writeError(\sprintf(
-                '<error>[llm/skills] --path "%s" must be a relative path inside the project root '
-                . '(pass --external-target to allow an absolute or escaping path)</error>',
+                '<error>[llm/skills] --path "%s" must be a relative path inside the project root</error>',
                 $options->path,
             ));
             return Command::INVALID;
@@ -518,30 +517,20 @@ final readonly class InitRunner
     }
 
     /**
-     * Resolve the user-supplied `--path` to an absolute filesystem path.
-     *
-     * By default the path must be relative and stay inside the project root —
-     * the same footgun guard {@see \LLM\Skills\Sync\SyncPlanner} applies to the
-     * sync `target`. When `$externalTarget` is set the guard is lifted:
-     * absolute paths are honoured verbatim and relative `..`-escapes resolve
-     * against the root without the containment check. This mirrors the
-     * `external-target` project config key, but as a CLI opt-in because at
-     * init time there is no config yet to read it from.
-     *
      * @return non-empty-string|null absolute filesystem path or `null` if input is invalid
      */
-    private function resolveTargetPath(Path $projectRoot, string $raw, bool $externalTarget): ?string
+    private function resolveTargetPath(Path $projectRoot, string $raw): ?string
     {
         if ($raw === '') {
             return null;
         }
         $rawPath = Path::create($raw);
         if ($rawPath->isAbsolute()) {
-            return $externalTarget ? (string) $rawPath : null;
+            return null;
         }
 
         $resolved = $projectRoot->join($rawPath);
-        if (!$externalTarget && !$resolved->match($projectRoot->join('*'))) {
+        if (!$resolved->match($projectRoot->join('*'))) {
             return null;
         }
 

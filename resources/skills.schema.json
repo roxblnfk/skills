@@ -51,10 +51,9 @@
             "description": "When true (default), the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
             "default": true
         },
-        "external-target": {
-            "type": "boolean",
-            "description": "When true, target may resolve outside the project root. Default: false keeps target writes contained inside the project root.",
-            "default": false
+        "path-from-root": {
+            "type": "string",
+            "description": "The project's own location relative to an intended outer containment root, e.g. \"packages/api\" in a monorepo. When set, target and aliases are resolved against (and confined to) that root instead of the project directory, after verifying the declared suffix matches the real project location. Must be a relative path with plain segments (no \".\"/\"..\"). Omit to confine writes to the project root."
         },
         "local": {
             "type": "object",

@@ -326,13 +326,17 @@ final class SyncPlannerTest
         );
     }
 
-    public function targetWithDotDotEscapeIsAcceptedWhenExternalTargetsAreAllowed(): void
+    public function pathFromRootReanchorsTargetToTheVerifiedOuterRoot(): void
     {
+        // projectRoot is /some/project; declaring path-from-root "project"
+        // climbs one level to /some and resolves a plain (non-`..`) target
+        // against it — reaching a shared monorepo-level directory without
+        // any escape syntax.
         $project = new ProjectConfig(
-            target: '../.agents/skills',
+            target: '.agents/skills',
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            externalTarget: true,
+            pathFromRoot: 'project',
         );
 
         $plan = $this->planner()->plan(
@@ -349,19 +353,22 @@ final class SyncPlannerTest
         );
     }
 
-    public function cliTargetOutsideProjectRootIsAcceptedWhenExternalTargetsAreAllowed(): void
+    public function absoluteTargetInsideContainmentRootIsAccepted(): void
     {
+        // With the root re-anchored to /some, an absolute target that lives
+        // inside that root is honoured — but it must stay inside it (see
+        // pathFromRootDoesNotPermitEscapingTheOuterRoot).
         $options = new SyncOptions(
             packageFilters: [],
             extraTrusted: [],
-            targetOverride: '/tmp/skills',
+            targetOverride: '/some/shared/skills',
             interactive: false,
         );
         $project = new ProjectConfig(
             target: ProjectConfig::DEFAULT_TARGET,
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            externalTarget: true,
+            pathFromRoot: 'project',
         );
 
         $plan = $this->planner()->plan(
@@ -374,12 +381,61 @@ final class SyncPlannerTest
 
         Assert::same(
             $this->normalizePath((string) $plan->target),
-            $this->normalizePath('/tmp/skills'),
+            $this->normalizePath('/some/shared/skills'),
         );
     }
 
-    public function projectRootTargetIsRejectedEvenWhenExternalTargetsAreAllowed(): void
+    public function pathFromRootDoesNotPermitEscapingTheOuterRoot(): void
     {
+        // path-from-root widens the boundary, it does not remove it: a
+        // target outside the re-anchored root (/some) is still rejected.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = new ProjectConfig(
+            target: '/tmp/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'project',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function pathFromRootThatDoesNotMatchProjectLocationIsRejected(): void
+    {
+        // The declared suffix must reconstruct the real project location;
+        // /some/project does not end with "elsewhere", so the climb is
+        // refused loudly instead of anchoring writes to a wrong ancestor.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('does not match the project location');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'elsewhere',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function containmentRootTargetIsRejected(): void
+    {
+        // Even with path-from-root, the target must not be the root itself.
+        // target "." resolves to the re-anchored root /some.
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('must not be the project root itself');
 
@@ -387,7 +443,7 @@ final class SyncPlannerTest
             target: '.',
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            externalTarget: true,
+            pathFromRoot: 'project',
         );
 
         $this->planner()->plan(
@@ -488,17 +544,21 @@ final class SyncPlannerTest
         );
     }
 
-    public function aliasWithDotDotEscapeIsRejectedEvenWhenExternalTargetsAreAllowed(): void
+    public function aliasEscapingContainmentRootIsRejectedEvenWithPathFromRoot(): void
     {
+        // Aliases are confined to the same re-anchored root as the target.
+        // With path-from-root "project" the root is /some; the target is
+        // legitimately inside it, but the alias `../.claude/skills`
+        // resolves above /some and is rejected.
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('outside the project root');
 
         $project = new ProjectConfig(
-            target: '../.agents/skills',
+            target: '.agents/skills',
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
             aliases: ['../.claude/skills'],
-            externalTarget: true,
+            pathFromRoot: 'project',
         );
         $this->planner()->plan(
             donors: [],

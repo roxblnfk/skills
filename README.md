@@ -175,7 +175,7 @@ where to put it, who to trust, whether to auto-sync.
   "trusted-replace": false,
   "discovery": false,
   "auto-sync": true,
-  "external-target": false,
+  "path-from-root": "packages/api",
 
   "local":  { "composer": true },
   "remote": [
@@ -194,7 +194,7 @@ where to put it, who to trust, whether to auto-sync.
 | `trusted-replace` | bool        | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
 | `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
-| `external-target` | bool       | `false`          | Allow `target` to resolve outside the project root. Aliases stay project-contained.     |
+| `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory — for sharing a skills dir at a monorepo root. |
 | `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Remote sources](#remote-sources). |
 | `remote`          | object[]    | `[]`             | Explicit remote donor refs. Managed by `skills:add`; documented in [Remote sources](#remote-sources). |
 
@@ -223,7 +223,6 @@ editor support. A malformed `skills.json` is **fatal**; a malformed `extra.skill
 composer skills:init                  # migrate eagerly (same effect as a future skills:update)
 composer skills:init --force          # overwrite an existing skills.json
 composer skills:init --path=PATH      # non-default location (won't be auto-discovered)
-composer skills:init --path=PATH --external-target   # allow PATH to resolve outside the project root
 ```
 
 `skills:init` is the explicit version of the migration that `skills:update` runs implicitly.

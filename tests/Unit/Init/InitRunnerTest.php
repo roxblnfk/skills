@@ -160,46 +160,6 @@ final class InitRunnerTest
         Assert::false(\is_file(\dirname($this->tmp) . '/escape.json'));
     }
 
-    public function absolutePathIsAcceptedWithExternalTargetFlag(): void
-    {
-        // `--external-target` lifts the containment guard: an absolute
-        // path is honoured verbatim instead of being rejected.
-        $target = $this->tmp . '/abs/skills.json';
-
-        $io = new BufferIO();
-        $code = (new InitRunner())->run(
-            Path::create($this->tmp),
-            $io,
-            new InitOptions(path: $target, externalTarget: true),
-        );
-
-        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
-        Assert::true(\is_file($target), 'stub must be written at the absolute path');
-    }
-
-    public function escapingProjectRootIsAcceptedWithExternalTargetFlag(): void
-    {
-        // Same guard, relative flavour: `../escape.json` resolves outside
-        // the project root, which `--external-target` now permits.
-        $escape = \dirname($this->tmp) . '/escape.json';
-
-        try {
-            $io = new BufferIO();
-            $code = (new InitRunner())->run(
-                Path::create($this->tmp),
-                $io,
-                new InitOptions(path: '../escape.json', externalTarget: true),
-            );
-
-            Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
-            Assert::true(\is_file($escape), 'stub must be written outside the project root');
-        } finally {
-            if (\is_file($escape)) {
-                @\unlink($escape);
-            }
-        }
-    }
-
     public function composerAttachedModeMigratesProjectKeysAndCleansComposerJson(): void
     {
         $this->writeComposerJson([

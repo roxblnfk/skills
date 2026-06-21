@@ -95,17 +95,22 @@ final readonly class SyncPlanner
             }
         }
 
-        $target = $this->resolveTarget($project, $options, $projectRoot);
-        $this->assertNotProjectRoot($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
-        if (!$project->externalTarget) {
-            $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
-        }
+        // The root that `target` and aliases must stay inside. Defaults to
+        // the project root; `path-from-root` re-anchors it to a verified
+        // ancestor (e.g. a monorepo root) so writes can legitimately reach
+        // a shared directory above the project.
+        $root = $this->resolveContainmentRoot($project, $projectRoot);
+
+        $rawTarget = $options->targetOverride ?? $project->target;
+        $target = $this->resolveTarget($project, $options, $root);
+        $this->assertNotProjectRoot($target, $root, 'target', $rawTarget);
+        $this->assertWithinProject($target, $root, 'target', $rawTarget);
 
         return new SyncPlan(
             approvedDonors: $approved,
             skippedUntrustedNames: $skipped,
             target: $target,
-            aliases: $this->resolveAliases($project, $options, $projectRoot, $target),
+            aliases: $this->resolveAliases($project, $options, $root, $target),
             filteredOutDonors: $filteredOut,
         );
     }
@@ -257,15 +262,55 @@ final readonly class SyncPlanner
         return [$kept, $rejected];
     }
 
+    /**
+     * Resolve the directory that `target` and aliases must stay inside.
+     *
+     * Without `path-from-root` the containment root is just the project
+     * root (`getcwd()`), preserving the original contract. With it, the
+     * project declares its own location below an intended outer root
+     * (e.g. `packages/api` under a monorepo root): the planner climbs
+     * that many parents and then verifies — via {@see Path::match()}, so
+     * separator and Windows-case normalisation match the containment
+     * check — that the descent reconstructs the real project location.
+     * A stale or wrong declaration therefore fails loudly instead of
+     * silently anchoring writes to an unintended ancestor.
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function resolveContainmentRoot(ProjectConfig $project, Path $projectRoot): Path
+    {
+        $suffix = $project->pathFromRoot;
+        if ($suffix === null) {
+            return $projectRoot;
+        }
+
+        $depth = \count(\preg_split('#[/\\\\]#', $suffix) ?: []);
+        $root = $projectRoot;
+        for ($i = 0; $i < $depth; $i++) {
+            $root = $root->parent();
+        }
+
+        if (!$projectRoot->match($root->join($suffix))) {
+            throw new MalformedProjectConfig(\sprintf(
+                'path-from-root "%s" does not match the project location "%s"; '
+                . 'the project directory must end with that suffix',
+                $suffix,
+                $projectRoot,
+            ));
+        }
+
+        return $root;
+    }
+
     private function resolveTarget(
         ProjectConfig $project,
         SyncOptions $options,
-        Path $projectRoot,
+        Path $root,
     ): Path {
         /** @var non-empty-string $raw */
         $raw = $options->targetOverride ?? $project->target;
 
-        return $this->resolvePath($raw, $projectRoot);
+        return $this->resolvePath($raw, $root);
     }
 
     /**
@@ -287,7 +332,7 @@ final readonly class SyncPlanner
     private function resolveAliases(
         ProjectConfig $project,
         SyncOptions $options,
-        Path $projectRoot,
+        Path $root,
         Path $target,
     ): array {
         $raw = $options->aliasOverrides ?? $project->aliases;
@@ -300,8 +345,8 @@ final readonly class SyncPlanner
         $out = [];
         $seen = [];
         foreach ($raw as $index => $entry) {
-            $resolved = $this->resolvePath($entry, $projectRoot);
-            $this->assertWithinProject($resolved, $projectRoot, \sprintf('alias[%d]', $index), $entry);
+            $resolved = $this->resolvePath($entry, $root);
+            $this->assertWithinProject($resolved, $root, \sprintf('alias[%d]', $index), $entry);
             $resolvedStr = (string) $resolved;
 
             if ($resolvedStr === $targetStr) {
@@ -328,10 +373,10 @@ final readonly class SyncPlanner
     /**
      * @param non-empty-string $raw
      */
-    private function resolvePath(string $raw, Path $projectRoot): Path
+    private function resolvePath(string $raw, Path $root): Path
     {
         return self::isAbsolute($raw)
             ? Path::create($raw)
-            : $projectRoot->join($raw);
+            : $root->join($raw);
     }
 }

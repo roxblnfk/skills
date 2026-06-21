@@ -68,18 +68,18 @@ final class ExternalProjectConfigLoaderTest
         Assert::same($result, ['target' => '.agents/skills']);
     }
 
-    public function allowsExternalTargetKey(): void
+    public function allowsPathFromRootKey(): void
     {
         $this->writeFile([
-            'target' => '../.agents/skills',
-            'external-target' => true,
+            'target' => '.agents/skills',
+            'path-from-root' => 'packages/api',
         ]);
 
         $result = (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
 
         Assert::same($result, [
-            'target' => '../.agents/skills',
-            'external-target' => true,
+            'target' => '.agents/skills',
+            'path-from-root' => 'packages/api',
         ]);
     }
 
