@@ -353,6 +353,31 @@ final class SyncPlannerTest
         );
     }
 
+    public function multiSegmentPathFromRootClimbsAndVerifiesEachSegment(): void
+    {
+        // A two-segment suffix climbs two levels: /some/project -> /, with
+        // both segments verified by the same reconstruct-and-match check.
+        $project = new ProjectConfig(
+            target: 'shared/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'some/project',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/shared/skills'),
+        );
+    }
+
     public function absoluteTargetInsideContainmentRootIsAccepted(): void
     {
         // With the root re-anchored to /some, an absolute target that lives

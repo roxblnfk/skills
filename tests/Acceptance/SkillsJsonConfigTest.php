@@ -328,6 +328,30 @@ final class SkillsJsonConfigTest
         );
     }
 
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'path-from-root' => 'not-the-real-dir',
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function pathFromRootThatDoesNotMatchProjectLocationFailsLoudly(): void
+    {
+        // The headline safety property: the declared suffix must
+        // reconstruct the real project location. The sandbox lives in
+        // `project`, not `not-the-real-dir`, so the climb is refused and
+        // the run aborts instead of anchoring writes to a wrong ancestor.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0, 'mismatched path-from-root must fail');
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'does not match the project location'),
+            'stderr must explain the path-from-root mismatch. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \is_dir(self::TARGET_DIR),
+            'nothing must be written when the path-from-root check fails',
+        );
+    }
+
     // ── skills:init ─────────────────────────────────────────────────────
 
     #[WithSandboxExtras([
