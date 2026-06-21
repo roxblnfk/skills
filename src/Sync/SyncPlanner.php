@@ -116,27 +116,6 @@ final readonly class SyncPlanner
     }
 
     /**
-     * Cross-platform absolute path detection: handles POSIX `/foo`, Windows
-     * drive letters `C:\foo` and Windows UNC roots `\\server\share`.
-     *
-     * @psalm-pure
-     */
-    private static function isAbsolute(string $path): bool
-    {
-        if ($path === '') {
-            return false;
-        }
-        if ($path[0] === '/' || $path[0] === '\\') {
-            return true;
-        }
-        if (\strlen($path) >= 3 && \ctype_alpha($path[0]) && $path[1] === ':' && ($path[2] === '/' || $path[2] === '\\')) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
      * Reject paths that resolve outside the project root.
      *
      * The project's own `composer.json` is trusted input (the user
@@ -184,11 +163,11 @@ final readonly class SyncPlanner
     }
 
     /**
-     * Uses {@see Path::match()} rather than a raw string comparison so the
-     * "is this the project root?" test shares the same separator
-     * normalisation and Windows case-insensitivity as
-     * {@see self::assertWithinProject()} — a target like `./` or a
-     * differently-cased absolute path still resolves to the root.
+     * Reject a path that resolves to the root itself (rather than a child of
+     * it). Matching via {@see Path::match()} shares the separator
+     * normalisation and Windows case-insensitivity of
+     * {@see self::assertWithinProject()}, so a value like `./` or a
+     * differently-cased absolute path is still recognised as the root.
      *
      * @param non-empty-string $context human-readable label of the config field, e.g. `target`
      * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
@@ -265,9 +244,9 @@ final readonly class SyncPlanner
     /**
      * Resolve the directory that `target` and aliases must stay inside.
      *
-     * Without `path-from-root` the containment root is just the project
-     * root (`getcwd()`), preserving the original contract. With it, the
-     * project declares its own location below an intended outer root
+     * Without `path-from-root` the containment root is the project root
+     * (`getcwd()`). With it, the project declares its own location below
+     * an intended outer root
      * (e.g. `packages/api` under a monorepo root): the planner climbs
      * that many parents and then verifies — via {@see Path::match()}, so
      * separator and Windows-case normalisation match the containment
@@ -375,8 +354,8 @@ final readonly class SyncPlanner
      */
     private function resolvePath(string $raw, Path $root): Path
     {
-        return self::isAbsolute($raw)
-            ? Path::create($raw)
-            : $root->join($raw);
+        $path = Path::create($raw);
+
+        return $path->isAbsolute() ? $path : $root->join($raw);
     }
 }

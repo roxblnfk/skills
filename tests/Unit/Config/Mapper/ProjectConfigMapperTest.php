@@ -372,6 +372,17 @@ final class ProjectConfigMapperTest
         (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '../..']]);
     }
 
+    public function pathFromRootOfSingleDotThrows(): void
+    {
+        // "." would otherwise be joined back onto the project root and
+        // collapse to it, yielding a no-op suffix. It is a "." segment, so
+        // the validator rejects it outright.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('plain path segments');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '.']]);
+    }
+
     // ── forProject(): decision tree between skills.json and inline ──────
 
     public function forProjectFallsBackToInlineWhenSkillsJsonAbsent(): void

@@ -378,6 +378,58 @@ final class SyncPlannerTest
         );
     }
 
+    public function pathFromRootWithRepeatedSameNameParentsResolvesCorrectly(): void
+    {
+        // A project that lives under same-named parents (.../parent/parent)
+        // must still anchor correctly: the climb strips exactly the declared
+        // number of trailing segments and verifies the whole suffix, so the
+        // repetition does not match the wrong level.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'parent/parent',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/parent/parent'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/.agents/skills'),
+        );
+    }
+
+    public function pathFromRootOfSingleDotIsRejectedByVerification(): void
+    {
+        // Defence in depth: even if `.` slipped past the mapper, joining it
+        // back onto the climbed root collapses to that root, which never
+        // reconstructs the project location — so the run aborts rather than
+        // writing to the wrong place.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('does not match the project location');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: '.',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
     public function absoluteTargetInsideContainmentRootIsAccepted(): void
     {
         // With the root re-anchored to /some, an absolute target that lives

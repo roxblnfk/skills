@@ -360,6 +360,10 @@ final readonly class ProjectConfigMapper
             throw new MalformedProjectConfig($field . ' must be a non-empty string');
         }
 
+        // Reject absolute values — path-from-root is a descent below an
+        // ancestor, not a root. Checked lexically (leading separator, or a
+        // Windows drive-letter prefix); a pure validator cannot use the
+        // Internal\Path value object.
         if (
             $raw[0] === '/'
             || $raw[0] === '\\'
