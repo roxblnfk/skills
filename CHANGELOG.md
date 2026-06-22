@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/roxblnfk/skills/compare/1.7.1...1.8.0) (2026-06-22)
+
+
+### Features
+
+* target skills above the project root via verified path-from-root ([#23](https://github.com/roxblnfk/skills/issues/23)) ([6be2ae2](https://github.com/roxblnfk/skills/commit/6be2ae22f2000afd9fdd4c515e5199a96d092b85))
+
 ## [1.7.1](https://github.com/roxblnfk/skills/compare/1.7.0...1.7.1) (2026-06-07)
 
 
