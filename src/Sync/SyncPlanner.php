@@ -95,37 +95,61 @@ final readonly class SyncPlanner
             }
         }
 
-        $target = $this->resolveTarget($project, $options, $projectRoot);
-        $this->assertWithinProject($target, $projectRoot, 'target', $options->targetOverride ?? $project->target);
+        // The root that `target` and aliases must stay inside. Defaults to
+        // the project root; `path-from-root` re-anchors it to a verified
+        // ancestor (e.g. a monorepo root) so writes can legitimately reach
+        // a shared directory above the project.
+        $root = $this->resolveContainmentRoot($project, $projectRoot);
+
+        $rawTarget = $options->targetOverride ?? $project->target;
+        $target = $this->resolveTarget($project, $options, $root);
+        $this->assertNotProjectRoot($target, $root, 'target', $rawTarget);
+        $this->assertWithinProject($target, $root, 'target', $rawTarget);
 
         return new SyncPlan(
             approvedDonors: $approved,
             skippedUntrustedNames: $skipped,
             target: $target,
-            aliases: $this->resolveAliases($project, $options, $projectRoot, $target),
+            aliases: $this->resolveAliases($project, $options, $root, $target),
             filteredOutDonors: $filteredOut,
         );
     }
 
     /**
-     * Cross-platform absolute path detection: handles POSIX `/foo`, Windows
-     * drive letters `C:\foo` and Windows UNC roots `\\server\share`.
+     * Literal path equality, honouring the platform's filesystem case
+     * sensitivity (case-insensitive on Windows). Unlike {@see Path::match()}
+     * this treats `*`, `?` and `[]` as ordinary characters, so paths whose
+     * names contain glob metacharacters compare correctly.
      *
      * @psalm-pure
      */
-    private static function isAbsolute(string $path): bool
+    private static function pathsEqual(Path $a, Path $b): bool
     {
-        if ($path === '') {
-            return false;
-        }
-        if ($path[0] === '/' || $path[0] === '\\') {
-            return true;
-        }
-        if (\strlen($path) >= 3 && \ctype_alpha($path[0]) && $path[1] === ':' && ($path[2] === '/' || $path[2] === '\\')) {
-            return true;
-        }
+        return \DIRECTORY_SEPARATOR === '\\'
+            ? \strcasecmp((string) $a, (string) $b) === 0
+            : (string) $a === (string) $b;
+    }
 
-        return false;
+    /**
+     * Whether `$resolved` is `$root` itself or a descendant of it. Walks up
+     * `$resolved`'s parents comparing each with {@see self::pathsEqual()}, so
+     * containment is literal (no glob), case-insensitive on Windows, and
+     * works regardless of how {@see Path} renders the filesystem root.
+     */
+    private static function isWithin(Path $resolved, Path $root): bool
+    {
+        $current = $resolved;
+        while (true) {
+            if (self::pathsEqual($current, $root)) {
+                return true;
+            }
+            $parent = $current->parent();
+            if (self::pathsEqual($parent, $current)) {
+                // Reached the filesystem root without meeting $root.
+                return false;
+            }
+            $current = $parent;
+        }
     }
 
     /**
@@ -141,11 +165,12 @@ final readonly class SyncPlanner
      * {@see \LLM\Skills\Discovery\SkillTreeScanner}); this check
      * brings the project side in line with that posture.
      *
-     * Uses the same {@see Path::match()} idiom as the vendor-side
-     * escape check ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper})
-     * so containment semantics — separator normalisation,
-     * case-insensitivity on Windows, `..` collapse — stay consistent
-     * across the codebase.
+     * Containment is checked literally (a path equal to the root, or one
+     * whose string is prefixed by `root + separator`), not via a
+     * {@see Path::match()} `root/*` glob: a project directory whose name
+     * contains `*`, `?` or `[]` must be treated as an ordinary path, not a
+     * wildcard. {@see Path} has already normalised separators and collapsed
+     * `..`; {@see self::pathsEqual()} adds the Windows case-insensitivity.
      *
      * @param non-empty-string $context human-readable label of the config field, e.g. `target`
      *        or `alias[0]`; goes into the error message
@@ -160,17 +185,51 @@ final readonly class SyncPlanner
         string $context,
         string $raw,
     ): void {
-        if ($resolved->match($projectRoot->join('*'))) {
+        if (self::isWithin($resolved, $projectRoot)) {
             return;
         }
 
         throw new MalformedProjectConfig(\sprintf(
             '%s "%s" resolves to "%s", which is outside the project root "%s"; '
-            . 'target and aliases must stay inside the project',
+            . '%s must stay inside the project',
             $context,
             $raw,
             $resolved,
             $projectRoot,
+            $context,
+        ));
+    }
+
+    /**
+     * Reject a path that resolves to the root itself (rather than a child of
+     * it). Equality is literal, not a {@see Path::match()} glob — a root
+     * directory whose name contains `*`, `?` or `[]` must compare as itself,
+     * not as a wildcard.
+     *
+     * @param non-empty-string $context human-readable label of the config field, e.g. `target`
+     * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
+     *        the user can locate the offending entry in their config
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
+     */
+    private function assertNotProjectRoot(
+        Path $resolved,
+        Path $projectRoot,
+        string $context,
+        string $raw,
+    ): void {
+        if (!self::pathsEqual($resolved, $projectRoot)) {
+            return;
+        }
+
+        throw new MalformedProjectConfig(\sprintf(
+            '%s "%s" resolves to the project root "%s"; %s must not be the project root itself',
+            $context,
+            $raw,
+            $projectRoot,
+            $context,
         ));
     }
 
@@ -221,15 +280,55 @@ final readonly class SyncPlanner
         return [$kept, $rejected];
     }
 
+    /**
+     * Resolve the directory that `target` and aliases must stay inside.
+     *
+     * Without `path-from-root` the containment root is the project root
+     * (`getcwd()`). With it, the project declares its own location below
+     * an intended outer root
+     * (e.g. `packages/api` under a monorepo root): the planner climbs
+     * that many parents and then verifies — via {@see Path::match()}, so
+     * separator and Windows-case normalisation match the containment
+     * check — that the descent reconstructs the real project location.
+     * A stale or wrong declaration therefore fails loudly instead of
+     * silently anchoring writes to an unintended ancestor.
+     *
+     * @throws MalformedProjectConfig
+     */
+    private function resolveContainmentRoot(ProjectConfig $project, Path $projectRoot): Path
+    {
+        $suffix = $project->pathFromRoot;
+        if ($suffix === null) {
+            return $projectRoot;
+        }
+
+        $depth = \count(\preg_split('#[/\\\\]#', $suffix) ?: []);
+        $root = $projectRoot;
+        for ($i = 0; $i < $depth; $i++) {
+            $root = $root->parent();
+        }
+
+        if (!self::pathsEqual($projectRoot, $root->join($suffix))) {
+            throw new MalformedProjectConfig(\sprintf(
+                'path-from-root "%s" does not match the project location "%s"; '
+                . 'the project directory must end with that suffix',
+                $suffix,
+                $projectRoot,
+            ));
+        }
+
+        return $root;
+    }
+
     private function resolveTarget(
         ProjectConfig $project,
         SyncOptions $options,
-        Path $projectRoot,
+        Path $root,
     ): Path {
         /** @var non-empty-string $raw */
         $raw = $options->targetOverride ?? $project->target;
 
-        return $this->resolvePath($raw, $projectRoot);
+        return $this->resolvePath($raw, $root);
     }
 
     /**
@@ -251,7 +350,7 @@ final readonly class SyncPlanner
     private function resolveAliases(
         ProjectConfig $project,
         SyncOptions $options,
-        Path $projectRoot,
+        Path $root,
         Path $target,
     ): array {
         $raw = $options->aliasOverrides ?? $project->aliases;
@@ -264,8 +363,10 @@ final readonly class SyncPlanner
         $out = [];
         $seen = [];
         foreach ($raw as $index => $entry) {
-            $resolved = $this->resolvePath($entry, $projectRoot);
-            $this->assertWithinProject($resolved, $projectRoot, \sprintf('alias[%d]', $index), $entry);
+            $resolved = $this->resolvePath($entry, $root);
+            $context = \sprintf('alias[%d]', $index);
+            $this->assertNotProjectRoot($resolved, $root, $context, $entry);
+            $this->assertWithinProject($resolved, $root, $context, $entry);
             $resolvedStr = (string) $resolved;
 
             if ($resolvedStr === $targetStr) {
@@ -292,10 +393,10 @@ final readonly class SyncPlanner
     /**
      * @param non-empty-string $raw
      */
-    private function resolvePath(string $raw, Path $projectRoot): Path
+    private function resolvePath(string $raw, Path $root): Path
     {
-        return self::isAbsolute($raw)
-            ? Path::create($raw)
-            : $projectRoot->join($raw);
+        $path = Path::create($raw);
+
+        return $path->isAbsolute() ? $path : $root->join($raw);
     }
 }

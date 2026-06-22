@@ -175,6 +175,7 @@ where to put it, who to trust, whether to auto-sync.
   "trusted-replace": false,
   "discovery": false,
   "auto-sync": true,
+  "path-from-root": "packages/api",
 
   "local":  { "composer": true },
   "remote": [
@@ -193,6 +194,7 @@ where to put it, who to trust, whether to auto-sync.
 | `trusted-replace` | bool        | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
 | `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
+| `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
 | `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Remote sources](#remote-sources). |
 | `remote`          | object[]    | `[]`             | Explicit remote donor refs. Managed by `skills:add`; documented in [Remote sources](#remote-sources). |
 
@@ -301,6 +303,59 @@ Alias paths are build artefacts and typically belong in `.gitignore`:
 
 On Windows, `git status` reads junctions transparently — but committing a junction is rarely
 what you want, so the ignore line is the safer default.
+
+
+## path-from-root
+
+_Sharing a skills directory above the project (monorepos)._
+
+By default `target` (and any `aliases`) must resolve **inside** the project root — the
+directory the command runs in, which is where `composer.json` / `skills.json` live. A relative
+`target` resolves from there, and `../…` escapes are rejected by a containment guard.
+
+Some repositories keep the Composer project in a **subdirectory** while the coding agent is
+launched from the repository root — e.g. a monorepo whose agent (OpenCode, …) reads skills
+from a root-level `.agents/skills`:
+
+```
+my-monorepo/                  ← agent launched here; skills wanted here
+├─ .agents/skills/            ← desired target
+└─ packages/api/              ← the Composer project
+   ├─ composer.json
+   └─ skills.json
+```
+
+Running from `packages/api`, a plain `target: .agents/skills` would land in
+`packages/api/.agents/skills`, and `../../.agents/skills` would be rejected.
+
+`path-from-root` re-anchors the guard to a **verified ancestor**. You declare where the
+project sits relative to the intended outer root:
+
+```jsonc
+// my-monorepo/packages/api/skills.json
+{
+  "path-from-root": "packages/api",
+  "target":         ".agents/skills"
+}
+```
+
+`skills:update` then:
+
+1. climbs that many levels up from the project (`packages/api` → the monorepo root);
+2. **verifies** the climb — the project directory must actually end with `packages/api`,
+   otherwise the run aborts with `path-from-root … does not match the project location` and
+   writes nothing;
+3. resolves `target` (and `aliases`) against that root and confines them to it.
+
+Result: skills land in `my-monorepo/.agents/skills`, reached with a plain `target` — no `..`.
+
+- **The guard is widened, not removed.** A `target` or alias that escapes *the re-anchored
+  root* is still rejected. `path-from-root` must be a relative path of plain segments (no
+  `.` / `..`, not absolute).
+- **Portable.** The suffix (`packages/api`) is identical on every machine; only the absolute
+  prefix differs, and it is never written into config.
+- **Default unchanged.** Omit `path-from-root` and the containment root is the project root,
+  exactly as today.
 
 
 ## Trust

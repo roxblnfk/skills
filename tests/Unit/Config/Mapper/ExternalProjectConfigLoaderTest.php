@@ -68,6 +68,21 @@ final class ExternalProjectConfigLoaderTest
         Assert::same($result, ['target' => '.agents/skills']);
     }
 
+    public function allowsPathFromRootKey(): void
+    {
+        $this->writeFile([
+            'target' => '.agents/skills',
+            'path-from-root' => 'packages/api',
+        ]);
+
+        $result = (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
+
+        Assert::same($result, [
+            'target' => '.agents/skills',
+            'path-from-root' => 'packages/api',
+        ]);
+    }
+
     public function emptyObjectDecodesAsEmptyArray(): void
     {
         // `{}` is a valid (if uninteresting) skills.json — it means "no

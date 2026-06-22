@@ -326,6 +326,309 @@ final class SyncPlannerTest
         );
     }
 
+    public function pathFromRootReanchorsTargetToTheVerifiedOuterRoot(): void
+    {
+        // projectRoot is /some/project; declaring path-from-root "project"
+        // climbs one level to /some and resolves a plain (non-`..`) target
+        // against it — reaching a shared monorepo-level directory without
+        // any escape syntax.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'project',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/some/.agents/skills'),
+        );
+    }
+
+    public function multiSegmentPathFromRootClimbsAndVerifiesEachSegment(): void
+    {
+        // A two-segment suffix climbs two levels: /repo/packages/api ->
+        // /repo, with both segments verified by the reconstruct-and-compare
+        // check. The target then resolves against the monorepo root.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'packages/api',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/packages/api'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/.agents/skills'),
+        );
+    }
+
+    public function pathFromRootWithRepeatedSameNameParentsResolvesCorrectly(): void
+    {
+        // A project that lives under same-named parents (.../parent/parent)
+        // must still anchor correctly: the climb strips exactly the declared
+        // number of trailing segments and verifies the whole suffix, so the
+        // repetition does not match the wrong level.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'parent/parent',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/parent/parent'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/.agents/skills'),
+        );
+    }
+
+    public function pathFromRootOfSingleDotIsRejectedByVerification(): void
+    {
+        // Defence in depth: even if `.` slipped past the mapper, joining it
+        // back onto the climbed root collapses to that root, which never
+        // reconstructs the project location — so the run aborts rather than
+        // writing to the wrong place.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('does not match the project location');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: '.',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function pathFromRootWithGlobCharsIsComparedLiterallyNotAsWildcard(): void
+    {
+        // Verification is literal, not an fnmatch glob: a suffix like `pkg?`
+        // must NOT be treated as a wildcard that "matches" a real `pkgX`
+        // directory, otherwise the verified-ancestor guarantee collapses.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('does not match the project location');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'pkg?',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/pkgX'),
+        );
+    }
+
+    public function pathFromRootWithLiteralGlobCharsInDirectoryNameResolves(): void
+    {
+        // The mirror of the above: a project that genuinely lives in a
+        // directory whose name contains glob metacharacters must resolve,
+        // because the comparison is literal.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'pkg[x]',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/pkg[x]'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/.agents/skills'),
+        );
+    }
+
+    public function targetInsideRootWhoseNameContainsGlobCharsIsAccepted(): void
+    {
+        // Containment is literal too: a target inside a project whose path
+        // contains `[]` must not be mis-rejected as "outside" by a glob.
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: new ProjectConfig(
+                target: 'skills',
+                trusted: TrustedVendors::empty(),
+                trustedReplace: false,
+            ),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/pr[o]ject'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/pr[o]ject/skills'),
+        );
+    }
+
+    public function aliasResolvingToContainmentRootIsRejected(): void
+    {
+        // Aliases get the same root-itself guard as the target, so an alias
+        // that collapses to the root (e.g. `.`) is rejected with the clear
+        // message rather than later trying to link the root directory.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must not be the project root itself');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            aliases: ['.'],
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function absoluteTargetInsideContainmentRootIsAccepted(): void
+    {
+        // With the root re-anchored to /some, an absolute target that lives
+        // inside that root is honoured — but it must stay inside it (see
+        // pathFromRootDoesNotPermitEscapingTheOuterRoot).
+        $options = new SyncOptions(
+            packageFilters: [],
+            extraTrusted: [],
+            targetOverride: '/some/shared/skills',
+            interactive: false,
+        );
+        $project = new ProjectConfig(
+            target: ProjectConfig::DEFAULT_TARGET,
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'project',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: $options,
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/some/shared/skills'),
+        );
+    }
+
+    public function pathFromRootDoesNotPermitEscapingTheOuterRoot(): void
+    {
+        // path-from-root widens the boundary, it does not remove it: a
+        // target outside the re-anchored root (/some) is still rejected.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = new ProjectConfig(
+            target: '/tmp/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'project',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function pathFromRootThatDoesNotMatchProjectLocationIsRejected(): void
+    {
+        // The declared suffix must reconstruct the real project location;
+        // /some/project does not end with "elsewhere", so the climb is
+        // refused loudly instead of anchoring writes to a wrong ancestor.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('does not match the project location');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'elsewhere',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function containmentRootTargetIsRejected(): void
+    {
+        // Even with path-from-root, the target must not be the root itself.
+        // target "." resolves to the re-anchored root /some.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must not be the project root itself');
+
+        $project = new ProjectConfig(
+            target: '.',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'project',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
     public function aliasesDefaultToEmptyListWhenNeitherConfigNorCliProvidesThem(): void
     {
         $plan = $this->planner()->plan(
@@ -406,6 +709,31 @@ final class SyncPlannerTest
             ->withMessageContaining('outside the project root');
 
         $project = ProjectConfig::default()->withAliases(['../escape']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aliasEscapingContainmentRootIsRejectedEvenWithPathFromRoot(): void
+    {
+        // Aliases are confined to the same re-anchored root as the target.
+        // With path-from-root "project" the root is /some; the target is
+        // legitimately inside it, but the alias `../.claude/skills`
+        // resolves above /some and is rejected.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('outside the project root');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            aliases: ['../.claude/skills'],
+            pathFromRoot: 'project',
+        );
         $this->planner()->plan(
             donors: [],
             project: $project,

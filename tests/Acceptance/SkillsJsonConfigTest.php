@@ -37,6 +37,14 @@ final class SkillsJsonConfigTest
     private const SKILLS_JSON = Info::PROJECT_DIR . '/skills.json';
     private const COMPOSER_JSON = Info::PROJECT_DIR . '/composer.json';
 
+    /**
+     * A location *outside* the sandbox project root (a sibling of it under
+     * `tests/Sandbox/`). Used by the `path-from-root` tests, where the
+     * containment root re-anchors to `tests/Sandbox` and the target lands
+     * in a sibling of the project (`sandbox-escape/...` resolved there).
+     */
+    private const ESCAPE_DIR = Info::PROJECT_DIR . '/../sandbox-escape';
+
     private ?string $originalComposerJson = null;
 
     /**
@@ -60,6 +68,7 @@ final class SkillsJsonConfigTest
         Filesystem::removeRecursive(self::TARGET_DIR);
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/external-target');
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/inline-target');
+        Filesystem::removeRecursive(self::ESCAPE_DIR);
     }
 
     #[AfterTest]
@@ -71,6 +80,7 @@ final class SkillsJsonConfigTest
         if (\is_file(self::SKILLS_JSON)) {
             @\unlink(self::SKILLS_JSON);
         }
+        Filesystem::removeRecursive(self::ESCAPE_DIR);
     }
 
     // ── precedence ──────────────────────────────────────────────────────
@@ -272,6 +282,73 @@ final class SkillsJsonConfigTest
         Assert::false(
             \file_exists(Info::PROJECT_DIR . '/../escape-alias'),
             'no junction must be created outside the project root',
+        );
+    }
+
+    // ── path-from-root: re-anchor the containment root ──────────────────
+
+    #[WithSkillsJson([
+        'target' => 'sandbox-escape/skills',
+        'path-from-root' => 'project',
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function pathFromRootReanchorsTargetAboveTheProjectRoot(): void
+    {
+        // The sandbox project lives at tests/Sandbox/project. Declaring
+        // path-from-root "project" climbs one verified level to
+        // tests/Sandbox, so a plain (no-`..`) target lands in a sibling of
+        // the project — the positive counterpart to
+        // targetEscapingProjectRootViaSkillsJsonIsRejected above.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \is_file(self::ESCAPE_DIR . '/skills/greeting/SKILL.md'),
+            'skills must be synced under the re-anchored root. stderr: ' . $process->getErrorOutput(),
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => 'sandbox-escape/skills',
+        'aliases' => ['../outside-root'],
+        'path-from-root' => 'project',
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function aliasesStayWithinReanchoredRoot(): void
+    {
+        // path-from-root widens the boundary to tests/Sandbox, it does not
+        // remove it: the target is legitimately inside that root, but an
+        // alias climbing above it (../outside-root) is still rejected.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0, 'alias above the re-anchored root must fail');
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'outside the project root'),
+            'stderr must explain the alias containment failure. Got: ' . $process->getErrorOutput(),
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'path-from-root' => 'not-the-real-dir',
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function pathFromRootThatDoesNotMatchProjectLocationFailsLoudly(): void
+    {
+        // The headline safety property: the declared suffix must
+        // reconstruct the real project location. The sandbox lives in
+        // `project`, not `not-the-real-dir`, so the climb is refused and
+        // the run aborts instead of anchoring writes to a wrong ancestor.
+        $process = $this->runSync();
+
+        Assert::notSame($process->getExitCode(), 0, 'mismatched path-from-root must fail');
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'does not match the project location'),
+            'stderr must explain the path-from-root mismatch. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \is_dir(self::TARGET_DIR),
+            'nothing must be written when the path-from-root check fails',
         );
     }
 

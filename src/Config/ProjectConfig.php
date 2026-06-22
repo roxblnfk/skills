@@ -27,7 +27,9 @@ final readonly class ProjectConfig
     public const DEFAULT_TARGET = '.agents/skills';
 
     /**
-     * @param non-empty-string $target destination relative to project root
+     * @param non-empty-string $target destination path; relative values resolve from the
+     *         containment root (see `$pathFromRoot`), absolute values are accepted, and the
+     *         resolved path must stay inside that root
      * @param TrustedVendors $trusted patterns from project `extra.skills.trusted`
      * @param bool $trustedReplace when true, skip the built-in trusted list entirely
      * @param bool $discovery when true, treat installed packages without `extra.skills` as
@@ -39,6 +41,13 @@ final readonly class ProjectConfig
      * @param bool $autoSync when true, the plugin runs `skills:update` automatically after
      *         every `composer install` / `composer update`, removing the need to wire up
      *         `scripts.post-install-cmd` and `scripts.post-update-cmd` by hand
+     * @param non-empty-string|null $pathFromRoot the project's own location relative to the
+     *         intended containment root, e.g. `packages/api` when the project lives in a
+     *         monorepo whose root is two levels up. When set, the planner climbs that many
+     *         parents from the project root (`getcwd()`), verifies the tail matches this value,
+     *         and uses the result as the root that `target` and aliases must stay inside —
+     *         letting them legitimately reach a shared monorepo-level directory. When `null`
+     *         (default) the containment root is the project root itself, unchanged.
      * @param array<non-empty-string, bool> $local local-provider toggles. Keys are provider ids
      *         from {@see ProviderId::LOCAL_IDS}; values turn the provider on/off. Absent keys
      *         fall back to {@see ProviderId::defaultLocalEnabled()} — `composer` defaults to
@@ -57,6 +66,7 @@ final readonly class ProjectConfig
         public bool $discovery = false,
         public array $aliases = [],
         public bool $autoSync = true,
+        public ?string $pathFromRoot = null,
         public array $local = [],
         public array $remote = [],
     ) {}
@@ -76,6 +86,7 @@ final readonly class ProjectConfig
             discovery: false,
             aliases: [],
             autoSync: true,
+            pathFromRoot: null,
             local: [],
             remote: [],
         );
@@ -112,6 +123,7 @@ final readonly class ProjectConfig
             $this->discovery,
             $this->aliases,
             $this->autoSync,
+            $this->pathFromRoot,
             $this->local,
             $this->remote,
         );
@@ -131,6 +143,7 @@ final readonly class ProjectConfig
             $this->discovery,
             $aliases,
             $this->autoSync,
+            $this->pathFromRoot,
             $this->local,
             $this->remote,
         );

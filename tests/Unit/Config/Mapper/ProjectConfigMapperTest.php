@@ -322,6 +322,67 @@ final class ProjectConfigMapperTest
         (new ProjectConfigMapper())->fromExtra(['skills' => ['auto-sync' => 'yes']]);
     }
 
+    public function pathFromRootDefaultsToNull(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::same($cfg->pathFromRoot, null);
+    }
+
+    public function pathFromRootIsMappedWhenSet(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => 'packages/api']]);
+
+        Assert::same($cfg->pathFromRoot, 'packages/api');
+    }
+
+    public function pathFromRootNonStringThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.path-from-root');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => true]]);
+    }
+
+    public function pathFromRootAbsoluteThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must be a relative path');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '/abs/api']]);
+    }
+
+    public function pathFromRootWithDotDotSegmentThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('plain path segments');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '../api']]);
+    }
+
+    public function pathFromRootOfPureDotDotAscentThrows(): void
+    {
+        // path-from-root is a *descent* (where the project sits below the
+        // root), not an ascent. A migrating-from-external-target value like
+        // `../..` is meaningless here and must be rejected — to climb two
+        // levels you declare a two-segment suffix (e.g. `packages/api`).
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('plain path segments');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '../..']]);
+    }
+
+    public function pathFromRootOfSingleDotThrows(): void
+    {
+        // "." would otherwise be joined back onto the project root and
+        // collapse to it, yielding a no-op suffix. It is a "." segment, so
+        // the validator rejects it outright.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('plain path segments');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['path-from-root' => '.']]);
+    }
+
     // ── forProject(): decision tree between skills.json and inline ──────
 
     public function forProjectFallsBackToInlineWhenSkillsJsonAbsent(): void

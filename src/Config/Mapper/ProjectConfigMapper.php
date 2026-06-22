@@ -56,6 +56,7 @@ final readonly class ProjectConfigMapper
         'trusted-replace',
         'discovery',
         'auto-sync',
+        'path-from-root',
         'local',
         'remote',
     ];
@@ -314,6 +315,8 @@ final readonly class ProjectConfigMapper
             );
         }
 
+        $pathFromRoot = $this->mapPathFromRoot($skills['path-from-root'] ?? null, $prefix);
+
         $local = $this->mapLocal($skills['local'] ?? [], $prefix);
         $remote = $this->mapRemote($skills['remote'] ?? [], $prefix);
 
@@ -324,9 +327,62 @@ final readonly class ProjectConfigMapper
             discovery: $discovery,
             aliases: $aliases,
             autoSync: $autoSync,
+            pathFromRoot: $pathFromRoot,
             local: $local,
             remote: $remote,
         );
+    }
+
+    /**
+     * Validate the optional `path-from-root` value: the project's own
+     * location relative to the intended containment root, e.g.
+     * `packages/api`. It must be a relative path made of plain segments —
+     * absolute paths and `.` / `..` parts are rejected, because the value
+     * describes a fixed descent from a real ancestor that the planner
+     * verifies against the actual project location, not a path to walk.
+     *
+     * @param non-empty-string $prefix
+     *
+     * @return non-empty-string|null
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
+     */
+    private function mapPathFromRoot(mixed $raw, string $prefix): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+
+        $field = self::field($prefix, 'path-from-root');
+        if (!\is_string($raw) || $raw === '') {
+            throw new MalformedProjectConfig($field . ' must be a non-empty string');
+        }
+
+        // Reject absolute values — path-from-root is a descent below an
+        // ancestor, not a root. Checked lexically (leading separator, or a
+        // Windows drive-letter prefix); a pure validator cannot use the
+        // Internal\Path value object.
+        if (
+            $raw[0] === '/'
+            || $raw[0] === '\\'
+            || (\strlen($raw) >= 2 && \ctype_alpha($raw[0]) && $raw[1] === ':')
+        ) {
+            throw new MalformedProjectConfig(
+                $field . ' must be a relative path (the project location below the root), not absolute',
+            );
+        }
+
+        foreach (\preg_split('#[/\\\\]#', $raw) ?: [] as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                throw new MalformedProjectConfig(
+                    $field . ' must contain only plain path segments (no empty, "." or ".." parts)',
+                );
+            }
+        }
+
+        return $raw;
     }
 
     /**
