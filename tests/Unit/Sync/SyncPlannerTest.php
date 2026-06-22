@@ -355,13 +355,14 @@ final class SyncPlannerTest
 
     public function multiSegmentPathFromRootClimbsAndVerifiesEachSegment(): void
     {
-        // A two-segment suffix climbs two levels: /some/project -> /, with
-        // both segments verified by the same reconstruct-and-match check.
+        // A two-segment suffix climbs two levels: /repo/packages/api ->
+        // /repo, with both segments verified by the reconstruct-and-compare
+        // check. The target then resolves against the monorepo root.
         $project = new ProjectConfig(
-            target: 'shared/skills',
+            target: '.agents/skills',
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            pathFromRoot: 'some/project',
+            pathFromRoot: 'packages/api',
         );
 
         $plan = $this->planner()->plan(
@@ -369,12 +370,12 @@ final class SyncPlannerTest
             project: $project,
             options: SyncOptions::default(),
             builtin: TrustedVendors::empty(),
-            projectRoot: $this->projectRoot(),
+            projectRoot: Path::create('/repo/packages/api'),
         );
 
         Assert::same(
             $this->normalizePath((string) $plan->target),
-            $this->normalizePath('/shared/skills'),
+            $this->normalizePath('/repo/.agents/skills'),
         );
     }
 
@@ -419,6 +420,102 @@ final class SyncPlannerTest
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
             pathFromRoot: '.',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function pathFromRootWithGlobCharsIsComparedLiterallyNotAsWildcard(): void
+    {
+        // Verification is literal, not an fnmatch glob: a suffix like `pkg?`
+        // must NOT be treated as a wildcard that "matches" a real `pkgX`
+        // directory, otherwise the verified-ancestor guarantee collapses.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('does not match the project location');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'pkg?',
+        );
+
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/pkgX'),
+        );
+    }
+
+    public function pathFromRootWithLiteralGlobCharsInDirectoryNameResolves(): void
+    {
+        // The mirror of the above: a project that genuinely lives in a
+        // directory whose name contains glob metacharacters must resolve,
+        // because the comparison is literal.
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            pathFromRoot: 'pkg[x]',
+        );
+
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/pkg[x]'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/.agents/skills'),
+        );
+    }
+
+    public function targetInsideRootWhoseNameContainsGlobCharsIsAccepted(): void
+    {
+        // Containment is literal too: a target inside a project whose path
+        // contains `[]` must not be mis-rejected as "outside" by a glob.
+        $plan = $this->planner()->plan(
+            donors: [],
+            project: new ProjectConfig(
+                target: 'skills',
+                trusted: TrustedVendors::empty(),
+                trustedReplace: false,
+            ),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: Path::create('/repo/pr[o]ject'),
+        );
+
+        Assert::same(
+            $this->normalizePath((string) $plan->target),
+            $this->normalizePath('/repo/pr[o]ject/skills'),
+        );
+    }
+
+    public function aliasResolvingToContainmentRootIsRejected(): void
+    {
+        // Aliases get the same root-itself guard as the target, so an alias
+        // that collapses to the root (e.g. `.`) is rejected with the clear
+        // message rather than later trying to link the root directory.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must not be the project root itself');
+
+        $project = new ProjectConfig(
+            target: '.agents/skills',
+            trusted: TrustedVendors::empty(),
+            trustedReplace: false,
+            aliases: ['.'],
         );
 
         $this->planner()->plan(
