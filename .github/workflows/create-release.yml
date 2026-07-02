@@ -11,6 +11,9 @@ on:  # yamllint disable-line rule:truthy
 
 name: 📦 Create release
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -23,5 +26,17 @@ jobs:
           config-file: .github/.release-please-config.json
           manifest-file: resources/version.json
           target-branch: master
+
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: ✨ Update Vibe Index
+        uses: roxblnfk/action-vibe-index@v1
+        with:
+          badge-style: for-the-badge
+          commit: true
+          push: true
 
 ...

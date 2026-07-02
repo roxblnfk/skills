@@ -4,6 +4,7 @@
 
 <div align="center">
 
+![Vibe Index](https://img.shields.io/badge/Indexing%20Vibe-6168e5?style=for-the-badge)
 [![Support on Boosty](https://img.shields.io/static/v1?style=for-the-badge&label=&message=Sponsorship&logo=Boosty&logoColor=white&color=%23F15F2C)](https://boosty.to/roxblnfk)
 
 </div>
