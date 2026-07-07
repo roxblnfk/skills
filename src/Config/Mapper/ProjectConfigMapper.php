@@ -42,10 +42,24 @@ use LLM\Skills\Discovery\Provider\ProviderId;
 final readonly class ProjectConfigMapper
 {
     /**
+     * Canonical key for the list of explicit donor sources.
+     */
+    public const SOURCES_KEY = 'sources';
+
+    /**
+     * Deprecated alias of {@see self::SOURCES_KEY}, still read everywhere
+     * project config is read and auto-migrated by write-mode commands.
+     */
+    public const DEPRECATED_SOURCES_KEY = 'remote';
+
+    /**
      * Project-level keys understood under `extra.skills`. Donor-side
      * keys (`source`) are deliberately excluded — they describe the
      * package as a donor, not as a consumer, and must not be flagged
      * as "shadowed" when `skills.json` is in effect.
+     *
+     * The deprecated `remote` alias stays in the list so a shadowed
+     * inline block still reports it and inline migration can extract it.
      *
      * @var list<non-empty-string>
      */
@@ -58,7 +72,8 @@ final readonly class ProjectConfigMapper
         'auto-sync',
         'path-from-root',
         'local',
-        'remote',
+        self::SOURCES_KEY,
+        self::DEPRECATED_SOURCES_KEY,
     ];
 
     /**
@@ -86,13 +101,18 @@ final readonly class ProjectConfigMapper
     {
         $external = $this->externalLoader->load($projectRoot);
         if ($external !== null) {
-            $config = $this->mapSkillsBlock($external, 'skills.json');
+            $mapped = $this->mapSkillsBlock($external, 'skills.json');
             $ignored = $this->collectIgnoredInlineKeys($extra);
 
-            return new ProjectConfigResolution($config, $ignored);
+            return new ProjectConfigResolution($mapped->config, $ignored, $mapped->usedDeprecatedSourcesKey);
         }
 
-        return new ProjectConfigResolution($this->fromExtra($extra));
+        $mapped = $this->mapExtra($extra);
+
+        return new ProjectConfigResolution(
+            $mapped->config,
+            usedDeprecatedSourcesKey: $mapped->usedDeprecatedSourcesKey,
+        );
     }
 
     /**
@@ -109,23 +129,7 @@ final readonly class ProjectConfigMapper
      */
     public function fromExtra(mixed $extra): ProjectConfig
     {
-        if ($extra === null || $extra === []) {
-            return ProjectConfig::default();
-        }
-
-        if (!\is_array($extra)) {
-            throw new MalformedProjectConfig('Root extra must be an object');
-        }
-
-        $skills = $extra['skills'] ?? null;
-        if ($skills === null) {
-            return ProjectConfig::default();
-        }
-        if (!\is_array($skills)) {
-            throw new MalformedProjectConfig('extra.skills must be an object');
-        }
-
-        return $this->mapSkillsBlock($skills, 'extra.skills');
+        return $this->mapExtra($extra)->config;
     }
 
     /**
@@ -270,6 +274,38 @@ final readonly class ProjectConfigMapper
     }
 
     /**
+     * Map an inline `extra` array, keeping the deprecation flag that
+     * {@see self::fromExtra()} discards for back-compat. Shared by
+     * {@see self::forProject()}'s inline branch.
+     *
+     * @param mixed $extra raw value of root `composer.json` `extra` field
+     *
+     * @throws MalformedProjectConfig when `extra.skills` is present but invalid
+     *
+     * @psalm-mutation-free
+     */
+    private function mapExtra(mixed $extra): MappedSkillsBlock
+    {
+        if ($extra === null || $extra === []) {
+            return new MappedSkillsBlock(ProjectConfig::default(), false);
+        }
+
+        if (!\is_array($extra)) {
+            throw new MalformedProjectConfig('Root extra must be an object');
+        }
+
+        $skills = $extra['skills'] ?? null;
+        if ($skills === null) {
+            return new MappedSkillsBlock(ProjectConfig::default(), false);
+        }
+        if (!\is_array($skills)) {
+            throw new MalformedProjectConfig('extra.skills must be an object');
+        }
+
+        return $this->mapSkillsBlock($skills, 'extra.skills');
+    }
+
+    /**
      * Per-field validator shared by both inline and external sources.
      * `$prefix` is woven into error messages so the user knows where
      * to look (`extra.skills.target` vs `skills.json: target`).
@@ -281,7 +317,7 @@ final readonly class ProjectConfigMapper
      *
      * @psalm-mutation-free
      */
-    private function mapSkillsBlock(array $skills, string $prefix): ProjectConfig
+    private function mapSkillsBlock(array $skills, string $prefix): MappedSkillsBlock
     {
         $target = $skills['target'] ?? ProjectConfig::DEFAULT_TARGET;
         if (!\is_string($target) || $target === '') {
@@ -318,9 +354,25 @@ final readonly class ProjectConfigMapper
         $pathFromRoot = $this->mapPathFromRoot($skills['path-from-root'] ?? null, $prefix);
 
         $local = $this->mapLocal($skills['local'] ?? [], $prefix);
-        $remote = $this->mapRemote($skills['remote'] ?? [], $prefix);
 
-        return new ProjectConfig(
+        // `sources` is canonical; `remote` is the deprecated alias feeding
+        // the same validator. Both keys in one block is fatal — the file
+        // is ours and strict, so there is no merge or precedence rule.
+        $hasSources = \array_key_exists(self::SOURCES_KEY, $skills);
+        $usedDeprecatedSourcesKey = \array_key_exists(self::DEPRECATED_SOURCES_KEY, $skills);
+        if ($hasSources && $usedDeprecatedSourcesKey) {
+            throw new MalformedProjectConfig(\sprintf(
+                '%s: both "%s" and "%s" are present; keep "%s" only',
+                $prefix,
+                self::SOURCES_KEY,
+                self::DEPRECATED_SOURCES_KEY,
+                self::SOURCES_KEY,
+            ));
+        }
+        $sourcesKey = $usedDeprecatedSourcesKey ? self::DEPRECATED_SOURCES_KEY : self::SOURCES_KEY;
+        $remote = $this->mapRemote($skills[$sourcesKey] ?? [], $prefix, $sourcesKey);
+
+        $config = new ProjectConfig(
             target: $target,
             trusted: $trusted,
             trustedReplace: $replace,
@@ -331,6 +383,8 @@ final readonly class ProjectConfigMapper
             local: $local,
             remote: $remote,
         );
+
+        return new MappedSkillsBlock($config, $usedDeprecatedSourcesKey);
     }
 
     /**
@@ -449,6 +503,9 @@ final readonly class ProjectConfigMapper
      * caller does not have to.
      *
      * @param non-empty-string $prefix
+     * @param non-empty-string $key config key the list was read from (`sources` or its
+     *        deprecated `remote` alias), woven into error messages so the user sees the
+     *        key they actually wrote
      *
      * @return list<RemoteEntry>
      *
@@ -456,14 +513,14 @@ final readonly class ProjectConfigMapper
      *
      * @psalm-mutation-free
      */
-    private function mapRemote(mixed $raw, string $prefix): array
+    private function mapRemote(mixed $raw, string $prefix, string $key): array
     {
         if ($raw === [] || $raw === null) {
             return [];
         }
         if (!\is_array($raw) || !\array_is_list($raw)) {
             throw new MalformedProjectConfig(
-                self::field($prefix, 'remote') . ' must be a list of objects',
+                self::field($prefix, $key) . ' must be a list of objects',
             );
         }
 
@@ -474,18 +531,18 @@ final readonly class ProjectConfigMapper
          * @var mixed $entry
          */
         foreach ($raw as $index => $entry) {
-            $parsed = $this->mapRemoteEntry($entry, $prefix, $index);
+            $parsed = $this->mapRemoteEntry($entry, $prefix, $key, $index);
 
-            $key = $parsed->compositeKey();
-            if (isset($seen[$key])) {
+            $compositeKey = $parsed->compositeKey();
+            if (isset($seen[$compositeKey])) {
                 throw new MalformedProjectConfig(\sprintf(
                     '%s[%d] duplicates an earlier entry (composite key: %s)',
-                    self::field($prefix, 'remote'),
+                    self::field($prefix, $key),
                     $index,
-                    $key,
+                    $compositeKey,
                 ));
             }
-            $seen[$key] = true;
+            $seen[$compositeKey] = true;
             $out[] = $parsed;
         }
 
@@ -494,14 +551,16 @@ final readonly class ProjectConfigMapper
 
     /**
      * @param non-empty-string $prefix
+     * @param non-empty-string $key config key the entry was read from (`sources` or its
+     *        deprecated `remote` alias)
      *
      * @throws MalformedProjectConfig
      *
      * @psalm-pure
      */
-    private function mapRemoteEntry(mixed $entry, string $prefix, int $index): RemoteEntry
+    private function mapRemoteEntry(mixed $entry, string $prefix, string $key, int $index): RemoteEntry
     {
-        $field = self::field($prefix, 'remote') . '[' . $index . ']';
+        $field = self::field($prefix, $key) . '[' . $index . ']';
 
         if (!\is_array($entry) || \array_is_list($entry)) {
             throw new MalformedProjectConfig($field . ' must be an object');
