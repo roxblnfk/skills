@@ -404,6 +404,187 @@ final class AddRunnerTest
         Assert::true(\str_contains($io->getOutput(), 'neither a composer.json'));
     }
 
+    // ── dir adapter (path-only, offline) ───────────────────────────
+
+    public function dirInputByPathPrefixRegistersWithoutTouchingAdapterOrFetcher(): void
+    {
+        // A `./sub` input selects the dir branch: no adapter parse, no
+        // fetch (the ExplodingFetcher would throw if the remote path
+        // ran). The entry lands with from=dir and the path stored as
+        // typed.
+        \mkdir($this->tmp . '/sub', 0o777, true);
+        $io = new BufferIO();
+        $registered = null;
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './sub'),
+            static function (SourceEntry $entry, string $name) use (&$registered): void {
+                $registered = [$entry, $name];
+            },
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'registered dir:./sub'));
+
+        $entry = $this->readSkillsJson()['sources'][0];
+        Assert::same($entry['from'] ?? null, 'dir');
+        Assert::same($entry['path'] ?? null, './sub');
+        Assert::false(\array_key_exists('url', $entry), 'dir entries carry no url');
+
+        // The scoped-sync name is derived from the resolved directory
+        // (<parent>/<basename>, lowercased) so the follow-up sync filters
+        // on the same donor the pipeline will produce.
+        Assert::true(\is_array($registered));
+        /** @var array{0: SourceEntry, 1: string} $registered */
+        Assert::true(\str_ends_with($registered[1], '/sub'));
+    }
+
+    public function fromDirForcesDirAdapterForABareName(): void
+    {
+        // `--from=dir` forces the dir branch even for a plain name that
+        // carries no path prefix, as long as it resolves to a directory.
+        \mkdir($this->tmp . '/plaindir', 0o777, true);
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'plaindir', from: ProviderId::DIR),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::same($this->readSkillsJson()['sources'][0]['path'] ?? null, 'plaindir');
+    }
+
+    public function relativeDirInputWithBackslashesIsStoredWithForwardSlashes(): void
+    {
+        // A Windows-style `.\a\b` spelling is normalised to forward
+        // slashes but otherwise kept verbatim (no `.` collapsing).
+        \mkdir($this->tmp . '/a/b', 0o777, true);
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: '.\\a\\b'),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::same($this->readSkillsJson()['sources'][0]['path'] ?? null, './a/b');
+    }
+
+    public function absoluteDirInputIsStoredAbsolute(): void
+    {
+        // An absolute input is honoured as-is (slashes normalised); the
+        // stored path stays absolute rather than being rebased.
+        \mkdir($this->tmp . '/abs-target', 0o777, true);
+        $absolute = $this->tmp . '/abs-target';
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: $absolute),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::same(
+            $this->readSkillsJson()['sources'][0]['path'] ?? null,
+            \str_replace('\\', '/', $absolute),
+        );
+    }
+
+    public function shorthandStillRoutesToTheRemoteAdapterNotDir(): void
+    {
+        // `owner/repo` has no path prefix, so it must NOT be captured by
+        // the dir heuristic — it flows through the github adapter (which
+        // needs a real fetch), proving the two paths stay disjoint.
+        $fetcher = $this->fetcherReturning($this->writeArchive('sh', 'acme/skills', 'skills'));
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), $fetcher)->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/skills'),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::same($this->readSkillsJson()['sources'][0]['from'] ?? null, 'github');
+    }
+
+    public function missingDirInputIsRefused(): void
+    {
+        // An explicit add of a directory that does not exist is a typo;
+        // refuse with a non-zero exit and name the path.
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './does-not-exist'),
+        );
+
+        Assert::same($code, Command::FAILURE);
+        Assert::true(\str_contains($io->getOutput(), 'dir ./does-not-exist'));
+        Assert::true(\str_contains($io->getOutput(), 'directory does not exist'));
+        Assert::false(\is_file($this->tmp . '/skills.json'), 'no entry is written on refusal');
+    }
+
+    public function refWithDirInputIsRejected(): void
+    {
+        \mkdir($this->tmp . '/sub', 0o777, true);
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './sub', ref: 'v1'),
+        );
+
+        Assert::same($code, Command::INVALID);
+        Assert::true(\str_contains($io->getOutput(), '--ref is not allowed for adapter "dir"'));
+    }
+
+    public function hostWithDirInputIsRejected(): void
+    {
+        \mkdir($this->tmp . '/sub', 0o777, true);
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './sub', host: 'https://example.com'),
+        );
+
+        Assert::same($code, Command::INVALID);
+        Assert::true(\str_contains($io->getOutput(), '--host is not allowed for adapter "dir"'));
+    }
+
+    public function repeatedDirAddMergesAllowlistUnderThePathCompositeKey(): void
+    {
+        // Two adds of the same path collapse into one entry (the path is
+        // the composite key) with the allowlist merged additively.
+        \mkdir($this->tmp . '/sub', 0o777, true);
+        $runner = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher());
+
+        $runner->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new AddOptions(input: './sub', skills: ['alpha']),
+        );
+        $runner->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new AddOptions(input: './sub', skills: ['beta']),
+        );
+
+        $sources = (array) $this->readSkillsJson()['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['skills'] ?? null, ['alpha', 'beta']);
+    }
+
     // ── writer failure ─────────────────────────────────────────────
 
     public function writerFailureReturnsFailure(): void

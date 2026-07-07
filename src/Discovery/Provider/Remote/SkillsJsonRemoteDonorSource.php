@@ -143,28 +143,6 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
     }
 
     /**
-     * Derive a donor package name from a resolved directory:
-     * `<parent-basename>/<basename>`, lowercased (e.g.
-     * `D:\git\testo\testo\skills` → `testo/skills`). When the resolved
-     * path has no usable parent segment (a filesystem root), fall back
-     * to `dir/<basename>`.
-     *
-     * @return non-empty-string
-     */
-    private static function deriveDirPackageName(Path $resolved): string
-    {
-        $basename = $resolved->name();
-        $parent = $resolved->parent()->name();
-        // `name()` never returns an empty string; a filesystem root
-        // still yields a `.`/`..` segment with no usable vendor part.
-        $vendor = ($parent === '.' || $parent === '..') ? 'dir' : $parent;
-
-        /** @var non-empty-string $name */
-        $name = \strtolower($vendor . '/' . $basename);
-        return $name;
-    }
-
-    /**
      * Resolve a `dir` entry into a {@see DirDonorRef}.
      *
      * Path resolution: a relative `path` is anchored at the project
@@ -194,7 +172,7 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
             spelling: $spelling,
             provenance: $entry->from,
             skillFilter: $entry->skills,
-            packageHint: $entry->package ?? self::deriveDirPackageName($resolved),
+            packageHint: $entry->package ?? DirDonorRef::derivePackageName($resolved),
         );
     }
 }

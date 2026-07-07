@@ -52,6 +52,36 @@ final readonly class DirDonorRef
     ) {}
 
     /**
+     * Derive a donor package name from a resolved directory:
+     * `<parent-basename>/<basename>`, lowercased (e.g.
+     * `D:\git\testo\testo\skills` → `testo/skills`). When the resolved
+     * path has no usable parent segment (a filesystem root), fall back
+     * to `dir/<basename>`.
+     *
+     * The precedence rule of spec §4.1 lives at the call sites: an
+     * entry `package` override and a directory's own `composer.json`
+     * name both win over this derivation, which is the last fallback.
+     * `skills:add` and the sync source both call this so the name they
+     * scope on stays identical.
+     *
+     * @return non-empty-string
+     */
+    public static function derivePackageName(Path $resolved): string
+    {
+        /** @psalm-suppress ImpureMethodCall Path::name()/parent() only read the path string */
+        $basename = $resolved->name();
+        /** @psalm-suppress ImpureMethodCall Path::name()/parent() only read the path string */
+        $parent = $resolved->parent()->name();
+        // `name()` never returns an empty string; a filesystem root
+        // still yields a `.`/`..` segment with no usable vendor part.
+        $vendor = ($parent === '.' || $parent === '..') ? 'dir' : $parent;
+
+        /** @var non-empty-string $name */
+        $name = \strtolower($vendor . '/' . $basename);
+        return $name;
+    }
+
+    /**
      * Stable identifier for diagnostics, echoing the user's spelling:
      * `dir ./skills`. Mirrors {@see RemoteDonorRef::describe()} so the
      * `source <ref>: <reason>` warning framing reads uniformly across

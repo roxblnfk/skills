@@ -416,6 +416,7 @@ Shipped in [`resources/trusted-composer.txt`](resources/trusted-composer.txt); e
 
 - **Local providers** — walk a manifest the project already owns. Today only `composer`; `npm` and `go` are reserved in the vocabulary but ship later.
 - **Remote providers** — fetch an explicit ref from a URL (currently GitHub and GitLab; the format is forward-compatible with Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`).
+- **Local directory donors** — the `dir` adapter reads a directory already on disk (a shared skills folder next to the repo, a monorepo sibling); no fetch, no cache. See [Local directory donors](#local-directory-donors-dir).
 
 Both axes coexist. When the same package name arrives via both, the **`sources` entry wins** (you typed it; the transitive Composer pickup is treated as stale) and the displaced donor is logged under `-v`.
 
@@ -434,6 +435,8 @@ composer skills:add team/skills --from=gitlab \
 composer skills:add acme/skills \
         --skill=code-review --skill=refactor                  # only these two skills
 composer skills:add acme/skills --no-sync                     # only edit skills.json
+composer skills:add ./skills                                  # local directory donor (dir)
+composer skills:add ../shared-skills --skill=deploy           # sibling folder, single skill
 ```
 
 `--from` defaults to `github` for shorthand input (`owner/repo`). Pass it explicitly only when targeting a different adapter, or override it when the URL host is ambiguous. Full URLs still resolve the adapter from the host — `--from` is only consulted as an override.
@@ -449,8 +452,8 @@ The command:
 
 | Option        | Description                                                                                                   |
 |---------------|---------------------------------------------------------------------------------------------------------------|
-| `<input>`     | Shorthand `owner/repo`, shorthand with `@ref`, or a full URL.                                                  |
-| `--from=ID`   | Adapter id. Required for shorthand; inferred from the URL host when omitted with a full URL.                   |
+| `<input>`     | Shorthand `owner/repo`, shorthand with `@ref`, a full URL, or a local directory path (`./skills`, `../shared`, an absolute path). |
+| `--from=ID`   | Adapter id (`github`, `gitlab`, `dir`, …). Defaults to `github` for shorthand; inferred from the URL host for a full URL; inferred as `dir` when the input opens with a path prefix. |
 | `--host=URL`  | Override the adapter's default host (GitHub Enterprise, self-hosted GitLab, private Packagist).               |
 | `--ref=REF`   | Pin a tag, branch, SHA, or Composer-style constraint (`^1.2.3`). Without this, the cascade above runs.        |
 | `--skill=NAME`| Restrict the donor to a specific skill directory. Repeatable. Names accumulate across consecutive `skills:add` calls. Without the flag, every skill the donor ships is synced. |
@@ -481,6 +484,33 @@ A donor often ships more skills than you want in a given project. The optional `
 - Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in the skill allowlist but not found in the donor`) so typos surface without aborting the sync.
 
 `skills:add --skill=NAME` is the CLI surface: pass `--skill` repeatedly to build the list. The flag is **additive on upsert** — running `skills:add` again on the same entry adds the new names to whatever was already stored. A follow-up `skills:add` without `--skill` does **not** touch the existing allowlist (whether it was a populated list or an explicit empty one). Removing a name or clearing the allowlist entirely is a manual edit of `skills.json`.
+
+### Local directory donors (`dir`)
+
+The `dir` adapter registers a directory already on disk as an explicit donor — a shared skills folder next to the repo, a monorepo sibling, or a working copy you are iterating on. There is no fetch, no cache, and no ref: the directory is read live on every sync, so edits show up on the next `skills:update` with nothing to invalidate.
+
+```jsonc
+{
+  "sources": [
+    { "from": "dir", "path": "./skills" },
+    { "from": "dir", "path": "../shared-skills", "package": "myorg/shared", "skills": ["deploy"] }
+  ]
+}
+```
+
+`skills:add` selects the adapter from the input shape — a path opening with `./`, `../`, `/`, `\`, or a Windows drive letter (`X:`) is treated as a directory; `--from=dir` forces it for a bare name:
+
+```bash
+composer skills:add ./skills                       # relative to the project root
+composer skills:add ../shared-skills --skill=deploy
+composer skills:add /srv/team/skills               # absolute path
+composer skills:add D:\team\skills --from=dir
+```
+
+- **Path resolution.** A relative `path` resolves from the project root (the same anchor `target` uses); absolute paths (including Windows drive letters) are honoured as-is. `..` segments and locations outside the project root are allowed — a `sources[]` entry is an explicit act of trust. The stored `path` is kept as typed (normalised to forward slashes).
+- **Package name.** The donor's name is the entry's `package` override if present, else the directory's own `composer.json` `name`, else it is derived from the resolved path as `<parent>/<basename>` lowercased (e.g. `.../testo/skills` → `testo/skills`).
+- **Implicit trust.** Like every `sources[]` entry, a `dir` donor is trusted by declaration — you typed the path, so its skills sync without a `trusted` listing.
+- `url`, `host`, and `ref` are not applicable and are rejected (there is no host and no version concept); the per-entry `skills` allowlist behaves exactly as for other adapters. A `path` that does not exist at sync time degrades to a `-v` warning and is skipped, but an explicit `skills:add` of a missing directory is refused up front (a missing directory at add time is a typo).
 
 ### Authentication
 
