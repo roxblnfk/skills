@@ -222,8 +222,8 @@ final class StandaloneBinTest
         );
         Assert::same(
             \array_keys($decoded),
-            ['$schema', 'local', 'remote'],
-            'standalone init writes a stub with the local + remote knobs visible',
+            ['$schema', 'local', 'sources'],
+            'standalone init writes a stub with the local + sources knobs visible',
         );
     }
 }

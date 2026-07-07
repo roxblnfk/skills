@@ -41,7 +41,7 @@ final class InitRunnerTest
 
     public function standaloneModeCreatesStubWithSchemaAndProviderDefaults(): void
     {
-        // The stub advertises the `local` and `remote` knobs explicitly,
+        // The stub advertises the `local` and `sources` knobs explicitly,
         // even when their values match the defaults, so users discover
         // them without reading docs.
         $io = new BufferIO();
@@ -54,14 +54,14 @@ final class InitRunnerTest
         Assert::same($code, Command::SUCCESS);
 
         $written = $this->readSkillsJson();
-        Assert::same(\array_keys($written), ['$schema', 'local', 'remote']);
+        Assert::same(\array_keys($written), ['$schema', 'local', 'sources']);
         Assert::same(
             $written['$schema'],
             InitRunner::SCHEMA_URL,
             '$schema pointer must use the published GitHub raw URL',
         );
         Assert::same($written['local'], ['composer' => true]);
-        Assert::same($written['remote'], []);
+        Assert::same($written['sources'], []);
 
         // Output advertises the mode so the user understands no composer.json
         // edits happened (because there is no composer.json).
@@ -279,7 +279,7 @@ final class InitRunnerTest
         );
 
         Assert::same($code, Command::SUCCESS);
-        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'local', 'remote']);
+        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'local', 'sources']);
         Assert::true(\str_contains($io->getOutput(), 'no project keys to migrate'));
     }
 

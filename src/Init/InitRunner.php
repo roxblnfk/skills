@@ -508,14 +508,14 @@ final readonly class InitRunner
             return false;
         }
 
-        // Stub `skills.json` ships with the `local` and `remote`
+        // Stub `skills.json` ships with the `local` and `sources`
         // knobs visible so users discover them without reading docs.
         // `local.composer: true` is also the default, but we emit it
         // explicitly — hiding it would make the npm / go toggles seem
         // surprise-feature-y when they arrive.
         $content = ProjectConfigMigrator::renderSkillsJson([
             'local' => ['composer' => true],
-            'remote' => [],
+            'sources' => [],
         ]);
         if (\file_put_contents($target, $content) === false) {
             $io->writeError(\sprintf(
