@@ -11,7 +11,7 @@ use Composer\IO\NullIO;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Add\PostAddSync;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
@@ -85,7 +85,7 @@ final class Add extends Command
             $projectRoot,
             $io,
             $options,
-            static function (RemoteEntry $_entry, string $packageName) use (&$donorPackageName): void {
+            static function (SourceEntry $_entry, string $packageName) use (&$donorPackageName): void {
                 $donorPackageName = $packageName;
             },
         );

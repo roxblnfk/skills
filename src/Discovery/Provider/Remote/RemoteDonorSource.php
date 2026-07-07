@@ -44,7 +44,7 @@ interface RemoteDonorSource
      * subsequently iterates the same source.
      *
      * Implementations should answer by inspecting their config surface
-     * directly (e.g. "does skills.json declare any `remote[]` entries"),
+     * directly (e.g. "does skills.json declare any `sources[]` entries"),
      * not by producing refs.
      *
      * @psalm-suppress MissingAbstractPureAnnotation

@@ -32,7 +32,7 @@ use LLM\Skills\Config\VendorConfig;
  *   the bouncer for *auto-discovered* donors, not for ones the user already
  *   asked for by name.
  * - A donor flagged {@see VendorConfig::$implicitTrust} is user-declared at
- *   the source level (today: every `remote[]` entry, regardless of `from`).
+ *   the source level (today: every `sources[]` entry, regardless of `from`).
  *   The trust list applies to local-provider transitive discoveries only,
  *   so the planner skips it for these donors.
  * - A package declared as a direct dependency in the consumer's root
@@ -76,7 +76,7 @@ final readonly class SyncPlanner
                 : \array_fill_keys($directDependencies, true);
             foreach ($filtered as $donor) {
                 // A donor flagged `implicitTrust` is user-declared
-                // (today: every `remote[]` entry); the trust list
+                // (today: every `sources[]` entry); the trust list
                 // applies only to local-provider transitive discoveries,
                 // so we skip the check entirely.
                 if (

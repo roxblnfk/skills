@@ -119,7 +119,7 @@ final readonly class RemoteProvider implements DonorProvider
      * Remote refs are external donors, not Composer dependencies of
      * the consumer project, so the `directDependencies` channel
      * (rooted in Composer's `require` / `require-dev` semantics)
-     * does not apply. Implicit-trust for `remote[]` entries flows
+     * does not apply. Implicit-trust for `sources[]` entries flows
      * through {@see \LLM\Skills\Config\VendorConfig::$implicitTrust}
      * instead — set in {@see self::discover()} on every donor this
      * provider emits — which the planner checks before consulting
@@ -252,7 +252,7 @@ final readonly class RemoteProvider implements DonorProvider
     private function decorate(VendorConfig $donor, RemoteDonorRef $ref): VendorConfig
     {
         $provenance = $ref->provenance ?? 'source';
-        // `remote[]` entries are user-declared and therefore
+        // `sources[]` entries are user-declared and therefore
         // implicit-trusted, regardless of `from` value. The planner's
         // trust list applies to local-provider transitive discoveries
         // only. The optional skill allowlist carries through to the

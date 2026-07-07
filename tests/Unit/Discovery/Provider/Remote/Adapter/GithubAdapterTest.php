@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote\Adapter;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
@@ -392,7 +392,7 @@ final class GithubAdapterTest
         Expect::exception(RemoteResolveException::class)
             ->withMessageContaining('adapter id mismatch');
 
-        $adapter->resolve(new RemoteEntry(
+        $adapter->resolve(new SourceEntry(
             from: 'gitlab',
             package: 'acme/x',
             url: null,
@@ -401,10 +401,10 @@ final class GithubAdapterTest
         ));
     }
 
-    public function remoteEntryConstructorRejectsBothPackageAndUrlNull(): void
+    public function SourceEntryConstructorRejectsBothPackageAndUrlNull(): void
     {
         // The "package required for github" check used to live in
-        // GithubAdapter::resolve(), but RemoteEntry's constructor now
+        // GithubAdapter::resolve(), but SourceEntry's constructor now
         // refuses entries where neither `package` nor `url` is set —
         // a malformed github entry can no longer reach the adapter.
         // Keep the test as the lower-tier invariant probe so the
@@ -412,7 +412,7 @@ final class GithubAdapterTest
         Expect::exception(\InvalidArgumentException::class)
             ->withMessageContaining('neither set');
 
-        new RemoteEntry(
+        new SourceEntry(
             from: 'github',
             package: null,
             url: null,
@@ -433,9 +433,9 @@ final class GithubAdapterTest
      * @param non-empty-string|null $host
      * @param non-empty-string|null $ref
      */
-    private static function entry(string $package, ?string $host = null, ?string $ref = null): RemoteEntry
+    private static function entry(string $package, ?string $host = null, ?string $ref = null): SourceEntry
     {
-        return new RemoteEntry(
+        return new SourceEntry(
             from: 'github',
             package: $package,
             url: null,

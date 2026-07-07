@@ -8,7 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\ProjectConfigResolution;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Discovery\Provider\ProviderId;
@@ -168,7 +168,7 @@ final readonly class ProjectConfigMapper
      * Read an optional string field that must be non-empty when present.
      * Returns null when the key is absent.
      *
-     * @param non-empty-string $field path prefix for error messages, e.g. `skills.json: remote[0]`
+     * @param non-empty-string $field path prefix for error messages, e.g. `skills.json: sources[0]`
      * @param non-empty-string $name field name inside the entry
      *
      * @return non-empty-string|null
@@ -191,7 +191,7 @@ final readonly class ProjectConfigMapper
     }
 
     /**
-     * Pick adapter-specific extras out of a `remote[]` entry — anything
+     * Pick adapter-specific extras out of a `sources[]` entry — anything
      * that is not one of the well-known keys (`from`, `package`, `url`,
      * `host`, `ref`). Stored verbatim so adapters can read their own
      * keys (`sha256` on `zip`, custom proxy options on `go`, …) without
@@ -230,7 +230,7 @@ final readonly class ProjectConfigMapper
     }
 
     /**
-     * Parse the optional `remote[].skills` allowlist. Three states:
+     * Parse the optional `sources[].skills` allowlist. Three states:
      *
      * - absent / `null` → no filter, every skill is synced (default);
      * - non-empty list → only the listed skills are synced;
@@ -247,7 +247,7 @@ final readonly class ProjectConfigMapper
      *
      * @psalm-pure
      */
-    private static function mapRemoteSkills(mixed $raw, string $field): ?array
+    private static function mapSourceSkills(mixed $raw, string $field): ?array
     {
         if ($raw === null) {
             return null;
@@ -370,7 +370,7 @@ final readonly class ProjectConfigMapper
             ));
         }
         $sourcesKey = $usedDeprecatedSourcesKey ? self::DEPRECATED_SOURCES_KEY : self::SOURCES_KEY;
-        $remote = $this->mapRemote($skills[$sourcesKey] ?? [], $prefix, $sourcesKey);
+        $sources = $this->mapSources($skills[$sourcesKey] ?? [], $prefix, $sourcesKey);
 
         $config = new ProjectConfig(
             target: $target,
@@ -381,7 +381,7 @@ final readonly class ProjectConfigMapper
             autoSync: $autoSync,
             pathFromRoot: $pathFromRoot,
             local: $local,
-            remote: $remote,
+            sources: $sources,
         );
 
         return new MappedSkillsBlock($config, $usedDeprecatedSourcesKey);
@@ -495,7 +495,7 @@ final readonly class ProjectConfigMapper
     }
 
     /**
-     * Parse and validate the `remote[]` list. Each entry is structurally
+     * Parse and validate the `sources[]` list. Each entry is structurally
      * an object with a mandatory `from` (adapter id), exactly one of
      * `package` / `url`, and optional `host` / `ref` plus
      * adapter-specific extras. Composite uniqueness on
@@ -507,13 +507,13 @@ final readonly class ProjectConfigMapper
      *        deprecated `remote` alias), woven into error messages so the user sees the
      *        key they actually wrote
      *
-     * @return list<RemoteEntry>
+     * @return list<SourceEntry>
      *
      * @throws MalformedProjectConfig
      *
      * @psalm-mutation-free
      */
-    private function mapRemote(mixed $raw, string $prefix, string $key): array
+    private function mapSources(mixed $raw, string $prefix, string $key): array
     {
         if ($raw === [] || $raw === null) {
             return [];
@@ -531,7 +531,7 @@ final readonly class ProjectConfigMapper
          * @var mixed $entry
          */
         foreach ($raw as $index => $entry) {
-            $parsed = $this->mapRemoteEntry($entry, $prefix, $key, $index);
+            $parsed = $this->mapSourceEntry($entry, $prefix, $key, $index);
 
             $compositeKey = $parsed->compositeKey();
             if (isset($seen[$compositeKey])) {
@@ -558,7 +558,7 @@ final readonly class ProjectConfigMapper
      *
      * @psalm-pure
      */
-    private function mapRemoteEntry(mixed $entry, string $prefix, string $key, int $index): RemoteEntry
+    private function mapSourceEntry(mixed $entry, string $prefix, string $key, int $index): SourceEntry
     {
         $field = self::field($prefix, $key) . '[' . $index . ']';
 
@@ -618,11 +618,11 @@ final readonly class ProjectConfigMapper
             }
         }
 
-        $skills = self::mapRemoteSkills($entry['skills'] ?? null, $field);
+        $skills = self::mapSourceSkills($entry['skills'] ?? null, $field);
 
         $extras = self::collectExtras($entry);
 
-        return new RemoteEntry(
+        return new SourceEntry(
             from: $from,
             package: $package,
             url: $url,

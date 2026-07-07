@@ -36,9 +36,9 @@ use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
  *     toggle. Inactive when no Composer instance is supplied or when
  *     the toggle is `false`.
  *  2. **`RemoteProvider`** — wired with a {@see SkillsJsonRemoteDonorSource}
- *     (reads `remote[]` from `skills.json`) and a {@see HttpArchiveFetcher}
+ *     (reads `sources[]` from `skills.json`) and a {@see HttpArchiveFetcher}
  *     (downloads + extracts archives into `vendor/llm-skills/cache/...`).
- *     Inactive when `remote[]` is empty.
+ *     Inactive when `sources[]` is empty.
  *
  * Remote is wired LAST so the composite's "later-wins" semantic
  * makes explicit remote entries override transitive local discoveries

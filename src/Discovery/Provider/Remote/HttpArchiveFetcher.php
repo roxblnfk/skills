@@ -248,7 +248,7 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
         string $scratch,
     ): string {
         // Zip-slip guard: validate every entry name BEFORE extraction.
-        // The archive comes from a user-configurable {@see RemoteEntry::$host}
+        // The archive comes from a user-configurable {@see SourceEntry::$host}
         // and a single rogue entry like `../../../etc/passwd` or
         // `/etc/passwd` would let the underlying extractor drop files
         // anywhere on disk. Reject anything that does not lexically

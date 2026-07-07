@@ -53,7 +53,7 @@ final readonly class ProjectConfig
      *         fall back to {@see ProviderId::defaultLocalEnabled()} — `composer` defaults to
      *         enabled (preserves the pre-`local` behaviour), every other id defaults to off
      *         so a new provider stays opt-in until its implementation lands.
-     * @param list<RemoteEntry> $remote remote donor refs declared by the project. The remote
+     * @param list<SourceEntry> $sources donor sources declared by the project. The remote
      *         provider treats each entry as an explicit fetch target. Empty list means
      *         the remote provider stays inactive — symmetric with `local.composer == false`.
      *
@@ -68,7 +68,7 @@ final readonly class ProjectConfig
         public bool $autoSync = true,
         public ?string $pathFromRoot = null,
         public array $local = [],
-        public array $remote = [],
+        public array $sources = [],
     ) {}
 
     /**
@@ -88,7 +88,7 @@ final readonly class ProjectConfig
             autoSync: true,
             pathFromRoot: null,
             local: [],
-            remote: [],
+            sources: [],
         );
     }
 
@@ -125,7 +125,7 @@ final readonly class ProjectConfig
             $this->autoSync,
             $this->pathFromRoot,
             $this->local,
-            $this->remote,
+            $this->sources,
         );
     }
 
@@ -145,7 +145,7 @@ final readonly class ProjectConfig
             $this->autoSync,
             $this->pathFromRoot,
             $this->local,
-            $this->remote,
+            $this->sources,
         );
     }
 }

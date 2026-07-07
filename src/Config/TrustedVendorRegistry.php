@@ -20,7 +20,7 @@ use LLM\Skills\Info;
  *
  * The trust files apply only to **local-provider transitive
  * discoveries**. Direct deps are implicit-trusted because the user
- * typed them; entries in `remote[]` are likewise implicit-trusted as
+ * typed them; entries in `sources[]` are likewise implicit-trusted as
  * explicit, typed-by-the-user signals of intent.
  *
  * Not annotated `@psalm-immutable`: the loader does filesystem IO.

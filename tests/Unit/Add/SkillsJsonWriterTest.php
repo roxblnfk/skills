@@ -7,7 +7,7 @@ namespace LLM\Skills\Tests\Unit\Add;
 use Internal\Path;
 use LLM\Skills\Add\SkillsJsonWriter;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
@@ -190,7 +190,7 @@ final class SkillsJsonWriterTest
         // Fixed key order: from → host → package → ref → extras.
         (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
-            new RemoteEntry(
+            new SourceEntry(
                 from: 'github',
                 package: 'acme/skills',
                 url: null,
@@ -462,8 +462,8 @@ final class SkillsJsonWriterTest
         ?string $host = null,
         ?string $ref = null,
         ?array $skills = null,
-    ): RemoteEntry {
-        return new RemoteEntry(
+    ): SourceEntry {
+        return new SourceEntry(
             from: ProviderId::GITHUB,
             package: $package,
             url: null,

@@ -551,7 +551,7 @@ final class ProjectConfigMapperTest
     {
         $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
 
-        Assert::same($cfg->remote, []);
+        Assert::same($cfg->sources, []);
     }
 
     public function remotePackageAdapterParses(): void
@@ -564,8 +564,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 1);
-        $entry = $cfg->remote[0];
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
         Assert::same($entry->from, 'github');
         Assert::same($entry->package, 'acme/skills');
         Assert::same($entry->ref, '^1.0');
@@ -590,7 +590,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->host, 'https://github.corp.example.com');
+        Assert::same($cfg->sources[0]->host, 'https://github.corp.example.com');
     }
 
     public function remoteUrlAdapterParses(): void
@@ -603,8 +603,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 1);
-        $entry = $cfg->remote[0];
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
         Assert::same($entry->from, 'zip');
         Assert::same($entry->url, 'https://example.com/x.zip');
         Assert::same($entry->package, null);
@@ -717,7 +717,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 2);
+        Assert::count($cfg->sources, 2);
     }
 
     public function remoteSkillsAllowlistIsParsed(): void
@@ -734,7 +734,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, ['code-review', 'refactor']);
+        Assert::same($cfg->sources[0]->skills, ['code-review', 'refactor']);
     }
 
     public function remoteWithoutSkillsKeyDefaultsToNull(): void
@@ -749,7 +749,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, null);
+        Assert::same($cfg->sources[0]->skills, null);
     }
 
     public function remoteSkillsAcceptsEmptyList(): void
@@ -766,7 +766,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, []);
+        Assert::same($cfg->sources[0]->skills, []);
     }
 
     public function remoteSkillsMustBeAList(): void
@@ -813,8 +813,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, ['hello']);
-        Assert::same($cfg->remote[0]->extras, []);
+        Assert::same($cfg->sources[0]->skills, ['hello']);
+        Assert::same($cfg->sources[0]->extras, []);
     }
 
     public function remoteAsObjectThrows(): void
@@ -827,7 +827,7 @@ final class ProjectConfigMapperTest
         ]);
     }
 
-    public function remoteEntryAsScalarThrows(): void
+    public function SourceEntryAsScalarThrows(): void
     {
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('must be an object');
@@ -861,8 +861,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 1);
-        $entry = $cfg->remote[0];
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
         Assert::same($entry->from, 'github');
         Assert::same($entry->package, 'acme/skills');
         Assert::same($entry->ref, '^1.0');
@@ -878,8 +878,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 1);
-        $entry = $cfg->remote[0];
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
         Assert::same($entry->from, 'zip');
         Assert::same($entry->url, 'https://example.com/x.zip');
         Assert::same($entry->extras, ['sha256' => 'abc']);

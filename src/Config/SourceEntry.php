@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Config;
 
 /**
- * One entry of the `remote[]` list in `skills.json`.
+ * One entry of the `sources[]` list in `skills.json`.
  *
  * Each entry tells the remote provider what to fetch and where from:
  * `from` is the adapter id (a value from {@see \LLM\Skills\Discovery\Provider\ProviderId}),
@@ -21,7 +21,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class RemoteEntry
+final readonly class SourceEntry
 {
     /**
      * @param non-empty-string $from adapter id, e.g. {@see \LLM\Skills\Discovery\Provider\ProviderId::GITHUB}
@@ -69,7 +69,7 @@ final readonly class RemoteEntry
         $hasUrl = $url !== null;
         if ($hasPackage === $hasUrl) {
             throw new \InvalidArgumentException(
-                'RemoteEntry requires exactly one of $package or $url to be non-null; got '
+                'SourceEntry requires exactly one of $package or $url to be non-null; got '
                 . ($hasPackage ? 'both set' : 'neither set'),
             );
         }
@@ -84,7 +84,7 @@ final readonly class RemoteEntry
             foreach ($skills as $name) {
                 if (!\is_string($name) || $name === '') {
                     throw new \InvalidArgumentException(
-                        'RemoteEntry $skills must be a list of non-empty strings.',
+                        'SourceEntry $skills must be a list of non-empty strings.',
                     );
                 }
             }

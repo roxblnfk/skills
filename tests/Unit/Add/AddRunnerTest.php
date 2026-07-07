@@ -8,7 +8,7 @@ use Composer\IO\BufferIO;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Config\AddOptions;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -557,7 +557,7 @@ final class StubAdapter implements HostAdapter
     }
 
     #[\Override]
-    public function resolve(RemoteEntry $entry): RemoteDonorRef
+    public function resolve(SourceEntry $entry): RemoteDonorRef
     {
         if ($this->resolveError !== null) {
             throw new RemoteResolveException($entry, $this->resolveError);

@@ -8,7 +8,7 @@ namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
  * Output of {@see HostAdapter::parseAddInput()}.
  *
  * Carries the four fields that will land in `skills.json`'s
- * `remote[]` after `skills:add` runs:
+ * `sources[]` after `skills:add` runs:
  *
  * - `from`     — the adapter id (mandatory).
  * - `package`  — adapter-namespaced identifier (or `null` when
@@ -20,7 +20,7 @@ namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
  *                runs the ref cascade at sync time).
  *
  * Constructed by the adapter and consumed by the `skills:add` runner.
- * Kept separate from {@see \LLM\Skills\Config\RemoteEntry}
+ * Kept separate from {@see \LLM\Skills\Config\SourceEntry}
  * because the latter is the **stored** shape (carries adapter-specific
  * extras and is loaded by the mapper) while this is the **parsed-CLI**
  * shape that feeds the writer.

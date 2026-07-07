@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote\Adapter;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
@@ -493,7 +493,7 @@ final class GitlabAdapterTest
         Expect::exception(RemoteResolveException::class)
             ->withMessageContaining('adapter id mismatch');
 
-        $adapter->resolve(new RemoteEntry(
+        $adapter->resolve(new SourceEntry(
             from: 'github',
             package: 'acme/x',
             url: null,
@@ -514,9 +514,9 @@ final class GitlabAdapterTest
      * @param non-empty-string|null $host
      * @param non-empty-string|null $ref
      */
-    private static function entry(string $package, ?string $host = null, ?string $ref = null): RemoteEntry
+    private static function entry(string $package, ?string $host = null, ?string $ref = null): SourceEntry
     {
-        return new RemoteEntry(
+        return new SourceEntry(
             from: 'gitlab',
             package: $package,
             url: null,

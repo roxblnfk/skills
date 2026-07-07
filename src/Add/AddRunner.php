@@ -7,7 +7,7 @@ namespace LLM\Skills\Add;
 use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Config\AddOptions;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -66,9 +66,9 @@ final readonly class AddRunner
     ) {}
 
     /**
-     * @param \Closure(RemoteEntry, non-empty-string):void|null $onRegistered
+     * @param \Closure(SourceEntry, non-empty-string):void|null $onRegistered
      *         invoked exactly once after the entry is upserted into
-     *         `skills.json`. Receives the {@see RemoteEntry} AND the
+     *         `skills.json`. Receives the {@see SourceEntry} AND the
      *         donor's actual Composer-package name (read from the
      *         fetched `composer.json`'s `name` field).
      *
@@ -136,7 +136,7 @@ final readonly class AddRunner
         // Step 6: upsert into skills.json. The `--skill` allowlist (if
         // any) is forwarded verbatim; the writer's upsert logic merges
         // it with whatever names already lived in a matching entry.
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: $parsed->from,
             package: $parsed->package,
             url: $parsed->url,
@@ -165,7 +165,7 @@ final readonly class AddRunner
     }
 
     /**
-     * Build a {@see RemoteEntry} from the parsed input for the
+     * Build a {@see SourceEntry} from the parsed input for the
      * adapter's `resolve()` call. The synthesised entry differs
      * from what will eventually land in `skills.json` only in that
      * its `ref` is the user-typed value (or null) — the storage-level
@@ -173,9 +173,9 @@ final readonly class AddRunner
      *
      * @psalm-pure
      */
-    private static function syntheticEntry(ParsedAddInput $parsed): RemoteEntry
+    private static function syntheticEntry(ParsedAddInput $parsed): SourceEntry
     {
-        return new RemoteEntry(
+        return new SourceEntry(
             from: $parsed->from,
             package: $parsed->package,
             url: $parsed->url,

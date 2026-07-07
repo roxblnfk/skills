@@ -33,7 +33,7 @@ final readonly class VendorConfig
      *         `skills:update --from=<id>` to filter the donor list.
      * @param bool $implicitTrust the user explicitly declared this donor — the trust
      *         list is not consulted. Set by {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider}
-     *         for every `remote[]` entry, regardless of `from` value. Local providers
+     *         for every `sources[]` entry, regardless of `from` value. Local providers
      *         keep this `false` and let {@see \LLM\Skills\Sync\SyncPlanner} run the
      *         per-registry trust check.
      * @param list<non-empty-string>|null $skillFilter optional allowlist of skill
@@ -97,7 +97,7 @@ final readonly class VendorConfig
 
     /**
      * Return a copy of this donor flagged as implicit-trusted. The
-     * `remote[]` provider calls this on every donor it produces so
+     * `sources[]` provider calls this on every donor it produces so
      * the planner does not consult the trust list for them
      * (user-declared = trusted).
      *

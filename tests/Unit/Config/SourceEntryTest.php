@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Config;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
 
 #[Test]
-#[Covers(RemoteEntry::class)]
-final class RemoteEntryTest
+#[Covers(SourceEntry::class)]
+final class SourceEntryTest
 {
     public function identifierReturnsPackageWhenSet(): void
     {
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: ProviderId::GITHUB,
             package: 'acme/skills',
             url: null,
@@ -29,7 +29,7 @@ final class RemoteEntryTest
 
     public function identifierReturnsUrlWhenPackageNull(): void
     {
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: ProviderId::ZIP,
             package: null,
             url: 'https://example.com/x.zip',
@@ -42,7 +42,7 @@ final class RemoteEntryTest
 
     public function compositeKeyCombinesFromHostAndIdentifier(): void
     {
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: ProviderId::GITHUB,
             package: 'acme/skills',
             url: null,
@@ -62,8 +62,8 @@ final class RemoteEntryTest
         // entries differ only if both omit host or both spell the
         // same host — the adapter's default-host fill-in is a runtime
         // concern, not a config-load concern.
-        $a = new RemoteEntry(ProviderId::GITHUB, 'acme/skills', null, null, null);
-        $b = new RemoteEntry(ProviderId::GITHUB, 'acme/skills', null, '', null);
+        $a = new SourceEntry(ProviderId::GITHUB, 'acme/skills', null, null, null);
+        $b = new SourceEntry(ProviderId::GITHUB, 'acme/skills', null, '', null);
 
         Assert::same($a->compositeKey(), 'github||acme/skills');
         // (b cannot be constructed via mapper — non-empty-string — but
@@ -73,7 +73,7 @@ final class RemoteEntryTest
 
     public function extrasDefaultToEmptyMap(): void
     {
-        $entry = new RemoteEntry(ProviderId::GITHUB, 'acme/skills', null, null, null);
+        $entry = new SourceEntry(ProviderId::GITHUB, 'acme/skills', null, null, null);
 
         Assert::same($entry->extras, []);
     }
@@ -83,7 +83,7 @@ final class RemoteEntryTest
         // Adapter-specific keys are stored as-is; the mapper does not
         // validate them. `zip` adapter's `sha256` is the canonical
         // example.
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: ProviderId::ZIP,
             package: null,
             url: 'https://example.com/x.zip',
@@ -103,7 +103,7 @@ final class RemoteEntryTest
         // — the mapper's pre-flight check is one of several lines of
         // defence, not the only one.
         try {
-            new RemoteEntry('github', null, null, null, null);
+            new SourceEntry('github', null, null, null, null);
             Assert::fail('expected InvalidArgumentException');
         } catch (\InvalidArgumentException $e) {
             Assert::true(\str_contains($e->getMessage(), 'neither set'));
@@ -113,7 +113,7 @@ final class RemoteEntryTest
     public function constructorRejectsBothPackageAndUrlSet(): void
     {
         try {
-            new RemoteEntry('github', 'acme/skills', 'https://example.com/x.zip', null, null);
+            new SourceEntry('github', 'acme/skills', 'https://example.com/x.zip', null, null);
             Assert::fail('expected InvalidArgumentException');
         } catch (\InvalidArgumentException $e) {
             Assert::true(\str_contains($e->getMessage(), 'both set'));
@@ -123,14 +123,14 @@ final class RemoteEntryTest
     public function skillsDefaultsToNull(): void
     {
         // No allowlist set ⇒ sync every skill the donor ships.
-        $entry = new RemoteEntry('github', 'acme/skills', null, null, null);
+        $entry = new SourceEntry('github', 'acme/skills', null, null, null);
 
         Assert::same($entry->skills, null);
     }
 
     public function skillsPreservesListWhenSet(): void
     {
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: 'github',
             package: 'acme/skills',
             url: null,
@@ -146,7 +146,7 @@ final class RemoteEntryTest
     {
         // Empty list = "donor registered, no skills pulled from it".
         // Distinct from `null` (= "sync every skill").
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: 'github',
             package: 'acme/skills',
             url: null,
@@ -161,7 +161,7 @@ final class RemoteEntryTest
     public function constructorRejectsSkillsWithEmptyName(): void
     {
         try {
-            new RemoteEntry(
+            new SourceEntry(
                 from: 'github',
                 package: 'acme/skills',
                 url: null,

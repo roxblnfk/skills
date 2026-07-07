@@ -8,7 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\Mapper\ExternalProjectConfigLoader;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Filesystem\AtomicFileWriter;
 
 /**
@@ -48,7 +48,7 @@ final readonly class SkillsJsonWriter
      *
      * @throws \RuntimeException when the file cannot be written
      */
-    public function upsertSource(Path $projectRoot, RemoteEntry $entry): void
+    public function upsertSource(Path $projectRoot, SourceEntry $entry): void
     {
         /** @psalm-suppress ImpureMethodCall Path::join() is mutation-free */
         $filePath = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
@@ -144,7 +144,7 @@ final readonly class SkillsJsonWriter
      *
      * @psalm-pure
      */
-    private static function upsertByCompositeKey(array $existing, RemoteEntry $new): array
+    private static function upsertByCompositeKey(array $existing, SourceEntry $new): array
     {
         $newKey = $new->compositeKey();
 
@@ -256,7 +256,7 @@ final readonly class SkillsJsonWriter
     /**
      * Render an entry with `skills` overridden by the supplied list
      * (used by the upsert path to honour the merge result without
-     * mutating the original {@see RemoteEntry}). `$skills === null`
+     * mutating the original {@see SourceEntry}). `$skills === null`
      * omits the field entirely.
      *
      * @param list<non-empty-string>|null $skills
@@ -265,7 +265,7 @@ final readonly class SkillsJsonWriter
      *
      * @psalm-pure
      */
-    private static function serialiseWithSkills(RemoteEntry $entry, ?array $skills): array
+    private static function serialiseWithSkills(SourceEntry $entry, ?array $skills): array
     {
         $out = self::serialise($entry);
         // serialise() already emitted `skills` from the entry; the
@@ -329,15 +329,15 @@ final readonly class SkillsJsonWriter
      * `package` or `url` → `ref` (if present) → `skills` (if present)
      * → extras.
      *
-     * @param RemoteEntry|array<string, mixed> $entry
+     * @param SourceEntry|array<string, mixed> $entry
      *
      * @return array<string, mixed>
      *
      * @psalm-pure
      */
-    private static function serialise(RemoteEntry|array $entry): array
+    private static function serialise(SourceEntry|array $entry): array
     {
-        if ($entry instanceof RemoteEntry) {
+        if ($entry instanceof SourceEntry) {
             $out = ['from' => $entry->from];
             if ($entry->host !== null) {
                 $out['host'] = $entry->host;
@@ -368,7 +368,7 @@ final readonly class SkillsJsonWriter
 
     /**
      * Composite key of an already-serialised entry. Mirrors
-     * {@see RemoteEntry::compositeKey()} but operates on the raw
+     * {@see SourceEntry::compositeKey()} but operates on the raw
      * map form so we never have to round-trip through the mapper.
      *
      * @param array<string, mixed> $entry

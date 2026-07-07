@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpClient;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpException;
@@ -205,7 +205,7 @@ final readonly class GitlabAdapter implements HostAdapter
     }
 
     #[\Override]
-    public function resolve(RemoteEntry $entry): RemoteDonorRef
+    public function resolve(SourceEntry $entry): RemoteDonorRef
     {
         if ($entry->from !== self::ID) {
             throw new RemoteResolveException(
@@ -351,7 +351,7 @@ final readonly class GitlabAdapter implements HostAdapter
      *
      * @psalm-pure
      */
-    private static function authHint(RemoteEntry $entry): string
+    private static function authHint(SourceEntry $entry): string
     {
         $host = self::bareHost($entry->host);
         return \sprintf(
@@ -391,7 +391,7 @@ final readonly class GitlabAdapter implements HostAdapter
      * @param non-empty-string $apiBase
      * @param non-empty-string $package group/project
      */
-    private function resolveCascade(RemoteEntry $entry, string $apiBase, string $package): RemoteDonorRef
+    private function resolveCascade(SourceEntry $entry, string $apiBase, string $package): RemoteDonorRef
     {
         $tags = $this->listTags($entry, $apiBase, $package);
 
@@ -424,7 +424,7 @@ final readonly class GitlabAdapter implements HostAdapter
      * @param non-empty-string $constraint
      */
     private function resolveCaret(
-        RemoteEntry $entry,
+        SourceEntry $entry,
         string $apiBase,
         string $package,
         string $constraint,
@@ -453,7 +453,7 @@ final readonly class GitlabAdapter implements HostAdapter
      *
      * @return list<non-empty-string>
      */
-    private function listTags(RemoteEntry $entry, string $apiBase, string $package): array
+    private function listTags(SourceEntry $entry, string $apiBase, string $package): array
     {
         $url = \sprintf(
             '%s/projects/%s/repository/tags?per_page=%d',
@@ -492,7 +492,7 @@ final readonly class GitlabAdapter implements HostAdapter
      *
      * @return non-empty-string
      */
-    private function getDefaultBranch(RemoteEntry $entry, string $apiBase, string $package): string
+    private function getDefaultBranch(SourceEntry $entry, string $apiBase, string $package): string
     {
         $url = \sprintf('%s/projects/%s', $apiBase, self::projectId($package));
         $response = $this->getOrThrow($entry, $url);
@@ -519,7 +519,7 @@ final readonly class GitlabAdapter implements HostAdapter
      *
      * @param non-empty-string $url
      */
-    private function getOrThrow(RemoteEntry $entry, string $url): HttpResponse
+    private function getOrThrow(SourceEntry $entry, string $url): HttpResponse
     {
         try {
             $response = $this->http->get($url, [
@@ -556,7 +556,7 @@ final readonly class GitlabAdapter implements HostAdapter
      *
      * @psalm-pure
      */
-    private function decodeJson(RemoteEntry $entry, HttpResponse $response, string $url): mixed
+    private function decodeJson(SourceEntry $entry, HttpResponse $response, string $url): mixed
     {
         try {
             /** @var mixed $decoded */

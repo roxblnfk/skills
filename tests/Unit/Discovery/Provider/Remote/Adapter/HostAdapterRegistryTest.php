@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote\Adapter;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
@@ -115,7 +115,7 @@ final class HostAdapterRegistryTest
             }
 
             #[\Override]
-            public function resolve(RemoteEntry $entry): RemoteDonorRef
+            public function resolve(SourceEntry $entry): RemoteDonorRef
             {
                 throw new \LogicException('not used in registry tests');
             }
