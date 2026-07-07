@@ -28,11 +28,15 @@ jobs:
           target-branch: master
 
       - name: 📥 Checkout
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ fromJson(steps.release.outputs.pr).headBranchName }}
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: ✨ Update Vibe Index
+        if: ${{ steps.release.outputs.prs_created == 'true' }}
         uses: roxblnfk/action-vibe-index@v1
         with:
           badge-style: for-the-badge
