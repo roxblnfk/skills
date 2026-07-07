@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/roxblnfk/skills/compare/1.8.0...1.8.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* load 0.x donors on skills:add (pre-1.0 caret) + dedupe archive inspection ([#25](https://github.com/roxblnfk/skills/issues/25)) ([5b3ace4](https://github.com/roxblnfk/skills/commit/5b3ace40dc3db3cf4d3a32b8f1927083fb7ed941))
+
 ## [1.8.0](https://github.com/roxblnfk/skills/compare/1.7.1...1.8.0) (2026-06-22)
 
 
