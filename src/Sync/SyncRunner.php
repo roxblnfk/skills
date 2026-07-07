@@ -94,6 +94,16 @@ final readonly class SyncRunner
         // `post-install-cmd` hook, which must not rewrite
         // `composer.json` mid-install.
         if ($options->autoMigrate) {
+            // Rename a legacy `remote` key to `sources` in an existing
+            // skills.json before mapping, so write-mode never maps the
+            // deprecated alias. Independent of the extra.skills → skills.json
+            // relocation below: the two act on mutually exclusive states
+            // (skills.json present vs absent).
+            $rename = $this->migrator->renameSourcesKey($projectRoot, $io);
+            if ($rename->status === MigrationStatus::Failed) {
+                return Command::FAILURE;
+            }
+
             $migration = $this->migrator->migrate($projectRoot, $io);
             if ($migration->status === MigrationStatus::Failed) {
                 return Command::FAILURE;
@@ -120,6 +130,7 @@ final readonly class SyncRunner
 
         $project = $configResolution->config;
         $this->emitShadowedKeysWarning($io, $configResolution->ignoredInlineKeys);
+        $this->emitDeprecatedSourcesKeyNotice($io, $configResolution->usedDeprecatedSourcesKey);
 
         // No donor provider can contribute. Reasons vary by provider —
         // {@see \LLM\Skills\Discovery\Provider\ComposerProvider} is
@@ -394,6 +405,25 @@ final readonly class SyncRunner
             '<comment>[warn] skills.json present; the following extra.skills keys in '
             . 'composer.json are ignored: ' . \implode(', ', $ignored) . '</comment>',
             verbosity: IOInterface::VERBOSE,
+        );
+    }
+
+    /**
+     * The winning config block declared its donor sources under the
+     * deprecated `remote` key. Surface a notice at normal verbosity —
+     * deprecations should be seen. In write mode the §2.1 in-place
+     * rename runs first, so this fires only when migration was
+     * suppressed (the `post-install-cmd` auto-sync hook).
+     */
+    private function emitDeprecatedSourcesKeyNotice(IOInterface $io, bool $used): void
+    {
+        if (!$used) {
+            return;
+        }
+
+        $io->writeError(
+            '<comment>[deprecated] config key "remote" was renamed to "sources"; '
+            . 'skills:update migrates the file automatically</comment>',
         );
     }
 

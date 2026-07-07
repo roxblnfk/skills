@@ -136,6 +136,10 @@ final readonly class InitRunner
             return $this->runNonDefaultPath($projectRoot, $io, $options, $target);
         }
 
+        if ($this->migrator->renameSourcesKey($projectRoot, $io)->status === MigrationStatus::Failed) {
+            return Command::FAILURE;
+        }
+
         $result = $this->migrator->migrate($projectRoot, $io);
 
         switch ($result->status) {
@@ -222,18 +226,22 @@ final readonly class InitRunner
             $extra = \is_array($composerDecoded['extra'] ?? null) ? $composerDecoded['extra'] : [];
             /** @var array<string, mixed> $skills */
             $skills = \is_array($extra['skills'] ?? null) ? $extra['skills'] : [];
-            $inlineKeys = ProjectConfigMigrator::extractProjectKeys($skills);
+            // Defaults fold a `remote` alias into `sources`; the strip
+            // list keeps the original key names so composer.json editing
+            // targets the keys that are actually there.
+            $inlineDefaults = ProjectConfigMigrator::extractProjectKeys($skills);
+            $inlineKeys = ProjectConfigMigrator::presentProjectKeys($skills);
 
             if ($inlineKeys !== []) {
                 $io->write(\sprintf(
                     '<info>[init]</info> detected inline extra.skills in composer.json: %s',
-                    \implode(', ', \array_keys($inlineKeys)),
+                    \implode(', ', $inlineKeys),
                 ));
                 if ($io->askConfirmation(
                     '<info>Import these as defaults?</info> [<comment>Y/n</comment>]: ',
                     true,
                 )) {
-                    $defaults = $inlineKeys;
+                    $defaults = $inlineDefaults;
                 }
             }
         }
@@ -257,7 +265,7 @@ final readonly class InitRunner
         // residue (and an empty `"extra": {}`) after the strip.
         if ($composerJsonPath !== null && $inlineKeys !== []) {
             /** @var array<string, mixed> $skills */
-            if (!$this->stripInlineKeys($composerJsonPath, $skills, \array_keys($inlineKeys), $io)) {
+            if (!$this->stripInlineKeys($composerJsonPath, $skills, $inlineKeys, $io)) {
                 $io->write(
                     '<comment>[init] note: skills.json was written, but stripping '
                     . 'composer.json failed. skills.json wins from now on regardless.</comment>',
@@ -415,6 +423,10 @@ final readonly class InitRunner
     ): int {
         $canonical = (string) $projectRoot->join('skills.json');
         $canonicalExisted = \is_file($canonical);
+
+        if ($this->migrator->renameSourcesKey($projectRoot, $io)->status === MigrationStatus::Failed) {
+            return Command::FAILURE;
+        }
 
         $result = $this->migrator->migrate($projectRoot, $io);
 

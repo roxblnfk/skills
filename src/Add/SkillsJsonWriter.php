@@ -6,18 +6,20 @@ namespace LLM\Skills\Add;
 
 use Internal\Path;
 use LLM\Skills\Config\Mapper\ExternalProjectConfigLoader;
+use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Filesystem\AtomicFileWriter;
 
 /**
  * Mutates the project's `skills.json` to insert or update a single
- * `remote[]` entry on behalf of `skills:add`.
+ * `sources[]` entry on behalf of `skills:add`.
  *
  * Three guarantees:
  *
  * - **Upsert by composite key** — `(from, host ?? '', package | url)`.
  *   Same key ⇒ overwrite in place; new key ⇒ append.
- * - **Stable sort** — after the upsert the whole `remote[]` is
+ * - **Stable sort** — after the upsert the whole `sources[]` is
  *   reordered by composite key so diffs are deterministic across
  *   adds. Manual edits may produce any order in between; the next
  *   add normalises it.
@@ -28,7 +30,9 @@ use LLM\Skills\Config\RemoteEntry;
  * When the file does not exist yet, the writer creates it with the
  * canonical `$schema` pointer (the same one
  * {@see ProjectConfigMigrator} emits). Existing files keep all their
- * other keys verbatim — only `remote[]` is touched.
+ * other keys verbatim — only `sources[]` is touched. A file still on
+ * the deprecated `remote` key has its entries folded into `sources`
+ * and the old key dropped, since the writer rewrites the whole file.
  */
 final readonly class SkillsJsonWriter
 {
@@ -44,7 +48,7 @@ final readonly class SkillsJsonWriter
      *
      * @throws \RuntimeException when the file cannot be written
      */
-    public function upsertRemote(Path $projectRoot, RemoteEntry $entry): void
+    public function upsertSource(Path $projectRoot, RemoteEntry $entry): void
     {
         /** @psalm-suppress ImpureMethodCall Path::join() is mutation-free */
         $filePath = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
@@ -55,23 +59,52 @@ final readonly class SkillsJsonWriter
         // write so editors keep the IDE-validation pointer.
         $payload = ['$schema' => ProjectConfigMigrator::SCHEMA_URL] + $payload;
 
-        /** @var mixed $existingRemote */
-        $existingRemote = $payload['remote'] ?? [];
-        if (!\is_array($existingRemote)) {
-            $existingRemote = [];
-        }
-
-        $entries = self::normaliseExisting($existingRemote);
+        $entries = self::normaliseExisting(self::collectExistingEntries($payload));
         $updated = self::upsertByCompositeKey($entries, $entry);
         $sorted = self::stableSort($updated);
 
-        $payload['remote'] = \array_map(self::serialise(...), $sorted);
+        // The whole file is rewritten under the canonical key; a
+        // lingering deprecated alias is dropped from the output.
+        unset($payload[ProjectConfigMapper::DEPRECATED_SOURCES_KEY]);
+        $payload[ProjectConfigMapper::SOURCES_KEY] = \array_map(self::serialise(...), $sorted);
 
-        self::atomicWrite($filePath, self::encode($payload));
+        AtomicFileWriter::write($filePath, self::encode($payload));
     }
 
     /**
-     * Normalise existing `remote[]` content into a list of arrays. We
+     * Gather the donor entries already on file, reading both the
+     * canonical `sources` key and the deprecated `remote` alias so a
+     * legacy file's entries survive the rewrite. A hand-edited file
+     * carrying both keys (rejected by the mapper on load) has its two
+     * lists concatenated; the composite-key upsert collapses any
+     * duplicates that result.
+     *
+     * @param array<string, mixed> $payload
+     *
+     * @return list<mixed>
+     *
+     * @psalm-pure
+     */
+    private static function collectExistingEntries(array $payload): array
+    {
+        $out = [];
+        foreach ([ProjectConfigMapper::SOURCES_KEY, ProjectConfigMapper::DEPRECATED_SOURCES_KEY] as $key) {
+            /** @var mixed $list */
+            $list = $payload[$key] ?? null;
+            if (!\is_array($list)) {
+                continue;
+            }
+            /** @var mixed $entry */
+            foreach ($list as $entry) {
+                /** @psalm-suppress MixedAssignment entries are normalised downstream */
+                $out[] = $entry;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Normalise existing `sources[]` content into a list of arrays. We
      * keep the loaded shape verbatim — re-parsing through the mapper
      * would be redundant since the file was already validated when it
      * was written.
@@ -267,7 +300,7 @@ final readonly class SkillsJsonWriter
     }
 
     /**
-     * Sort `remote[]` by composite key so diffs are stable across
+     * Sort `sources[]` by composite key so diffs are stable across
      * adds. Two entries that share a composite key would have been
      * collapsed by {@see self::upsertByCompositeKey()}; here we just
      * need a deterministic ordering.
@@ -380,38 +413,5 @@ final readonly class SkillsJsonWriter
             throw new \RuntimeException('failed to encode skills.json payload');
         }
         return $json . "\n";
-    }
-
-    /**
-     * Write the content into a sibling temp file then rename into
-     * place. The rename is atomic on most filesystems (POSIX + NTFS),
-     * so a reader can never see a half-written file.
-     *
-     * Windows quirk: {@see \rename()} refuses to overwrite an
-     * existing destination on Windows (returns false / triggers a
-     * warning), even though NTFS itself supports atomic replace via
-     * `MoveFileEx(MOVEFILE_REPLACE_EXISTING)`. PHP's `rename` does
-     * not pass that flag. So when the destination already exists we
-     * unlink it first and retry; this opens a sub-millisecond window
-     * where the file is gone, but the alternative — failing every
-     * second `skills:add` — is worse. POSIX never enters the retry
-     * path because the initial rename overwrites cleanly.
-     */
-    private static function atomicWrite(string $filePath, string $content): void
-    {
-        $tmp = $filePath . '.' . \bin2hex(\random_bytes(4)) . '.tmp';
-        if (\file_put_contents($tmp, $content) === false) {
-            throw new \RuntimeException('failed to write temp skills.json at ' . $tmp);
-        }
-        if (@\rename($tmp, $filePath)) {
-            return;
-        }
-        // First rename failed. If the destination already exists, this
-        // is the Windows-overwrite case; unlink and retry once.
-        if (\file_exists($filePath) && @\unlink($filePath) && @\rename($tmp, $filePath)) {
-            return;
-        }
-        @\unlink($tmp);
-        throw new \RuntimeException('failed to rename temp skills.json into ' . $filePath);
     }
 }

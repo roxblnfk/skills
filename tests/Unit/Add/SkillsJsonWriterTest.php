@@ -47,14 +47,14 @@ final class SkillsJsonWriterTest
         // No skills.json yet → the writer creates one with the
         // canonical `$schema` URL so editors get autocompletion out
         // of the box.
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: '^1.0'),
         );
 
         $payload = $this->readSkillsJson();
         Assert::same($payload['$schema'] ?? null, ProjectConfigMigrator::SCHEMA_URL);
-        Assert::count((array) $payload['remote'], 1);
+        Assert::count((array) $payload['sources'], 1);
     }
 
     public function consecutiveUpsertsOverwriteExistingFile(): void
@@ -68,16 +68,16 @@ final class SkillsJsonWriterTest
         $writer = new SkillsJsonWriter();
         $root = Path::create($this->tmp);
 
-        $writer->upsertRemote($root, self::entry('acme/skills', ref: 'v1.0.0'));
-        $writer->upsertRemote($root, self::entry('acme/skills', ref: 'v2.0.0'));
-        $writer->upsertRemote($root, self::entry('acme/other', ref: 'v1.0.0'));
+        $writer->upsertSource($root, self::entry('acme/skills', ref: 'v1.0.0'));
+        $writer->upsertSource($root, self::entry('acme/skills', ref: 'v2.0.0'));
+        $writer->upsertSource($root, self::entry('acme/other', ref: 'v1.0.0'));
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 2);
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 2);
         $skills = \array_values(\array_filter(
-            $remote,
+            $sources,
             static fn(array $e): bool => ($e['package'] ?? null) === 'acme/skills',
         ));
         Assert::count($skills, 1);
@@ -87,14 +87,14 @@ final class SkillsJsonWriterTest
     public function preservesUnrelatedTopLevelKeys(): void
     {
         // The writer must NOT clobber `target` / `aliases` / `trusted`
-        // — only `remote[]` is its concern.
+        // — only `sources[]` is its concern.
         $this->writeSkillsJson([
             'target' => '.agents/skills',
             'aliases' => ['.claude/skills'],
             'trusted' => ['acme/*'],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills'),
         );
@@ -110,20 +110,20 @@ final class SkillsJsonWriterTest
         // Same (from, host, package) ⇒ overwrite in place, not append.
         // The new entry's optional fields (ref, extras) supersede the old.
         $this->writeSkillsJson([
-            'remote' => [
+            'sources' => [
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
             ],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: '^2.0.0'),
         );
 
         $payload = $this->readSkillsJson();
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 1);
-        Assert::same($remote[0]['ref'] ?? null, '^2.0.0');
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['ref'] ?? null, '^2.0.0');
     }
 
     public function upsertDistinguishesByHost(): void
@@ -131,37 +131,37 @@ final class SkillsJsonWriterTest
         // Same package on github.com vs corp GHE are distinct
         // entries — composite key includes host.
         $this->writeSkillsJson([
-            'remote' => [
+            'sources' => [
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
             ],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', host: 'https://github.corp.example.com', ref: 'v1.0.0'),
         );
 
         $payload = $this->readSkillsJson();
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 2);
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 2);
     }
 
     public function appendsWhenCompositeKeyIsNew(): void
     {
         $this->writeSkillsJson([
-            'remote' => [
+            'sources' => [
                 ['from' => 'github', 'package' => 'acme/x'],
             ],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('beta/y'),
         );
 
         $payload = $this->readSkillsJson();
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 2);
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 2);
     }
 
     public function stableSortIsAppliedAfterUpsert(): void
@@ -169,26 +169,26 @@ final class SkillsJsonWriterTest
         // Composite key sort order: ascii ordering of `from|host|id`.
         // Reverse-input order should come out sorted.
         $this->writeSkillsJson([
-            'remote' => [
+            'sources' => [
                 ['from' => 'github', 'package' => 'zeta/last'],
                 ['from' => 'github', 'package' => 'beta/middle'],
             ],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('alpha/first'),
         );
 
         $payload = $this->readSkillsJson();
-        $packages = \array_map(static fn(array $e) => $e['package'], (array) $payload['remote']);
+        $packages = \array_map(static fn(array $e) => $e['package'], (array) $payload['sources']);
         Assert::same($packages, ['alpha/first', 'beta/middle', 'zeta/last']);
     }
 
     public function writtenEntryHasFixedKeyOrder(): void
     {
         // Fixed key order: from → host → package → ref → extras.
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             new RemoteEntry(
                 from: 'github',
@@ -202,7 +202,7 @@ final class SkillsJsonWriterTest
 
         $raw = (string) \file_get_contents($this->tmp . '/skills.json');
 
-        // Snapshot the order of keys inside the remote entry. We
+        // Snapshot the order of keys inside the source entry. We
         // can't trust unordered JSON associative-array comparison —
         // the file order is what diffs and users see.
         $fromPos = \strpos($raw, '"from"');
@@ -226,26 +226,26 @@ final class SkillsJsonWriterTest
         // must collapse duplicates into a single normalised entry,
         // not insert a copy next to each.
         $this->writeSkillsJson([
-            'remote' => [
+            'sources' => [
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v0.9.0'],
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v0.9.1'],
                 ['from' => 'github', 'package' => 'acme/other', 'ref' => 'v2.0.0'],
             ],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: 'v1.2.3'),
         );
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
 
-        Assert::count($remote, 2);
+        Assert::count($sources, 2);
 
         $acmeSkills = \array_values(\array_filter(
-            $remote,
+            $sources,
             static fn(array $e): bool => ($e['package'] ?? null) === 'acme/skills',
         ));
         Assert::count($acmeSkills, 1);
@@ -254,16 +254,16 @@ final class SkillsJsonWriterTest
 
     public function freshEntryStoresSkillsAllowlistVerbatim(): void
     {
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: 'v1.0.0', skills: ['code-review', 'refactor']),
         );
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 1);
-        Assert::same($remote[0]['skills'] ?? null, ['code-review', 'refactor']);
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['skills'] ?? null, ['code-review', 'refactor']);
     }
 
     public function freshEntryOmitsSkillsKeyWhenAllowlistIsNull(): void
@@ -271,15 +271,15 @@ final class SkillsJsonWriterTest
         // Skipping the field is meaningfully different from `"skills": []`:
         // it means "sync every skill" and must produce a clean entry
         // without an empty array forcing the user to delete it.
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: 'v1.0.0'),
         );
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::false(\array_key_exists('skills', $remote[0]));
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::false(\array_key_exists('skills', $sources[0]));
     }
 
     public function consecutiveUpsertsMergeSkillsAllowlists(): void
@@ -290,14 +290,14 @@ final class SkillsJsonWriterTest
         $writer = new SkillsJsonWriter();
         $root = Path::create($this->tmp);
 
-        $writer->upsertRemote($root, self::entry('acme/skills', skills: ['alpha', 'beta']));
-        $writer->upsertRemote($root, self::entry('acme/skills', skills: ['beta', 'gamma']));
+        $writer->upsertSource($root, self::entry('acme/skills', skills: ['alpha', 'beta']));
+        $writer->upsertSource($root, self::entry('acme/skills', skills: ['beta', 'gamma']));
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 1);
-        Assert::same($remote[0]['skills'] ?? null, ['alpha', 'beta', 'gamma']);
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['skills'] ?? null, ['alpha', 'beta', 'gamma']);
     }
 
     public function freshEntryRoundtripsEmptySkillsList(): void
@@ -305,16 +305,16 @@ final class SkillsJsonWriterTest
         // An empty allowlist is a meaningful state ("donor on file, no
         // skills pulled"). Distinct from omitting the field. The writer
         // must emit `"skills": []` verbatim.
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: 'v1.0.0', skills: []),
         );
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::true(\array_key_exists('skills', $remote[0]));
-        Assert::same($remote[0]['skills'], []);
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::true(\array_key_exists('skills', $sources[0]));
+        Assert::same($sources[0]['skills'], []);
     }
 
     public function upsertWithoutSkillsPreservesEmptyAllowlist(): void
@@ -324,21 +324,21 @@ final class SkillsJsonWriterTest
         // otherwise running `skills:add ... --ref=v2` on a temporarily
         // disabled entry would silently re-enable every skill.
         $this->writeSkillsJson([
-            'remote' => [
+            'sources' => [
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0', 'skills' => []],
             ],
         ]);
 
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: 'v2.0.0'),
         );
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::same($remote[0]['skills'] ?? null, []);
-        Assert::same($remote[0]['ref'] ?? null, 'v2.0.0');
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::same($sources[0]['skills'] ?? null, []);
+        Assert::same($sources[0]['ref'] ?? null, 'v2.0.0');
     }
 
     public function upsertWithoutSkillsPreservesExistingAllowlist(): void
@@ -350,20 +350,20 @@ final class SkillsJsonWriterTest
         $writer = new SkillsJsonWriter();
         $root = Path::create($this->tmp);
 
-        $writer->upsertRemote($root, self::entry('acme/skills', skills: ['alpha']));
-        $writer->upsertRemote($root, self::entry('acme/skills', ref: 'v2.0.0'));
+        $writer->upsertSource($root, self::entry('acme/skills', skills: ['alpha']));
+        $writer->upsertSource($root, self::entry('acme/skills', ref: 'v2.0.0'));
 
         $payload = $this->readSkillsJson();
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) $payload['remote'];
-        Assert::count($remote, 1);
-        Assert::same($remote[0]['skills'] ?? null, ['alpha']);
-        Assert::same($remote[0]['ref'] ?? null, 'v2.0.0');
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['skills'] ?? null, ['alpha']);
+        Assert::same($sources[0]['ref'] ?? null, 'v2.0.0');
     }
 
     public function skillsFieldIsEmittedAfterRefInTheCanonicalKeyOrder(): void
     {
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills', ref: 'v1.0.0', skills: ['hello']),
         );
@@ -379,7 +379,7 @@ final class SkillsJsonWriterTest
     {
         // The temp file pattern is `skills.json.<hex>.tmp`. After a
         // successful write, only the canonical name should remain.
-        (new SkillsJsonWriter())->upsertRemote(
+        (new SkillsJsonWriter())->upsertSource(
             Path::create($this->tmp),
             self::entry('acme/skills'),
         );
@@ -390,6 +390,40 @@ final class SkillsJsonWriterTest
             static fn($e) => $e !== '.' && $e !== '..',
         ));
         Assert::same($names, ['skills.json']);
+    }
+
+    public function upsertIntoLegacyRemoteFileProducesSourcesOnlyFile(): void
+    {
+        // A file still on the deprecated `remote` key is normalised on
+        // write: its entries move under `sources`, the old key is
+        // dropped, unrelated keys survive, and the additive
+        // allowlist-merge behaviour is preserved across the rename.
+        $this->writeSkillsJson([
+            'target' => '.agents/skills',
+            'remote' => [
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0', 'skills' => ['alpha']],
+            ],
+        ]);
+
+        (new SkillsJsonWriter())->upsertSource(
+            Path::create($this->tmp),
+            self::entry('acme/skills', ref: 'v2.0.0', skills: ['beta']),
+        );
+
+        $payload = $this->readSkillsJson();
+        Assert::false(\array_key_exists('remote', $payload), 'deprecated key must be dropped from the output');
+        Assert::true(\array_key_exists('sources', $payload));
+        Assert::same($payload['target'] ?? null, '.agents/skills', 'unrelated keys must survive');
+
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['ref'] ?? null, 'v2.0.0');
+        Assert::same(
+            $sources[0]['skills'] ?? null,
+            ['alpha', 'beta'],
+            'the legacy entry allowlist must merge with the new one',
+        );
     }
 
     /**

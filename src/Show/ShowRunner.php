@@ -63,6 +63,16 @@ final readonly class ShowRunner
             );
         }
 
+        // Read-only surface: never rewrites the file, so a `remote`
+        // block stays on disk. Surface the deprecation at normal
+        // verbosity and point the user at the command that migrates it.
+        if ($resolution->usedDeprecatedSourcesKey) {
+            $io->writeError(
+                '<comment>[deprecated] config key "remote" was renamed to "sources"; '
+                . 'skills:update migrates the file automatically</comment>',
+            );
+        }
+
         // See SyncRunner: notice is provider-neutral, specifics flow
         // through `-v` warnings emitted at the entrypoint.
         if (!$provider->isActive($projectRoot)) {

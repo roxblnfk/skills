@@ -146,7 +146,7 @@ final readonly class AddRunner
         );
 
         try {
-            $this->writer->upsertRemote($projectRoot, $entry);
+            $this->writer->upsertSource($projectRoot, $entry);
         } catch (\Throwable $e) {
             $io->writeError('<error>[llm/skills] failed to update skills.json: ' . $e->getMessage() . '</error>');
             return Command::FAILURE;

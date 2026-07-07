@@ -287,6 +287,157 @@ final class ProjectConfigMigratorTest
         Assert::true(\str_contains($io->getOutput(), 'cannot auto-migrate'));
     }
 
+    public function migratesRemoteInlineBlockUnderSourcesKey(): void
+    {
+        // Inline `extra.skills.remote` migrates into skills.json under
+        // the canonical `sources` key — the written file never carries
+        // the deprecated alias — and composer.json is stripped of the
+        // key the user actually wrote (`remote`).
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => [
+                'skills' => [
+                    'target' => 'custom/skills',
+                    'remote' => [
+                        ['from' => 'github', 'package' => 'acme/skills'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->migrate(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+
+        $skills = $this->readSkillsJson();
+        Assert::false(\array_key_exists('remote', $skills), 'written file must not carry the deprecated key');
+        Assert::same(
+            $skills['sources'] ?? null,
+            [['from' => 'github', 'package' => 'acme/skills']],
+        );
+
+        // composer.json had `remote` stripped (not `sources`).
+        $composer = $this->readComposerJson();
+        $remaining = $composer['extra']['skills'] ?? [];
+        Assert::false(\array_key_exists('remote', $remaining));
+        Assert::false(\array_key_exists('target', $remaining));
+    }
+
+    public function renamesRemoteKeyToSourcesInPlace(): void
+    {
+        // A skills.json still on the deprecated key is rewritten with
+        // the key renamed, its slot and every sibling key preserved,
+        // and a normal-verbosity notice emitted.
+        $this->writeSkillsJson([
+            '$schema' => 'https://example.com/skills.schema.json',
+            'target' => 'custom/skills',
+            'remote' => [
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
+            ],
+            'trusted' => ['acme/*'],
+        ]);
+
+        $io = new BufferIO();
+        $result = (new ProjectConfigMigrator())->renameSourcesKey(
+            Path::create($this->tmp),
+            $io,
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+
+        $skills = $this->readSkillsJson();
+        Assert::false(\array_key_exists('remote', $skills), 'deprecated key must be gone');
+        Assert::same(
+            $skills['sources'] ?? null,
+            [['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0']],
+        );
+        // Position preserved: `sources` sits exactly where `remote` was,
+        // and every unrelated key stays put in order.
+        Assert::same(
+            \array_keys($skills),
+            ['$schema', 'target', 'sources', 'trusted'],
+            'the renamed key must keep its slot and all siblings must be preserved',
+        );
+        Assert::same($skills['target'] ?? null, 'custom/skills');
+        Assert::same($skills['trusted'] ?? null, ['acme/*']);
+
+        Assert::true(
+            \str_contains($io->getOutput(), 'renamed "remote" to "sources" in skills.json'),
+            'a [migrate] notice must be emitted; got: ' . $io->getOutput(),
+        );
+    }
+
+    public function renameIsNoOpWhenFileAlreadyUsesSources(): void
+    {
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'github', 'package' => 'acme/skills']],
+        ]);
+        $before = (string) \file_get_contents($this->tmp . '/skills.json');
+
+        $io = new BufferIO();
+        $result = (new ProjectConfigMigrator())->renameSourcesKey(
+            Path::create($this->tmp),
+            $io,
+        );
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::same(
+            (string) \file_get_contents($this->tmp . '/skills.json'),
+            $before,
+            'a file already on sources must not be rewritten',
+        );
+        Assert::false(\str_contains($io->getOutput(), 'renamed'));
+    }
+
+    public function renameIsNoOpWhenFileAbsent(): void
+    {
+        $result = (new ProjectConfigMigrator())->renameSourcesKey(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::false(\is_file($this->tmp . '/skills.json'));
+    }
+
+    public function renameLeavesFileWithBothKeysUntouched(): void
+    {
+        // A file carrying both keys is rejected by the mapper's fatal
+        // "both present" check; the migrator must not guess which list
+        // wins, so it leaves the bytes exactly as they are.
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'github', 'package' => 'acme/keep']],
+            'remote' => [['from' => 'github', 'package' => 'acme/drop']],
+        ]);
+        $before = (string) \file_get_contents($this->tmp . '/skills.json');
+
+        $result = (new ProjectConfigMigrator())->renameSourcesKey(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::same(
+            (string) \file_get_contents($this->tmp . '/skills.json'),
+            $before,
+            'a both-keys file must be left byte-for-byte untouched',
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function writeSkillsJson(array $data): void
+    {
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            \json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR) . "\n",
+        );
+    }
+
     /**
      * @param array<string, mixed> $data
      */
