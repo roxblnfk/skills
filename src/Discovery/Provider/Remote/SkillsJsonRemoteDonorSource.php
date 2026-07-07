@@ -12,14 +12,14 @@ use LLM\Skills\Discovery\Provider\Remote\Adapter\UnknownAdapterException;
 
 /**
  * {@see RemoteDonorSource} backed by the project's `skills.json`
- * `remote[]` list.
+ * `sources[]` list.
  *
  * Pipeline:
  *
  * 1. Resolve project config (best-effort — malformed config produces
  *    an empty stream; the {@see \LLM\Skills\Sync\SyncRunner} surfaces
  *    the real error on its own config read).
- * 2. For each {@see \LLM\Skills\Config\RemoteEntry}, look up the
+ * 2. For each {@see \LLM\Skills\Config\SourceEntry}, look up the
  *    adapter via {@see HostAdapterRegistry}.
  * 3. Ask the adapter to {@see \LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter::resolve()}
  *    the entry into a fetchable {@see RemoteDonorRef} — concrete
@@ -63,12 +63,12 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
             return;
         }
 
-        foreach ($config->remote as $entry) {
+        foreach ($config->sources as $entry) {
             try {
                 $adapter = $this->registry->get($entry->from);
             } catch (UnknownAdapterException $e) {
                 $this->lastWarnings[] = \sprintf(
-                    'remote %s:%s skipped — %s',
+                    'source %s:%s skipped — %s',
                     $entry->from,
                     $entry->identifier(),
                     $e->getMessage(),
@@ -114,7 +114,7 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
     }
 
     /**
-     * Config-level check: does `skills.json` declare any `remote[]`
+     * Config-level check: does `skills.json` declare any `sources[]`
      * entry? Cheap by design — runs the mapper but **never resolves**
      * refs (no adapter calls, no HTTP). Both `RemoteProvider::isActive()`
      * (every sync / show invocation) and the standalone bootstrap rely
@@ -128,6 +128,6 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
         } catch (\Throwable) {
             return false;
         }
-        return $config->remote !== [];
+        return $config->sources !== [];
     }
 }

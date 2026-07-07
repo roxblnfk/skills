@@ -34,7 +34,7 @@ final readonly class SyncOptions
      * @param non-empty-string|null $fromFilter `--from=<id>` scope. When set,
      *         the runner keeps only donors whose {@see VendorConfig::$provenance} matches
      *         this id. The vocabulary is shared with `skills.json` `local.{id}` and
-     *         `remote[].from`.
+     *         `sources[].from`.
      *
      * @psalm-mutation-free
      */

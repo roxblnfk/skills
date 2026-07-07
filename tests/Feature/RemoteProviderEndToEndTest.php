@@ -52,7 +52,7 @@ final class RemoteProviderEndToEndTest
 {
     private string $tmp;
 
-    public function remoteEntryResolvesFetchesAndProducesDonor(): void
+    public function SourceEntryResolvesFetchesAndProducesDonor(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
             // ext-zip is a soft dependency; without it the fetcher
@@ -117,7 +117,7 @@ final class RemoteProviderEndToEndTest
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
     }
 
-    public function gitlabRemoteEntryResolvesFetchesAndProducesDonor(): void
+    public function gitlabSourceEntryResolvesFetchesAndProducesDonor(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');

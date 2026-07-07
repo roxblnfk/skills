@@ -15,7 +15,7 @@ use LLM\Skills\Discovery\MalformedDonor;
  * Children are queried in **declaration order**; on duplicate
  * `packageName` collisions the later child wins (the displaced earlier
  * entry is reported as a `-v` warning). Wire the composite with locals
- * first and remote last so an explicit `remote[]` entry naturally
+ * first and remote last so an explicit `sources[]` entry naturally
  * overrides a transitive local discovery of the same package name.
  *
  * `isActive()` is the OR of all children. `directDependencies()` is the

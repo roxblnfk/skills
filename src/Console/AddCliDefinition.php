@@ -21,7 +21,7 @@ use Symfony\Component\Console\Input\InputOption;
  */
 final class AddCliDefinition
 {
-    private const DESCRIPTION = 'Register a remote donor in skills.json and fetch its skills.';
+    private const DESCRIPTION = 'Register a donor source in skills.json and fetch its skills.';
 
     /**
      * @param non-empty-string $name

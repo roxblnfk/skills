@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote;
 
 use Internal\Path;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use Testo\Assert;
@@ -110,7 +110,7 @@ final class CachePathBuilderTest
         // The `zip` adapter has no `package`; the cache key falls back
         // to a URL hash, matching the URL-only layout.
         $b = new CachePathBuilder();
-        $entry = new RemoteEntry(
+        $entry = new SourceEntry(
             from: ProviderId::ZIP,
             package: null,
             url: 'https://example.com/x.zip',
@@ -160,9 +160,9 @@ final class CachePathBuilderTest
      * @param non-empty-string $package
      * @param non-empty-string|null $host
      */
-    private static function entry(string $package, ?string $host = null): RemoteEntry
+    private static function entry(string $package, ?string $host = null): SourceEntry
     {
-        return new RemoteEntry(
+        return new SourceEntry(
             from: ProviderId::GITHUB,
             package: $package,
             url: null,

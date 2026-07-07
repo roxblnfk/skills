@@ -551,7 +551,7 @@ final class ProjectConfigMapperTest
     {
         $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
 
-        Assert::same($cfg->remote, []);
+        Assert::same($cfg->sources, []);
     }
 
     public function remotePackageAdapterParses(): void
@@ -564,8 +564,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 1);
-        $entry = $cfg->remote[0];
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
         Assert::same($entry->from, 'github');
         Assert::same($entry->package, 'acme/skills');
         Assert::same($entry->ref, '^1.0');
@@ -590,7 +590,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->host, 'https://github.corp.example.com');
+        Assert::same($cfg->sources[0]->host, 'https://github.corp.example.com');
     }
 
     public function remoteUrlAdapterParses(): void
@@ -603,8 +603,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 1);
-        $entry = $cfg->remote[0];
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
         Assert::same($entry->from, 'zip');
         Assert::same($entry->url, 'https://example.com/x.zip');
         Assert::same($entry->package, null);
@@ -617,7 +617,7 @@ final class ProjectConfigMapperTest
         // must fail at load so a typo never reaches the fetcher (which
         // would otherwise give a less helpful error).
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('not a known remote adapter');
+            ->withMessageContaining('not a known source adapter');
 
         (new ProjectConfigMapper())->fromExtra([
             'skills' => [
@@ -717,7 +717,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::count($cfg->remote, 2);
+        Assert::count($cfg->sources, 2);
     }
 
     public function remoteSkillsAllowlistIsParsed(): void
@@ -734,7 +734,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, ['code-review', 'refactor']);
+        Assert::same($cfg->sources[0]->skills, ['code-review', 'refactor']);
     }
 
     public function remoteWithoutSkillsKeyDefaultsToNull(): void
@@ -749,7 +749,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, null);
+        Assert::same($cfg->sources[0]->skills, null);
     }
 
     public function remoteSkillsAcceptsEmptyList(): void
@@ -766,7 +766,7 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, []);
+        Assert::same($cfg->sources[0]->skills, []);
     }
 
     public function remoteSkillsMustBeAList(): void
@@ -813,8 +813,8 @@ final class ProjectConfigMapperTest
             ],
         ]);
 
-        Assert::same($cfg->remote[0]->skills, ['hello']);
-        Assert::same($cfg->remote[0]->extras, []);
+        Assert::same($cfg->sources[0]->skills, ['hello']);
+        Assert::same($cfg->sources[0]->extras, []);
     }
 
     public function remoteAsObjectThrows(): void
@@ -827,7 +827,7 @@ final class ProjectConfigMapperTest
         ]);
     }
 
-    public function remoteEntryAsScalarThrows(): void
+    public function SourceEntryAsScalarThrows(): void
     {
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('must be an object');
@@ -847,6 +847,157 @@ final class ProjectConfigMapperTest
                 'remote' => [['from' => 'github', 'package' => 'acme/x', 'ref' => '']],
             ],
         ]);
+    }
+
+    // ── sources: canonical key, `remote` as deprecated alias ────────────
+
+    public function sourcesPackageAdapterParsesLikeRemote(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'ref' => '^1.0'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
+        Assert::same($entry->from, 'github');
+        Assert::same($entry->package, 'acme/skills');
+        Assert::same($entry->ref, '^1.0');
+    }
+
+    public function sourcesUrlAdapterParsesLikeRemote(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'zip', 'url' => 'https://example.com/x.zip', 'sha256' => 'abc'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
+        Assert::same($entry->from, 'zip');
+        Assert::same($entry->url, 'https://example.com/x.zip');
+        Assert::same($entry->extras, ['sha256' => 'abc']);
+    }
+
+    public function bothSourcesAndRemoteInlineThrows(): void
+    {
+        // Both keys in one block is fatal — no merge, no precedence.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills: both "sources" and "remote" are present; keep "sources" only');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'github', 'package' => 'acme/x']],
+                'remote' => [['from' => 'github', 'package' => 'acme/y']],
+            ],
+        ]);
+    }
+
+    public function bothSourcesAndRemoteInSkillsJsonThrows(): void
+    {
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'github', 'package' => 'acme/x']],
+            'remote' => [['from' => 'github', 'package' => 'acme/y']],
+        ]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json: both "sources" and "remote" are present; keep "sources" only');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function sourcesErrorMessagesUseSourcesKey(): void
+    {
+        // A bad entry parsed from `sources` reports the `sources` path.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.sources[0]');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'mystery', 'package' => 'acme/x']],
+            ],
+        ]);
+    }
+
+    public function remoteErrorMessagesKeepRemoteKey(): void
+    {
+        // A bad entry parsed from the legacy `remote` key keeps saying
+        // `remote` so the user sees the key they actually wrote.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.remote[0]');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'remote' => [['from' => 'mystery', 'package' => 'acme/x']],
+            ],
+        ]);
+    }
+
+    // ── deprecation flag on ProjectConfigResolution ─────────────────────
+
+    public function forProjectInlineSourcesDoesNotFlagDeprecation(): void
+    {
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['sources' => [['from' => 'github', 'package' => 'acme/x']]]],
+        );
+
+        Assert::same($resolution->usedDeprecatedSourcesKey, false);
+    }
+
+    public function forProjectInlineRemoteFlagsDeprecation(): void
+    {
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['remote' => [['from' => 'github', 'package' => 'acme/x']]]],
+        );
+
+        Assert::same($resolution->usedDeprecatedSourcesKey, true);
+    }
+
+    public function forProjectExternalSourcesDoesNotFlagDeprecation(): void
+    {
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'github', 'package' => 'acme/x']],
+        ]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->usedDeprecatedSourcesKey, false);
+    }
+
+    public function forProjectExternalRemoteFlagsDeprecation(): void
+    {
+        $this->writeSkillsJson([
+            'remote' => [['from' => 'github', 'package' => 'acme/x']],
+        ]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->usedDeprecatedSourcesKey, true);
+    }
+
+    public function forProjectShadowedInlineKeysIncludeSourcesAndRemote(): void
+    {
+        // Both the canonical key and its deprecated alias remain
+        // project-level keys, so a shadowed inline block reports either.
+        $this->writeSkillsJson(['target' => 'external/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => [
+                'sources' => [['from' => 'github', 'package' => 'acme/x']],
+                'remote' => [['from' => 'github', 'package' => 'acme/y']],
+            ]],
+        );
+
+        Assert::same($resolution->ignoredInlineKeys, ['sources', 'remote']);
     }
 
     /**

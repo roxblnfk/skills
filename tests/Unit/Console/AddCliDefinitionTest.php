@@ -144,7 +144,7 @@ final class AddCliDefinitionTest
 
         Assert::same($cmd->getName(), 'skills:add');
         Assert::same($cmd->getAliases(), ['skills:a']);
-        Assert::true(\str_contains($cmd->getDescription(), 'Register a remote donor'));
+        Assert::true(\str_contains($cmd->getDescription(), 'Register a donor source'));
     }
 
     /**

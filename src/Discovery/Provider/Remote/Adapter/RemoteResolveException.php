@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 
 /**
  * Raised when a {@see HostAdapter} cannot resolve a stored
- * `remote[]` entry into a fetchable {@see \LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef}.
+ * `sources[]` entry into a fetchable {@see \LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef}.
  *
  * Examples:
  *
@@ -32,7 +32,7 @@ final class RemoteResolveException extends \RuntimeException
      * @psalm-mutation-free
      */
     public function __construct(
-        public readonly RemoteEntry $entry,
+        public readonly SourceEntry $entry,
         string $reason,
         ?\Throwable $previous = null,
     ) {

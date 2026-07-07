@@ -83,6 +83,38 @@ final class ExternalProjectConfigLoaderTest
         ]);
     }
 
+    public function allowsSourcesKey(): void
+    {
+        $this->writeFile([
+            'target' => '.agents/skills',
+            'sources' => [['from' => 'github', 'package' => 'acme/skills']],
+        ]);
+
+        $result = (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
+
+        Assert::same($result, [
+            'target' => '.agents/skills',
+            'sources' => [['from' => 'github', 'package' => 'acme/skills']],
+        ]);
+    }
+
+    public function allowsDeprecatedRemoteKey(): void
+    {
+        // `remote` stays a recognised key for back-compat; it is read as
+        // a deprecated alias of `sources`.
+        $this->writeFile([
+            'target' => '.agents/skills',
+            'remote' => [['from' => 'github', 'package' => 'acme/skills']],
+        ]);
+
+        $result = (new ExternalProjectConfigLoader())->load(Path::create($this->tmp));
+
+        Assert::same($result, [
+            'target' => '.agents/skills',
+            'remote' => [['from' => 'github', 'package' => 'acme/skills']],
+        ]);
+    }
+
     public function emptyObjectDecodesAsEmptyArray(): void
     {
         // `{}` is a valid (if uninteresting) skills.json — it means "no

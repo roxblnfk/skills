@@ -9,7 +9,7 @@ namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
  *
  * Two consumers go through this:
  *
- * - `SkillsJsonRemoteDonorSource` (Phase 3) — given a `remote[]`
+ * - `SkillsJsonRemoteDonorSource` (Phase 3) — given a `sources[]`
  *   entry, asks the registry for the adapter that knows how to
  *   `resolve()` it.
  * - `skills:add` CLI (Phase 4) — given `--from=<id>` (explicit) or

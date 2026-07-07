@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Discovery\Provider\Remote;
 
 use Internal\Path;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 
 /**
  * Computes deterministic cache paths for fetched remote archives.
@@ -112,7 +112,7 @@ final readonly class CachePathBuilder
      *
      * @psalm-mutation-free
      */
-    public function buildForEntry(Path $projectRoot, RemoteEntry $entry, string $resolvedRef): Path
+    public function buildForEntry(Path $projectRoot, SourceEntry $entry, string $resolvedRef): Path
     {
         $fromSegment = self::encode($entry->from);
         $hostSegment = self::hostSegment($entry->host);
@@ -135,7 +135,7 @@ final readonly class CachePathBuilder
     /**
      * URL-only variant: cache key derived purely from a download URL
      * plus a ref label. Used by {@see HttpArchiveFetcher}, which only
-     * has the resolved fetch URL (the {@see RemoteEntry} stays with
+     * has the resolved fetch URL (the {@see SourceEntry} stays with
      * the source layer).
      *
      * Layout:

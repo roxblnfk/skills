@@ -8,6 +8,7 @@ use Composer\IO\IOInterface;
 use Composer\Json\JsonManipulator;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Filesystem\AtomicFileWriter;
 
 /**
  * Moves a project's legacy inline `extra.skills` block out of
@@ -75,8 +76,12 @@ final readonly class ProjectConfigMigrator
 
     /**
      * Pull the project-level keys out of an inline `extra.skills`
-     * block, in canonical order. Donor `source` and any unrelated
-     * keys are deliberately dropped.
+     * block, in canonical order, as they should be written into
+     * `skills.json`. Donor `source` and any unrelated keys are
+     * deliberately dropped, and a deprecated `remote` value is folded
+     * into the canonical `sources` key so the written file never
+     * carries the alias. A block with both keys is rejected pre-flight
+     * by the mapper, so at most one of the pair is present here.
      *
      * @param array<array-key, mixed> $skills the inline `extra.skills` value
      *
@@ -88,9 +93,48 @@ final readonly class ProjectConfigMigrator
     {
         $out = [];
         foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
+            // The alias never lands in the output under its own name;
+            // its value is picked up when the canonical key is visited.
+            if ($key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY) {
+                continue;
+            }
             if (\array_key_exists($key, $skills)) {
                 /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
                 $out[$key] = $skills[$key];
+                continue;
+            }
+            if (
+                $key === ProjectConfigMapper::SOURCES_KEY
+                && \array_key_exists(ProjectConfigMapper::DEPRECATED_SOURCES_KEY, $skills)
+            ) {
+                /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
+                $out[$key] = $skills[ProjectConfigMapper::DEPRECATED_SOURCES_KEY];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * List the project-level keys physically present in an inline
+     * `extra.skills` block, in canonical order and under their
+     * original names (the deprecated `remote` alias is reported as
+     * `remote`). Callers use this to strip the exact keys from
+     * `composer.json`, which {@see self::extractProjectKeys()} cannot
+     * provide because it rewrites the alias to `sources`.
+     *
+     * @param array<array-key, mixed> $skills the inline `extra.skills` value
+     *
+     * @return list<non-empty-string>
+     *
+     * @psalm-pure
+     */
+    public static function presentProjectKeys(array $skills): array
+    {
+        $out = [];
+        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
+            if (\array_key_exists($key, $skills)) {
+                $out[] = $key;
             }
         }
 
@@ -152,8 +196,13 @@ final readonly class ProjectConfigMigrator
         /** @var array<string, mixed> $skills */
         $skills = \is_array($extra['skills'] ?? null) ? $extra['skills'] : [];
 
+        // Keys as written to skills.json (alias folded into `sources`)
+        // versus keys as they physically sit in composer.json (used to
+        // strip the originals). The two diverge only for a `remote`
+        // block.
         $migrated = self::extractProjectKeys($skills);
-        if ($migrated === []) {
+        $presentKeys = self::presentProjectKeys($skills);
+        if ($presentKeys === []) {
             // composer.json exists but carries no inline project keys
             // (maybe just a donor `source`, or no skills block at all).
             // Nothing to migrate — and we deliberately do NOT auto-create
@@ -187,7 +236,7 @@ final readonly class ProjectConfigMigrator
         }
 
         $manipulator = new JsonManipulator($original);
-        foreach (\array_keys($migrated) as $key) {
+        foreach ($presentKeys as $key) {
             if (!$manipulator->removeSubNode('extra', 'skills.' . $key)) {
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] failed to remove extra.skills.%s from composer.json '
@@ -204,7 +253,7 @@ final readonly class ProjectConfigMigrator
         // `extra` itself when it becomes empty (the user might not have
         // anything else under it). Donor-side `source` and any other
         // unrelated `extra.skills` keys keep both nodes alive.
-        $remaining = \array_diff(\array_keys($skills), \array_keys($migrated));
+        $remaining = \array_diff(\array_keys($skills), $presentKeys);
         if ($remaining === []) {
             $manipulator->removeSubNode('extra', 'skills');
             $manipulator->removeMainKeyIfEmpty('extra');
@@ -219,5 +268,94 @@ final readonly class ProjectConfigMigrator
         }
 
         return MigrationResult::migrated(\array_keys($migrated));
+    }
+
+    /**
+     * Rename the deprecated `remote` key to `sources` in an existing
+     * `skills.json`, in place. Returns:
+     *
+     * - {@see MigrationStatus::Skipped} when there is no `skills.json`,
+     *   when it already uses `sources` (or uses neither key), or when
+     *   it carries BOTH keys — the last case is left untouched so the
+     *   mapper's fatal "both present" error stands rather than the
+     *   migration guessing which list wins. Malformed JSON is also
+     *   skipped, letting {@see ExternalProjectConfigLoader} surface the
+     *   precise parse error during mapping.
+     * - {@see MigrationStatus::Migrated} after rewriting the file with
+     *   the key renamed, every other key and its position preserved.
+     * - {@see MigrationStatus::Failed} when the file exists but a read,
+     *   encode, or write step errored out (message already on `$io`).
+     */
+    public function renameSourcesKey(Path $projectRoot, IOInterface $io): MigrationResult
+    {
+        $skillsJsonPath = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
+        if (!\is_file($skillsJsonPath)) {
+            return MigrationResult::skipped();
+        }
+
+        $original = \file_get_contents($skillsJsonPath);
+        if ($original === false) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] failed to read skills.json at %s</error>',
+                $skillsJsonPath,
+            ));
+            return MigrationResult::failed();
+        }
+
+        try {
+            /** @var mixed $decoded */
+            $decoded = \json_decode($original, true, flags: \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return MigrationResult::skipped();
+        }
+
+        if (!\is_array($decoded)) {
+            return MigrationResult::skipped();
+        }
+
+        $hasDeprecated = \array_key_exists(ProjectConfigMapper::DEPRECATED_SOURCES_KEY, $decoded);
+        $hasCanonical = \array_key_exists(ProjectConfigMapper::SOURCES_KEY, $decoded);
+        if (!$hasDeprecated || $hasCanonical) {
+            return MigrationResult::skipped();
+        }
+
+        // Rebuild the map so the renamed key keeps its original slot and
+        // every sibling key stays verbatim.
+        $rebuilt = [];
+        /** @var mixed $value */
+        foreach ($decoded as $key => $value) {
+            $target = $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
+                ? ProjectConfigMapper::SOURCES_KEY
+                : $key;
+            /** @psalm-suppress MixedAssignment value type is validated later by the mapper */
+            $rebuilt[$target] = $value;
+        }
+
+        $json = \json_encode(
+            $rebuilt,
+            \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
+        );
+        if ($json === false) {
+            $io->writeError('<error>[llm/skills] failed to encode skills.json during key rename</error>');
+            return MigrationResult::failed();
+        }
+
+        try {
+            AtomicFileWriter::write($skillsJsonPath, $json . "\n");
+        } catch (\RuntimeException $e) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] failed to write skills.json during key rename: %s</error>',
+                $e->getMessage(),
+            ));
+            return MigrationResult::failed();
+        }
+
+        $io->write(\sprintf(
+            '<info>[migrate]</info> renamed "%s" to "%s" in skills.json',
+            ProjectConfigMapper::DEPRECATED_SOURCES_KEY,
+            ProjectConfigMapper::SOURCES_KEY,
+        ));
+
+        return MigrationResult::migrated([ProjectConfigMapper::SOURCES_KEY]);
     }
 }

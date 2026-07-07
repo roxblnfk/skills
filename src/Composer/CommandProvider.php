@@ -18,7 +18,7 @@ use LLM\Skills\Composer\Command\Sync;
  * - {@see Sync}  — `skills:update`, the primary "copy skills into the project" command.
  * - {@see Show}  — `skills:show`, the read-only inspection counterpart.
  * - {@see Init}  — `skills:init`, bootstraps `skills.json` (and migrates legacy inline keys).
- * - {@see Add}   — `skills:add`, registers a remote donor (currently GitHub) and fetches
+ * - {@see Add}   — `skills:add`, registers a donor source (currently GitHub) and fetches
  *                  its skills immediately. The standalone `bin/skills` binary mirrors all
  *                  four under short names (`update` / `show` / `init` / `add`).
  *

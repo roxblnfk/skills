@@ -90,7 +90,7 @@ every donor, the per-skill sync status, and what is being skipped and why. `skil
 bootstraps a [`skills.json`](#project-configuration) at the project root and (when
 `composer.json` carries legacy inline project keys) migrates them out. `skills:add` registers
 a donor that lives outside Composer (e.g. a GitHub repository) and immediately fetches its
-skills — see [Remote sources](#remote-sources).
+skills — see [Donor sources](#donor-sources).
 
 | Option                | Where  | Description                                                                                                                                                        |
 |-----------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -99,7 +99,7 @@ skills — see [Remote sources](#remote-sources).
 | `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces the configured aliases entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
 | `--discovery`         | both   | Include packages that ship `SKILL.md` files but do not declare `extra.skills` (see [Auto-discovery](#auto-discovery)).                                              |
-| `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Remote sources](#remote-sources).                                                            |
+| `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Donor sources](#donor-sources).                                                              |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
 Short flag `-d` for `--discovery` is registered only by the standalone `bin/skills` binary;
@@ -179,7 +179,7 @@ where to put it, who to trust, whether to auto-sync.
   "path-from-root": "packages/api",
 
   "local":  { "composer": true },
-  "remote": [
+  "sources": [
     { "from": "github", "package": "acme/skills", "ref": "^1.2.0" },
     { "from": "github", "package": "team/skills-pack", "ref": "^2",
       "skills": ["code-review", "refactor"] }
@@ -196,14 +196,21 @@ where to put it, who to trust, whether to auto-sync.
 | `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
-| `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Remote sources](#remote-sources). |
-| `remote`          | object[]    | `[]`             | Explicit remote donor refs. Managed by `skills:add`; documented in [Remote sources](#remote-sources). |
+| `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Donor sources](#donor-sources). |
+| `sources`         | object[]    | `[]`             | Explicit donor source entries. Managed by `skills:add`; documented in [Donor sources](#donor-sources). |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
 
 The fastest way to get a valid `skills.json` is `composer skills:init` (see below). Bootstrap
 it once and commit it alongside `composer.json`.
+
+> [!NOTE]
+> **`remote` was renamed to `sources`.** Existing files keep working — `remote` is still read
+> as a deprecated alias. Any write-mode command (`skills:update`, `skills:init`, `skills:add`)
+> migrates the key in place and prints a `[migrate]` line; read-only `skills:show` just emits a
+> `[deprecated]` notice. Having both `remote` and `sources` in the same file is a fatal config
+> error — keep `sources` only.
 
 ### Strict shape
 
@@ -403,14 +410,14 @@ Bare `vendor` without `/` is rejected as ambiguous.
 Shipped in [`resources/trusted-composer.txt`](resources/trusted-composer.txt); extended by PR. Other registries (npm, go) will ship their own per-ecosystem files when the corresponding local providers land — see [`spec-remote.md`](spec-remote.md) §8.
 
 
-## Remote sources
+## Donor sources
 
 `llm/skills` reads donors from two axes:
 
 - **Local providers** — walk a manifest the project already owns. Today only `composer`; `npm` and `go` are reserved in the vocabulary but ship later.
 - **Remote providers** — fetch an explicit ref from a URL (currently GitHub and GitLab; the format is forward-compatible with Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`).
 
-Both axes coexist. When the same package name arrives via both, the **remote entry wins** (you typed it; the transitive Composer pickup is treated as stale) and the displaced donor is logged under `-v`.
+Both axes coexist. When the same package name arrives via both, the **`sources` entry wins** (you typed it; the transitive Composer pickup is treated as stale) and the displaced donor is logged under `-v`.
 
 ### `skills:add` — register a remote donor
 
@@ -437,7 +444,7 @@ The command:
 2. resolves the ref — explicit value wins verbatim; without `--ref` the adapter picks the highest stable tag, falling back to the highest prerelease tag, then to the default branch HEAD;
 3. downloads the archive into `vendor/llm-skills/cache/...` (gitignored by virtue of vendor);
 4. validates that the archive is a donor — either a `composer.json` with `extra.skills.source`, or (for bare skill repos) at least one `SKILL.md` found by [auto-discovery](#auto-discovery);
-5. upserts the entry into `skills.json` `remote[]` (stable-sorted by `(from, host, package)`, atomic write — falls back to `unlink + rename` on Windows where `rename()` refuses to overwrite an existing destination);
+5. upserts the entry into `skills.json` `sources[]` (stable-sorted by `(from, host, package)`, atomic write — falls back to `unlink + rename` on Windows where `rename()` refuses to overwrite an existing destination);
 6. runs a single-entry sync so the new skills land in the target right away — same ergonomics as `composer require`. Suppress with `--no-sync`.
 
 | Option        | Description                                                                                                   |
@@ -453,7 +460,7 @@ Stored entries look like:
 
 ```jsonc
 {
-  "remote": [
+  "sources": [
     { "from": "github", "package": "acme/skills", "ref": "^1.2.0" },
     { "from": "github", "package": "team/internal-skills",
       "host": "https://github.corp.example.com", "ref": "^1",
@@ -466,12 +473,12 @@ The composite key is `(from, host, package | url)`: same triplet = upsert in pla
 
 #### Per-entry skill allowlist
 
-A donor often ships more skills than you want in a given project. The optional `skills` field on each `remote[]` entry narrows the donor to a named subset:
+A donor often ships more skills than you want in a given project. The optional `skills` field on each `sources[]` entry narrows the donor to a named subset:
 
 - **Absent / omitted** → sync every skill the donor ships (legacy behaviour).
 - **Non-empty list of names** → only those skills are copied; the rest are silently skipped.
 - **Empty list (`"skills": []`)** → the donor is registered but no skills are pulled from it. Useful for staging a donor before opting into its content or for temporarily disabling a donor without deleting the entry.
-- Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in remote.skills but not found in the donor`) so typos surface without aborting the sync.
+- Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in the skill allowlist but not found in the donor`) so typos surface without aborting the sync.
 
 `skills:add --skill=NAME` is the CLI surface: pass `--skill` repeatedly to build the list. The flag is **additive on upsert** — running `skills:add` again on the same entry adds the new names to whatever was already stored. A follow-up `skills:add` without `--skill` does **not** touch the existing allowlist (whether it was a populated list or an explicit empty one). Removing a name or clearing the allowlist entirely is a manual edit of `skills.json`.
 
@@ -499,7 +506,7 @@ composer skills:update --from=composer    # only local Composer donors
 composer skills:update --from=github      # only remote GitHub donors
 ```
 
-The id matches `local.{id}` keys and `remote[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `RemoteProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
+The id matches `local.{id}` keys and `sources[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `RemoteProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
 
 ### Local provider toggles
 
@@ -507,7 +514,7 @@ The id matches `local.{id}` keys and `remote[].from` values. Each donor's proven
 { "local": { "composer": false } }    // disable Composer discovery entirely
 ```
 
-`local.composer` defaults to `true` (preserves the pre-`local` behaviour). When set to `false`, transitive Composer packages are no longer scanned — useful when the project wants its donors purely from `remote[]`.
+`local.composer` defaults to `true` (preserves the pre-`local` behaviour). When set to `false`, transitive Composer packages are no longer scanned — useful when the project wants its donors purely from `sources[]`.
 
 For the full architectural rationale, the version-resolution cascade, the cache layout, and the multi-registry trust model, see [`spec-remote.md`](spec-remote.md).
 

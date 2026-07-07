@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote;
 
 use Internal\Path;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
@@ -63,7 +63,7 @@ final class SkillsJsonRemoteDonorSourceTest
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
             ],
         ]);
-        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (RemoteEntry $entry) {
+        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (SourceEntry $entry) {
             return new RemoteDonorRef(
                 url: 'https://api.example.com/' . $entry->identifier() . '/zipball/' . $entry->ref,
                 ref: $entry->ref ?? 'main',
@@ -105,7 +105,7 @@ final class SkillsJsonRemoteDonorSourceTest
                 ['from' => 'github', 'package' => 'acme/missing', 'ref' => '^99.0'],
             ],
         ]);
-        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (RemoteEntry $entry) {
+        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (SourceEntry $entry) {
             throw new RemoteResolveException($entry, 'no matching tag');
         }));
 
@@ -129,7 +129,7 @@ final class SkillsJsonRemoteDonorSourceTest
                 ['from' => 'gitlab', 'package' => 'acme/unknown'],
             ],
         ]);
-        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (RemoteEntry $entry) {
+        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (SourceEntry $entry) {
             if ($entry->package === 'acme/bad') {
                 throw new RemoteResolveException($entry, 'simulated failure');
             }
@@ -155,7 +155,7 @@ final class SkillsJsonRemoteDonorSourceTest
                 ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
             ],
         ]);
-        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (RemoteEntry $entry) {
+        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (SourceEntry $entry) {
             // Note: stub returns provenance=null; the source must
             // re-tag with the entry's from-id.
             return new RemoteDonorRef('https://example.com/x', $entry->ref ?? 'main');
@@ -209,14 +209,14 @@ final class SkillsJsonRemoteDonorSourceTest
 
     /**
      * @param non-empty-string $id
-     * @param callable(RemoteEntry): RemoteDonorRef $resolver
+     * @param callable(SourceEntry): RemoteDonorRef $resolver
      */
     private static function stubAdapter(string $id, callable $resolver): HostAdapter
     {
         return new class($id, $resolver) implements HostAdapter {
             /**
              * @param non-empty-string $id
-             * @param callable(RemoteEntry): RemoteDonorRef $resolver
+             * @param callable(SourceEntry): RemoteDonorRef $resolver
              */
             public function __construct(
                 private readonly string $id,
@@ -245,9 +245,9 @@ final class SkillsJsonRemoteDonorSourceTest
             }
 
             #[\Override]
-            public function resolve(RemoteEntry $entry): RemoteDonorRef
+            public function resolve(SourceEntry $entry): RemoteDonorRef
             {
-                /** @var callable(RemoteEntry): RemoteDonorRef $resolver */
+                /** @var callable(SourceEntry): RemoteDonorRef $resolver */
                 $resolver = $this->resolver;
                 return $resolver($entry);
             }

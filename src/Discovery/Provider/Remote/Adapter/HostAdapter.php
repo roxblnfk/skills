@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Discovery\Provider\Remote\Adapter;
 
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
 
 /**
@@ -13,7 +13,7 @@ use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
  * One adapter per `from` value (see {@see \LLM\Skills\Discovery\Provider\ProviderId::REMOTE_IDS}).
  * Each adapter knows:
  *
- * - The id ({@see self::id()}) used in `skills.json` `remote[].from`
+ * - The id ({@see self::id()}) used in `skills.json` `sources[].from`
  *   and in the `--from=<id>` CLI flag.
  * - The default host URL ({@see self::defaultHost()}) used when an
  *   entry omits `host`.
@@ -47,7 +47,7 @@ interface HostAdapter
     public function id(): string;
 
     /**
-     * Default API/registry base URL when a `remote[]` entry omits
+     * Default API/registry base URL when a `sources[]` entry omits
      * `host`. For `github` this is `https://api.github.com`; for
      * `composer` it's the public Packagist URL; etc.
      *
@@ -59,7 +59,7 @@ interface HostAdapter
 
     /**
      * Parse `skills:add <input>` user input into a structured form
-     * the writer can turn into a `remote[]` entry.
+     * the writer can turn into a `sources[]` entry.
      *
      * The exact `$input` grammar is adapter-defined — `github`
      * accepts `owner/repo`, `https://github.com/owner/repo`, and
@@ -85,7 +85,7 @@ interface HostAdapter
     ): ParsedAddInput;
 
     /**
-     * Resolve a stored `remote[]` entry into a concrete
+     * Resolve a stored `sources[]` entry into a concrete
      * "what to download" descriptor.
      *
      * - When `$entry->ref` is an explicit tag / branch / SHA, the
@@ -107,5 +107,5 @@ interface HostAdapter
      *
      * @psalm-suppress MissingAbstractPureAnnotation
      */
-    public function resolve(RemoteEntry $entry): RemoteDonorRef;
+    public function resolve(SourceEntry $entry): RemoteDonorRef;
 }

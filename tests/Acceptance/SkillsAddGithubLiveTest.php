@@ -130,12 +130,12 @@ final class SkillsAddGithubLiveTest
             associative: true,
             flags: \JSON_THROW_ON_ERROR,
         );
-        /** @var list<array<string, mixed>> $remote */
-        $remote = (array) ($payload['remote'] ?? []);
-        Assert::count($remote, 1, 'exactly one remote entry must be registered');
-        Assert::same($remote[0]['from'] ?? null, 'github');
-        Assert::same($remote[0]['package'] ?? null, self::REPO);
-        Assert::same($remote[0]['ref'] ?? null, self::REF);
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) ($payload['sources'] ?? []);
+        Assert::count($sources, 1, 'exactly one source entry must be registered');
+        Assert::same($sources[0]['from'] ?? null, 'github');
+        Assert::same($sources[0]['package'] ?? null, self::REPO);
+        Assert::same($sources[0]['ref'] ?? null, self::REF);
 
         // The downstream sync ran as part of `skills:add` (no --no-sync
         // was passed), so the donor's skill directories must already

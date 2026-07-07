@@ -11,7 +11,7 @@ use Composer\IO\NullIO;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Add\PostAddSync;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
@@ -35,7 +35,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * {@see Factory::createConfig()}, the cache lives under
  * `<cwd>/vendor/llm-skills/cache` (the default layout), and the new
  * entry is upserted into `<cwd>/skills.json`. Composer-local donors
- * stay inactive in that mode — only the just-added remote donor
+ * stay inactive in that mode — only the just-added donor source
  * syncs, which is exactly what a `skills:add` invocation means.
  *
  * @internal
@@ -85,7 +85,7 @@ final class Add extends Command
             $projectRoot,
             $io,
             $options,
-            static function (RemoteEntry $_entry, string $packageName) use (&$donorPackageName): void {
+            static function (SourceEntry $_entry, string $packageName) use (&$donorPackageName): void {
                 $donorPackageName = $packageName;
             },
         );
@@ -97,7 +97,7 @@ final class Add extends Command
         // Without a Composer instance there is no root package to read an
         // `extra` from — PostAddSync falls through with `null`, which the
         // mapper treats the same as an empty `extra.skills` block. Only
-        // the just-registered remote donor will sync.
+        // the just-registered donor source will sync.
         return PostAddSync::run($projectRoot, $composer, $io, $donorPackageName);
     }
 

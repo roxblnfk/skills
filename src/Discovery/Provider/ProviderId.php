@@ -11,7 +11,7 @@ namespace LLM\Skills\Discovery\Provider;
  *
  * - `skills.json` `local: { <id>: bool }` keys — which local providers
  *   are enabled in the current project.
- * - `skills.json` `remote[].from` values — which source adapter resolves
+ * - `skills.json` `sources[].from` values — which source adapter resolves
  *   a given remote entry.
  * - The `--from=<id>` CLI flag on `skills:update` (Phase 5).
  *
@@ -47,7 +47,7 @@ final class ProviderId
     ];
 
     /**
-     * Identifiers that may appear as `from` values inside `remote[]`.
+     * Identifiers that may appear as `from` values inside `sources[]`.
      * Larger than {@see LOCAL_IDS} because remote adapters cover both
      * VCS hosts (no local manifest) and package registries.
      *

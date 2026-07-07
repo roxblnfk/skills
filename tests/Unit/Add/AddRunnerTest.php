@@ -8,7 +8,7 @@ use Composer\IO\BufferIO;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Config\AddOptions;
-use LLM\Skills\Config\RemoteEntry;
+use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
@@ -88,8 +88,8 @@ final class AddRunnerTest
         Assert::true(\str_contains($io->getOutput(), 'registered github:acme/skills @ v1.2.3'));
 
         $skills = $this->readSkillsJson();
-        Assert::count((array) $skills['remote'], 1);
-        Assert::same($skills['remote'][0]['ref'] ?? null, 'v1.2.3');
+        Assert::count((array) $skills['sources'], 1);
+        Assert::same($skills['sources'][0]['ref'] ?? null, 'v1.2.3');
     }
 
     public function inferredAdapterIsUsedWhenInputIsUrlAndFromIsAbsent(): void
@@ -129,7 +129,7 @@ final class AddRunnerTest
             ),
         );
 
-        Assert::same($this->readSkillsJson()['remote'][0]['ref'] ?? null, 'v1.2.3');
+        Assert::same($this->readSkillsJson()['sources'][0]['ref'] ?? null, 'v1.2.3');
     }
 
     public function noRefPlusStableResolutionStoresCaret(): void
@@ -148,7 +148,7 @@ final class AddRunnerTest
             new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB),
         );
 
-        Assert::same($this->readSkillsJson()['remote'][0]['ref'] ?? null, '^2.5.7');
+        Assert::same($this->readSkillsJson()['sources'][0]['ref'] ?? null, '^2.5.7');
     }
 
     public function noRefPlusBranchResolutionOmitsRef(): void
@@ -169,7 +169,7 @@ final class AddRunnerTest
         );
 
         Assert::false(
-            \array_key_exists('ref', $this->readSkillsJson()['remote'][0]),
+            \array_key_exists('ref', $this->readSkillsJson()['sources'][0]),
             'no stable ref ⇒ ref field is omitted',
         );
     }
@@ -557,7 +557,7 @@ final class StubAdapter implements HostAdapter
     }
 
     #[\Override]
-    public function resolve(RemoteEntry $entry): RemoteDonorRef
+    public function resolve(SourceEntry $entry): RemoteDonorRef
     {
         if ($this->resolveError !== null) {
             throw new RemoteResolveException($entry, $this->resolveError);
