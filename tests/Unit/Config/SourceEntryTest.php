@@ -174,4 +174,119 @@ final class SourceEntryTest
             Assert::true(\str_contains($e->getMessage(), 'non-empty strings'));
         }
     }
+
+    public function identifierReturnsPathForDirEntry(): void
+    {
+        // Path-only adapters identify the donor by `path`, even when a
+        // `package` name override is also present.
+        $entry = new SourceEntry(
+            from: ProviderId::DIR,
+            package: null,
+            url: null,
+            host: null,
+            ref: null,
+            path: './skills',
+        );
+
+        Assert::same($entry->identifier(), './skills');
+    }
+
+    public function identifierPrefersPathOverPackageOverride(): void
+    {
+        $entry = new SourceEntry(
+            from: ProviderId::DIR,
+            package: 'myorg/shared',
+            url: null,
+            host: null,
+            ref: null,
+            path: '../shared-skills',
+        );
+
+        Assert::same($entry->identifier(), '../shared-skills');
+    }
+
+    public function compositeKeyUsesPathForDirEntry(): void
+    {
+        // Shape: `dir||<path>`. Two entries with the same path collide;
+        // the identifier is the raw path string (lexical identity only).
+        $entry = new SourceEntry(
+            from: ProviderId::DIR,
+            package: null,
+            url: null,
+            host: null,
+            ref: null,
+            path: './skills',
+        );
+
+        Assert::same($entry->compositeKey(), 'dir||./skills');
+    }
+
+    public function constructorRejectsDirWithoutPath(): void
+    {
+        // `path` is mandatory for path-only adapters.
+        try {
+            new SourceEntry(
+                from: ProviderId::DIR,
+                package: null,
+                url: null,
+                host: null,
+                ref: null,
+            );
+            Assert::fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'requires $path'));
+        }
+    }
+
+    public function constructorRejectsDirWithUrl(): void
+    {
+        try {
+            new SourceEntry(
+                from: ProviderId::DIR,
+                package: null,
+                url: 'https://example.com/x.zip',
+                host: null,
+                ref: null,
+                path: './skills',
+            );
+            Assert::fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'does not allow $url'));
+        }
+    }
+
+    public function constructorRejectsPathOnNonDirAdapter(): void
+    {
+        // `path` is meaningless for every non-path-only adapter.
+        try {
+            new SourceEntry(
+                from: ProviderId::GITHUB,
+                package: 'acme/skills',
+                url: null,
+                host: null,
+                ref: null,
+                path: './skills',
+            );
+            Assert::fail('expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'does not allow $path'));
+        }
+    }
+
+    public function dirEntryAcceptsPackageOverride(): void
+    {
+        // Unlike name-based adapters, `package` on a dir entry is an
+        // optional donor-name override and coexists with `path`.
+        $entry = new SourceEntry(
+            from: ProviderId::DIR,
+            package: 'myorg/shared',
+            url: null,
+            host: null,
+            ref: null,
+            path: '../shared-skills',
+        );
+
+        Assert::same($entry->package, 'myorg/shared');
+        Assert::same($entry->path, '../shared-skills');
+    }
 }

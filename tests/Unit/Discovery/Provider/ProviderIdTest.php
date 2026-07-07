@@ -39,6 +39,7 @@ final class ProviderIdTest
         Assert::true(ProviderId::isKnownRemote(ProviderId::SKILLS_SH));
         Assert::true(ProviderId::isKnownRemote(ProviderId::HTTP));
         Assert::true(ProviderId::isKnownRemote(ProviderId::ZIP));
+        Assert::true(ProviderId::isKnownRemote(ProviderId::DIR));
 
         Assert::false(ProviderId::isKnownRemote('unknown'));
     }
@@ -53,6 +54,34 @@ final class ProviderIdTest
     {
         Assert::false(ProviderId::isUrlOnlyRemote(ProviderId::GITHUB));
         Assert::false(ProviderId::isUrlOnlyRemote(ProviderId::COMPOSER));
+    }
+
+    public function dirIsPathOnly(): void
+    {
+        // `dir` identifies its donor by `path`, not a package name or
+        // URL — the third identifier category alongside url-only.
+        Assert::true(ProviderId::isPathOnlySource(ProviderId::DIR));
+    }
+
+    public function otherAdaptersAreNotPathOnly(): void
+    {
+        Assert::false(ProviderId::isPathOnlySource(ProviderId::GITHUB));
+        Assert::false(ProviderId::isPathOnlySource(ProviderId::COMPOSER));
+        Assert::false(ProviderId::isPathOnlySource(ProviderId::HTTP));
+        Assert::false(ProviderId::isPathOnlySource(ProviderId::ZIP));
+    }
+
+    public function dirIsNotAUrlOnlyAdapter(): void
+    {
+        // Path-only and url-only are disjoint categories.
+        Assert::false(ProviderId::isUrlOnlyRemote(ProviderId::DIR));
+    }
+
+    public function dirIsNotKnownLocal(): void
+    {
+        // `dir` is an explicit declaration under sources[], not an
+        // ecosystem auto-discovery toggle under `local`.
+        Assert::false(ProviderId::isKnownLocal(ProviderId::DIR));
     }
 
     public function composerDefaultsToEnabled(): void

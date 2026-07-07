@@ -193,9 +193,9 @@ final readonly class ProjectConfigMapper
     /**
      * Pick adapter-specific extras out of a `sources[]` entry — anything
      * that is not one of the well-known keys (`from`, `package`, `url`,
-     * `host`, `ref`). Stored verbatim so adapters can read their own
-     * keys (`sha256` on `zip`, custom proxy options on `go`, …) without
-     * a mapper-level schema for every adapter.
+     * `host`, `ref`, `skills`, `path`). Stored verbatim so adapters can
+     * read their own keys (`sha256` on `zip`, custom proxy options on
+     * `go`, …) without a mapper-level schema for every adapter.
      *
      * @param array<array-key, mixed> $entry
      *
@@ -219,6 +219,7 @@ final readonly class ProjectConfigMapper
                 || $key === 'host'
                 || $key === 'ref'
                 || $key === 'skills'
+                || $key === 'path'
             ) {
                 continue;
             }
@@ -496,11 +497,12 @@ final readonly class ProjectConfigMapper
 
     /**
      * Parse and validate the `sources[]` list. Each entry is structurally
-     * an object with a mandatory `from` (adapter id), exactly one of
-     * `package` / `url`, and optional `host` / `ref` plus
+     * an object with a mandatory `from` (adapter id), an identifier
+     * matching the adapter kind (`path` for dir, `url` for URL-only,
+     * `package` otherwise), and optional `host` / `ref` plus
      * adapter-specific extras. Composite uniqueness on
-     * `(from, host, package|url)` is enforced inside this method so the
-     * caller does not have to.
+     * `(from, host, path|package|url)` is enforced inside this method so
+     * the caller does not have to.
      *
      * @param non-empty-string $prefix
      * @param non-empty-string $key config key the list was read from (`sources` or its
@@ -588,33 +590,65 @@ final readonly class ProjectConfigMapper
         $url = self::optionalNonEmptyString($entry['url'] ?? null, $field, 'url');
         $host = self::optionalNonEmptyString($entry['host'] ?? null, $field, 'host');
         $ref = self::optionalNonEmptyString($entry['ref'] ?? null, $field, 'ref');
+        $path = self::optionalNonEmptyString($entry['path'] ?? null, $field, 'path');
 
-        // Identifier rules: URL-only adapters take `url`; name-based
-        // adapters take `package`. Exactly one of the two must be set
-        // and it must be the one the adapter expects — a typo here
-        // (e.g. `package` on a `zip` entry) is a silent footgun if we
-        // accept it, so it surfaces as a load-time error instead.
-        if (ProviderId::isUrlOnlyRemote($from)) {
-            if ($url === null) {
+        // Identifier rules by adapter kind: path-only adapters (dir)
+        // take `path`; URL-only adapters take `url`; name-based adapters
+        // take `package`. The identifier must be the one the adapter
+        // expects — a typo (e.g. `package` on a `zip` entry, or `url`
+        // on a `dir` entry) is a silent footgun if we accept it, so it
+        // surfaces as a load-time error instead.
+        if (ProviderId::isPathOnlySource($from)) {
+            // `path` is the identifier; `package` stays optional as a
+            // donor-name override; `url`/`host`/`ref` are meaningless.
+            if ($path === null) {
                 throw new MalformedProjectConfig(
-                    $field . '.url is required for adapter "' . $from . '"',
-                );
-            }
-            if ($package !== null) {
-                throw new MalformedProjectConfig(
-                    $field . '.package is not allowed for adapter "' . $from . '" (use url)',
-                );
-            }
-        } else {
-            if ($package === null) {
-                throw new MalformedProjectConfig(
-                    $field . '.package is required for adapter "' . $from . '"',
+                    $field . '.path is required for adapter "' . $from . '"',
                 );
             }
             if ($url !== null) {
                 throw new MalformedProjectConfig(
-                    $field . '.url is not allowed for adapter "' . $from . '" (use package)',
+                    $field . '.url is not allowed for adapter "' . $from . '" (use path)',
                 );
+            }
+            if ($host !== null) {
+                throw new MalformedProjectConfig(
+                    $field . '.host is not allowed for adapter "' . $from . '"',
+                );
+            }
+            if ($ref !== null) {
+                throw new MalformedProjectConfig(
+                    $field . '.ref is not allowed for adapter "' . $from . '"',
+                );
+            }
+        } else {
+            if ($path !== null) {
+                throw new MalformedProjectConfig(
+                    $field . '.path is not allowed for adapter "' . $from . '" (dir only)',
+                );
+            }
+            if (ProviderId::isUrlOnlyRemote($from)) {
+                if ($url === null) {
+                    throw new MalformedProjectConfig(
+                        $field . '.url is required for adapter "' . $from . '"',
+                    );
+                }
+                if ($package !== null) {
+                    throw new MalformedProjectConfig(
+                        $field . '.package is not allowed for adapter "' . $from . '" (use url)',
+                    );
+                }
+            } else {
+                if ($package === null) {
+                    throw new MalformedProjectConfig(
+                        $field . '.package is required for adapter "' . $from . '"',
+                    );
+                }
+                if ($url !== null) {
+                    throw new MalformedProjectConfig(
+                        $field . '.url is not allowed for adapter "' . $from . '" (use package)',
+                    );
+                }
             }
         }
 
@@ -630,6 +664,7 @@ final readonly class ProjectConfigMapper
             ref: $ref,
             extras: $extras,
             skills: $skills,
+            path: $path,
         );
     }
 

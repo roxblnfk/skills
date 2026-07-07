@@ -63,6 +63,43 @@ final class SkillsSchemaTest
         ]);
     }
 
+    public function dirSourceDocumentIsAccepted(): void
+    {
+        $this->assertAccepts([
+            'sources' => [
+                ['from' => 'dir', 'path' => './skills'],
+                ['from' => 'dir', 'path' => '../shared-skills', 'package' => 'myorg/shared', 'skills' => ['deploy']],
+            ],
+        ]);
+    }
+
+    public function dirSourceMissingPathIsRejected(): void
+    {
+        // `path` is required for the dir adapter; without it the entry
+        // matches none of the oneOf branches.
+        $this->assertRejects([
+            'sources' => [
+                ['from' => 'dir'],
+            ],
+        ]);
+    }
+
+    public function dirSourceWithUrlIsAcceptedBySchemaButRejectedByMapper(): void
+    {
+        // Matrix note: the schema is deliberately lenient here. A dir
+        // entry carrying `url` still matches `sourceByDir` (which does
+        // not set additionalProperties:false, mirroring its siblings)
+        // and matches no other oneOf branch, so the document validates.
+        // The PHP mapper is the authoritative validator and rejects it
+        // with `url is not allowed for adapter "dir" (use path)` — see
+        // ProjectConfigMapperTest::dirRejectsUrl().
+        $this->assertAccepts([
+            'sources' => [
+                ['from' => 'dir', 'path' => './skills', 'url' => 'https://example.com/x.zip'],
+            ],
+        ]);
+    }
+
     public function deprecatedRemoteDocumentIsAccepted(): void
     {
         // `remote` is the deprecated alias of `sources`. The schema

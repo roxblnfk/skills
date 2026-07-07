@@ -17,7 +17,7 @@ use LLM\Skills\Filesystem\AtomicFileWriter;
  *
  * Three guarantees:
  *
- * - **Upsert by composite key** — `(from, host ?? '', package | url)`.
+ * - **Upsert by composite key** — `(from, host ?? '', path | package | url)`.
  *   Same key ⇒ overwrite in place; new key ⇒ append.
  * - **Stable sort** — after the upsert the whole `sources[]` is
  *   reordered by composite key so diffs are deterministic across
@@ -326,8 +326,9 @@ final readonly class SkillsJsonWriter
     /**
      * Render an entry as the JSON-serialisable map for storage. Key
      * order is fixed for stable diffs: `from` → `host` (if present) →
-     * `package` or `url` → `ref` (if present) → `skills` (if present)
-     * → extras.
+     * `path` or `package` or `url` → `ref` (if present) → `skills`
+     * (if present) → extras. `path` and `package` may co-exist on a
+     * `dir` entry (path is the identifier, package a name override).
      *
      * @param SourceEntry|array<string, mixed> $entry
      *
@@ -341,6 +342,9 @@ final readonly class SkillsJsonWriter
             $out = ['from' => $entry->from];
             if ($entry->host !== null) {
                 $out['host'] = $entry->host;
+            }
+            if ($entry->path !== null) {
+                $out['path'] = $entry->path;
             }
             if ($entry->package !== null) {
                 $out['package'] = $entry->package;
@@ -384,15 +388,24 @@ final readonly class SkillsJsonWriter
         $fromStr = \is_string($from) ? $from : '';
         $hostStr = \is_string($host) ? $host : '';
         $identifier = '';
-        /** @var mixed $package */
-        $package = $entry['package'] ?? null;
-        if (\is_string($package)) {
-            $identifier = $package;
+        // Mirror SourceEntry::identifier(): `path` wins for dir entries
+        // (where `package` may also be present as a name override),
+        // then `package`, then `url`.
+        /** @var mixed $path */
+        $path = $entry['path'] ?? null;
+        if (\is_string($path)) {
+            $identifier = $path;
         } else {
-            /** @var mixed $url */
-            $url = $entry['url'] ?? null;
-            if (\is_string($url)) {
-                $identifier = $url;
+            /** @var mixed $package */
+            $package = $entry['package'] ?? null;
+            if (\is_string($package)) {
+                $identifier = $package;
+            } else {
+                /** @var mixed $url */
+                $url = $entry['url'] ?? null;
+                if (\is_string($url)) {
+                    $identifier = $url;
+                }
             }
         }
         return $fromStr . '|' . $hostStr . '|' . $identifier;
