@@ -8,9 +8,12 @@ use Internal\Path;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Remote\DirDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpClient;
 use LLM\Skills\Discovery\Provider\Remote\Http\HttpResponse;
 use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
+use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
+use LLM\Skills\Discovery\Provider\Remote\RemoteFetcher;
 use LLM\Skills\Discovery\Provider\Remote\RemoteProvider;
 use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
 use LLM\Skills\Tests\Testo\Filesystem;
@@ -45,6 +48,7 @@ use Testo\Test;
 #[Test]
 #[Covers(RemoteProvider::class)]
 #[Covers(SkillsJsonRemoteDonorSource::class)]
+#[Covers(DirDonorRef::class)]
 #[Covers(GithubAdapter::class)]
 #[Covers(GitlabAdapter::class)]
 #[Covers(HttpArchiveFetcher::class)]
@@ -374,6 +378,130 @@ final class RemoteProviderEndToEndTest
             ->contains('SKILL.md');
     }
 
+    // ── dir source adapter (offline, no HTTP) ─────────────────────────────────
+
+    public function dirSourceEntryReadsLiveComposerShapedDirectoryEndToEnd(): void
+    {
+        // skills.json declares one `dir` donor pointing at a local
+        // directory carrying its own composer.json. No network, no
+        // archive, no cache — the provider reads the directory in place.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'sources' => [
+                ['from' => 'dir', 'path' => './local-skills'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->writeDirSkill('local-skills/skills/hello', 'hello');
+        \file_put_contents($this->tmp . '/local-skills/composer.json', \json_encode([
+            'name' => 'acme/local',
+            'extra' => ['skills' => ['source' => 'skills']],
+        ], \JSON_THROW_ON_ERROR));
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry()),
+            self::neverFetch(),
+        );
+
+        Assert::true($provider->isActive(Path::create($this->tmp)));
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/local');
+        Assert::same($result->donors[0]->provenance, 'dir');
+        Assert::true($result->donors[0]->implicitTrust);
+
+        $skillFile = (string) $result->donors[0]->sourcePath()->join('hello/SKILL.md');
+        Assert::true(\is_file($skillFile), 'skill file must be read from the live directory');
+    }
+
+    public function dirSourceEntryDerivesNameWhenDirectoryHasNoComposerJson(): void
+    {
+        // A bare skill directory (no composer.json) is registered under
+        // the derived `<parent>/<basename>` name and its nested skill is
+        // enumerated through discoveredSkillDirs.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'sources' => [
+                ['from' => 'dir', 'path' => './local-skills'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->writeDirSkill('local-skills/skills/triage', 'triage');
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry()),
+            self::neverFetch(),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::count($result->donors, 1);
+        // Derived name is `<tmp-basename>/local-skills`, lowercased.
+        Assert::true(
+            \str_ends_with($result->donors[0]->packageName, '/local-skills'),
+            'derived name must end with /local-skills; got ' . $result->donors[0]->packageName,
+        );
+        Assert::false($result->donors[0]->discovered);
+
+        $enum = (new \LLM\Skills\Discovery\SkillEnumerator())->enumerate($result->donors);
+        $names = \array_map(static fn($s) => $s->name, $enum->skills);
+        Assert::same($names, ['triage']);
+    }
+
+    public function missingDirSourceEntryWarnsAndProducesNoDonor(): void
+    {
+        // The declared directory does not exist — graceful degradation:
+        // a per-entry warning, no donor, and the run still succeeds.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'sources' => [
+                ['from' => 'dir', 'path' => './nope'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry()),
+            self::neverFetch(),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::same($result->donors, []);
+        Assert::count($result->warnings, 1);
+        Assert::string($result->warnings[0])
+            ->contains('dir ./nope')
+            ->contains('directory does not exist');
+    }
+
+    public function dirSourceEntryAllowlistSyncsOnlyTheNamedSkill(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'sources' => [
+                ['from' => 'dir', 'path' => './local-skills', 'skills' => ['hello']],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $this->writeDirSkill('local-skills/skills/hello', 'hello');
+        $this->writeDirSkill('local-skills/skills/other', 'other');
+        \file_put_contents($this->tmp . '/local-skills/composer.json', \json_encode([
+            'name' => 'acme/local',
+            'extra' => ['skills' => ['source' => 'skills']],
+        ], \JSON_THROW_ON_ERROR));
+
+        $provider = new RemoteProvider(
+            new SkillsJsonRemoteDonorSource(new HostAdapterRegistry()),
+            self::neverFetch(),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->skillFilter, ['hello']);
+
+        $enum = (new \LLM\Skills\Discovery\SkillEnumerator())->enumerate($result->donors);
+        $names = \array_map(static fn($s) => $s->name, $enum->skills);
+        Assert::same($names, ['hello']);
+    }
+
     #[BeforeTest]
     public function setUp(): void
     {
@@ -385,6 +513,33 @@ final class RemoteProviderEndToEndTest
     public function tearDown(): void
     {
         Filesystem::removeRecursive($this->tmp);
+    }
+
+    /**
+     * A fetcher that fails loudly if invoked — dir refs must never reach
+     * the fetcher (no download, no cache, no unpacker). Wiring it proves
+     * the provider handles dir refs entirely on the read-in-place path.
+     */
+    private static function neverFetch(): RemoteFetcher
+    {
+        return new class implements RemoteFetcher {
+            #[\Override]
+            public function fetch(RemoteDonorRef $ref): Path
+            {
+                throw new \LogicException('dir refs must not reach the fetcher');
+            }
+        };
+    }
+
+    /**
+     * Write a `SKILL.md` (with minimal frontmatter) at `$relDir` under
+     * the temp project root, creating parent directories as needed.
+     */
+    private function writeDirSkill(string $relDir, string $name): void
+    {
+        $dir = $this->tmp . '/' . $relDir;
+        \mkdir($dir, 0o777, true);
+        \file_put_contents($dir . '/SKILL.md', "---\nname: " . $name . "\n---\nbody");
     }
 
     /**

@@ -18,15 +18,21 @@ use LLM\Skills\Discovery\Provider\DonorProvider;
  * (GitHub/GitLab/Bitbucket HTTPS or SSH, plain `git://`, Mercurial,
  * etc.).
  *
- * Pipeline: the {@see RemoteDonorSource} produces {@see RemoteDonorRef}s
- * (the "what to fetch" list — sourced from `skills.json`, vendor
- * declarations, or a future `skills:add` lockfile), the
- * {@see RemoteFetcher} resolves each into a local extracted archive
- * (the "how to fetch" — HTTP archive download, full `git clone`, etc.),
- * and this provider then treats every extracted root identically to a
- * Composer-installed package: parses its `composer.json`, runs
- * {@see VendorConfigMapper} against `extra.skills`, emits the same
- * {@see DonorDiscoveryResult} shape as
+ * Pipeline: the {@see RemoteDonorSource} produces the "what to fetch"
+ * list (sourced from `skills.json`, vendor declarations, or a future
+ * `skills:add` lockfile) as one of two ref shapes, and this provider
+ * turns each into a local directory:
+ *
+ * - {@see RemoteDonorRef} (URL + ref) → the {@see RemoteFetcher}
+ *   resolves it into a local extracted archive ("how to fetch" — HTTP
+ *   archive download, full `git clone`, etc.).
+ * - {@see DirDonorRef} (a resolved local path, `from: "dir"`) → the
+ *   directory is read in place; no fetcher, no cache, no unpacker.
+ *
+ * From there both shapes share the same tail: this provider treats the
+ * directory identically to a Composer-installed package — parses its
+ * `composer.json`, runs {@see VendorConfigMapper} against `extra.skills`,
+ * and emits the same {@see DonorDiscoveryResult} shape as
  * {@see \LLM\Skills\Discovery\Provider\ComposerProvider}.
  *
  * Each failure mode degrades gracefully:
@@ -75,18 +81,29 @@ final readonly class RemoteProvider implements DonorProvider
         $warnings = [];
         $malformed = [];
 
-        if ($this->fetcher === null) {
-            // Active source but no fetcher wired — one warning is more
-            // useful than one-per-ref, since the misconfiguration is
-            // global, not per-donor.
-            foreach ($this->source->refs($projectRoot) as $_ref) {
-                $warnings[] = 'remote donor source declared refs but no fetcher is configured';
-                break;
-            }
-            return new DonorDiscoveryResult(donors: [], warnings: $warnings);
-        }
+        // Active source but no fetcher wired — one warning is more
+        // useful than one-per-ref, since the misconfiguration is global,
+        // not per-donor. Dir refs need no fetcher (they read the live
+        // directory), so they are still processed in that case.
+        $fetcherWarned = false;
 
         foreach ($this->source->refs($projectRoot) as $ref) {
+            if ($ref instanceof DirDonorRef) {
+                $donor = $this->resolveDirRef($ref, $warnings, $malformed);
+                if ($donor !== null) {
+                    $donors[] = $donor;
+                }
+                continue;
+            }
+
+            if ($this->fetcher === null) {
+                if (!$fetcherWarned) {
+                    $warnings[] = 'remote donor source declared refs but no fetcher is configured';
+                    $fetcherWarned = true;
+                }
+                continue;
+            }
+
             try {
                 $path = $this->fetcher->fetch($ref);
             } catch (RemoteFetchException $e) {
@@ -135,6 +152,37 @@ final readonly class RemoteProvider implements DonorProvider
     }
 
     /**
+     * Resolve a `dir` ref into a `VendorConfig`, or `null` when the
+     * directory is absent or not a donor. The "fetch" for a dir ref is
+     * simply confirming the directory exists — no download, no cache,
+     * no unpacker — and then running the shared inspector against the
+     * live directory, exactly as the remote path does against an
+     * extracted archive.
+     *
+     * A missing / non-directory path is graceful degradation, matching
+     * a failed remote fetch: a per-entry warning, and the entry is
+     * skipped without touching its siblings.
+     *
+     * @param list<string>             $warnings  appended to in place
+     * @param list<MalformedDonor>     $malformed appended to in place
+     *
+     * @param-out list<string>         $warnings
+     * @param-out list<MalformedDonor> $malformed
+     */
+    private function resolveDirRef(
+        DirDonorRef $ref,
+        array &$warnings,
+        array &$malformed,
+    ): ?VendorConfig {
+        if (!$ref->directory->isDir()) {
+            $warnings[] = \sprintf('source %s: directory does not exist', $ref->describe());
+            return null;
+        }
+
+        return $this->buildDonor($ref, $ref->directory, $warnings, $malformed);
+    }
+
+    /**
      * Resolve a single ref into a `VendorConfig`, or `null` when the
      * archive cannot be turned into a donor. Accumulates per-ref
      * warnings + malformed entries into the caller's lists.
@@ -158,7 +206,7 @@ final readonly class RemoteProvider implements DonorProvider
      * @param-out list<MalformedDonor> $malformed
      */
     private function buildDonor(
-        RemoteDonorRef $ref,
+        RemoteDonorRef|DirDonorRef $ref,
         Path $path,
         array &$warnings,
         array &$malformed,
@@ -249,7 +297,7 @@ final readonly class RemoteProvider implements DonorProvider
      *
      * @psalm-mutation-free
      */
-    private function decorate(VendorConfig $donor, RemoteDonorRef $ref): VendorConfig
+    private function decorate(VendorConfig $donor, RemoteDonorRef|DirDonorRef $ref): VendorConfig
     {
         $provenance = $ref->provenance ?? 'source';
         // `sources[]` entries are user-declared and therefore
