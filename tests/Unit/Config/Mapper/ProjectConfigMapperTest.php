@@ -617,7 +617,7 @@ final class ProjectConfigMapperTest
         // must fail at load so a typo never reaches the fetcher (which
         // would otherwise give a less helpful error).
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('not a known remote adapter');
+            ->withMessageContaining('not a known source adapter');
 
         (new ProjectConfigMapper())->fromExtra([
             'skills' => [

@@ -575,7 +575,7 @@ final readonly class ProjectConfigMapper
         }
         if (!ProviderId::isKnownRemote($rawFrom)) {
             throw new MalformedProjectConfig(\sprintf(
-                '%s.from "%s" is not a known remote adapter (known: %s)',
+                '%s.from "%s" is not a known source adapter (known: %s)',
                 $field,
                 $rawFrom,
                 \implode(', ', ProviderId::REMOTE_IDS),
