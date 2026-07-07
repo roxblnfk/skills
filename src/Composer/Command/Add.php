@@ -7,9 +7,8 @@ namespace LLM\Skills\Composer\Command;
 use Composer\Command\BaseCommand;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
+use LLM\Skills\Add\PostAddSync;
 use LLM\Skills\Config\RemoteEntry;
-use LLM\Skills\Config\SyncOptions;
-use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
@@ -17,8 +16,6 @@ use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
 use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
-use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
-use LLM\Skills\Sync\SyncRunner;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -61,7 +58,11 @@ final class Add extends BaseCommand
             new GithubAdapter($http),
             new GitlabAdapter($http),
         );
-        $fetcher = new HttpArchiveFetcher($http, $projectRoot, self::cacheBuilderFor($composer));
+        $fetcher = new HttpArchiveFetcher(
+            $http,
+            $projectRoot,
+            CachePathBuilder::fromVendorDir($composer->getConfig()->get('vendor-dir')),
+        );
 
         $runner = new AddRunner($registry, $fetcher);
         $donorPackageName = null;
@@ -82,54 +83,6 @@ final class Add extends BaseCommand
         // new skills land in the target without re-syncing everything
         // else. Matches `composer require <pkg>` ergonomics, which
         // only installs the requested package's tree.
-        $extra = $composer->getPackage()->getExtra();
-        $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
-
-        $syncOptions = new SyncOptions(
-            packageFilters: self::filterFor($donorPackageName),
-            extraTrusted: [],
-            targetOverride: null,
-            interactive: false,
-            dryRun: false,
-            discovery: null,
-            aliasOverrides: null,
-            autoMigrate: false,
-        );
-        return (new SyncRunner())->run($projectRoot, $provider, $extra, $this->getIO(), $syncOptions);
-    }
-
-    /**
-     * Honour the project's configured `vendor-dir` when computing the
-     * cache layout. Without this, a `vendor-dir: "deps"` project would
-     * see cached archives written under `vendor/` (which Composer may
-     * not even use, and which `composer install` doesn't gitignore).
-     */
-    private static function cacheBuilderFor(\Composer\Composer $composer): CachePathBuilder
-    {
-        /** @var mixed $vendorDir */
-        $vendorDir = $composer->getConfig()->get('vendor-dir');
-        if (!\is_string($vendorDir) || $vendorDir === '') {
-            return new CachePathBuilder();
-        }
-        return new CachePathBuilder(Path::create($vendorDir)->join('llm-skills/cache'));
-    }
-
-    /**
-     * Single-element `packageFilters` scoped to the donor's
-     * Composer-package name (read from the fetched composer.json's
-     * `name`, NOT from `$options->input` — those can differ; e.g.
-     * GitHub's `<owner>/<repo>` path is unrelated to the package's
-     * `name`).
-     *
-     * @return list<VendorPattern>
-     *
-     * @psalm-pure
-     */
-    private static function filterFor(?string $donorPackageName): array
-    {
-        if ($donorPackageName === null || $donorPackageName === '') {
-            return [];
-        }
-        return [VendorPattern::fromString($donorPackageName)];
+        return PostAddSync::run($projectRoot, $composer, $this->getIO(), $donorPackageName);
     }
 }

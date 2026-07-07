@@ -21,11 +21,14 @@ namespace LLM\Skills\Discovery\Provider\Remote;
  * Composer ships a full semver implementation in
  * `composer/semver`, but the resolver here intentionally rolls a
  * narrow subset: only the pieces this plugin actually requires, no
- * `*` / `~` / `>=` / `<` / `||` parsing, no per-major caret
- * edge cases below 1.0.0. Keeping this minimal means the resolver
- * stays pure, testable from a fixture list of tag strings, and
- * impossible to misuse by passing weird Composer constraints
- * we do not promise to support.
+ * `*` / `~` / `>=` / `<` / `||` parsing. Caret support does follow
+ * Composer's pre-1.0 rule (`^0.y.z` locks the minor), so a version
+ * `skills:add` pins on a 0.x donor resolves the same way Composer
+ * would — otherwise `formatCaret()` would emit a `^0.y.z` constraint
+ * that `resolveCaret()` could never satisfy. Keeping the rest minimal
+ * means the resolver stays pure, testable from a fixture list of tag
+ * strings, and impossible to misuse by passing weird Composer
+ * constraints we do not promise to support.
  *
  * @psalm-immutable
  */
@@ -134,17 +137,17 @@ final readonly class RefResolver
      * highest stable tag that satisfies the constraint, or null
      * when none does.
      *
-     * Constraint shapes:
+     * Constraint shapes (the ceiling follows Composer's rule — bump
+     * the left-most non-zero component the constraint specified):
      *
      * - `^1.2.3` → `>= 1.2.3, < 2.0.0`
      * - `^1.2`   → `>= 1.2.0, < 2.0.0`
      * - `^1`     → `>= 1.0.0, < 2.0.0`
+     * - `^0.2.3` → `>= 0.2.3, < 0.3.0`  (0.x locks the minor)
+     * - `^0.0.3` → `>= 0.0.3, < 0.0.4`  (0.0.x locks the patch)
      * - `^v1.2.3` is treated identically to `^1.2.3`
      *
-     * Pre-1.0 caret semantics (`^0.2.3` meaning `< 0.3.0`) are
-     * intentionally not implemented — caret support is only
-     * promised for major>=1. Pre-1.0 inputs return null rather
-     * than guessing.
+     * See {@see self::caretCeiling()} for the exact upper-bound rule.
      *
      * @param list<non-empty-string> $tags
      *
@@ -158,17 +161,14 @@ final readonly class RefResolver
         if ($match !== 1) {
             return null;
         }
+        $minorGiven = isset($m[2]) && $m[2] !== '';
+        $patchGiven = isset($m[3]) && $m[3] !== '';
         $major = (int) $m[1];
-        $minor = isset($m[2]) && $m[2] !== '' ? (int) $m[2] : 0;
-        $patch = isset($m[3]) && $m[3] !== '' ? (int) $m[3] : 0;
-
-        if ($major < 1) {
-            // Pre-1.0 caret semantics differ — out of scope.
-            return null;
-        }
+        $minor = $minorGiven ? (int) $m[2] : 0;
+        $patch = $patchGiven ? (int) $m[3] : 0;
 
         $floor = [$major, $minor, $patch];
-        $ceiling = [$major + 1, 0, 0];
+        $ceiling = self::caretCeiling($major, $minor, $patch, $minorGiven, $patchGiven);
 
         $best = null;
         /** @var array{int, int, int}|null $bestParts */
@@ -227,6 +227,49 @@ final readonly class RefResolver
     public function isCaretConstraint(string $ref): bool
     {
         return \preg_match(self::CARET_CONSTRAINT_REGEX, $ref) === 1;
+    }
+
+    /**
+     * Exclusive upper bound for a caret constraint, following
+     * Composer's rule: bump the left-most non-zero component among
+     * those the constraint specified and zero everything to its
+     * right. When every specified component is zero, bump the
+     * least-significant specified component.
+     *
+     * - `^1.2.3` → `[2, 0, 0]`  (major is the left-most non-zero)
+     * - `^0.2.3` → `[0, 3, 0]`  (minor locked once major is 0)
+     * - `^0.0.3` → `[0, 0, 4]`  (patch locked once major+minor are 0)
+     * - `^0.2`   → `[0, 3, 0]`
+     * - `^0`     → `[1, 0, 0]`
+     * - `^0.0`   → `[0, 1, 0]`
+     *
+     * @return array{int, int, int}
+     *
+     * @psalm-pure
+     */
+    private static function caretCeiling(
+        int $major,
+        int $minor,
+        int $patch,
+        bool $minorGiven,
+        bool $patchGiven,
+    ): array {
+        if ($major !== 0) {
+            return [$major + 1, 0, 0];
+        }
+        if ($minorGiven && $minor !== 0) {
+            return [0, $minor + 1, 0];
+        }
+        if (!$minorGiven) {
+            // `^0` allows the whole 0.x range.
+            return [1, 0, 0];
+        }
+        if ($patchGiven && $patch !== 0) {
+            return [0, 0, $patch + 1];
+        }
+        // All specified components are zero: `^0.0.0` locks the patch,
+        // `^0.0` locks the minor.
+        return $patchGiven ? [0, 0, 1] : [0, 1, 0];
     }
 
     /**

@@ -156,13 +156,44 @@ final class RefResolverTest
         Assert::same($r->resolveCaret('^v1.2.0', ['v1.2.0', 'v1.5.0']), 'v1.5.0');
     }
 
-    public function caretPre1MajorReturnsNull(): void
+    public function caretPre1LocksTheMinor(): void
     {
-        // Pre-1.0 caret has different semantics (0.x is treated as
-        // major+patch); the resolver doesn't promise to support it.
+        // Composer's pre-1.0 rule: `^0.2.3` means `>=0.2.3 <0.3.0`,
+        // so `0.3.0` is out of range and the highest in-range wins.
         $r = new RefResolver();
 
-        Assert::same($r->resolveCaret('^0.2.3', ['0.2.3', '0.2.5', '0.3.0']), null);
+        Assert::same($r->resolveCaret('^0.2.3', ['0.2.3', '0.2.5', '0.3.0']), '0.2.5');
+    }
+
+    public function caretPre1BelowFloorIsRejected(): void
+    {
+        $r = new RefResolver();
+
+        Assert::same($r->resolveCaret('^0.2.3', ['0.2.2', '0.3.0']), null);
+    }
+
+    public function caretPre1WithZeroMinorLocksThePatch(): void
+    {
+        // `^0.0.3` means `>=0.0.3 <0.0.4` — only the exact patch matches.
+        $r = new RefResolver();
+
+        Assert::same($r->resolveCaret('^0.0.3', ['0.0.3', '0.0.4', '0.1.0']), '0.0.3');
+    }
+
+    public function formatCaretAndResolveCaretRoundTripForPre1Tag(): void
+    {
+        // Regression: `skills:add` on a 0.x donor stores whatever
+        // `formatCaret()` returns, then the sync feeds it straight back
+        // into `resolveCaret()`. The two must agree, or the just-added
+        // skill never loads.
+        $r = new RefResolver();
+        $constraint = $r->formatCaret('0.10.38');
+
+        Assert::same($constraint, '^0.10.38');
+        Assert::same(
+            $r->resolveCaret((string) $constraint, ['0.10.37', '0.10.38', '0.11.0']),
+            '0.10.38',
+        );
     }
 
     public function caretMalformedReturnsNull(): void

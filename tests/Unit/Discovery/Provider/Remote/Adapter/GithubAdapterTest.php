@@ -225,6 +225,25 @@ final class GithubAdapterTest
         Assert::same($ref->ref, 'v1.5.0');
     }
 
+    public function resolveCaretResolvesPre1Constraint(): void
+    {
+        // Regression: `skills:add owner/repo` on a 0.x donor stores a
+        // `^0.y.z` caret (via RefResolver::formatCaret), and the
+        // follow-up sync must be able to resolve it — otherwise the
+        // just-registered skill never lands in the target.
+        $http = new InMemoryHttpClient([
+            'https://api.github.com/repos/acme/skills/tags?per_page=100' => self::tagsResponse([
+                '0.10.37', '0.10.38', '0.11.0',
+            ]),
+        ]);
+        $adapter = new GithubAdapter($http);
+
+        $ref = $adapter->resolve(self::entry('acme/skills', ref: '^0.10.38'));
+
+        // `^0.10.38` locks the minor → `0.11.0` is out of range.
+        Assert::same($ref->ref, '0.10.38');
+    }
+
     public function resolveCaretNoMatchingTagThrows(): void
     {
         $http = new InMemoryHttpClient([
