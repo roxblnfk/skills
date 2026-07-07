@@ -318,7 +318,9 @@ final readonly class AddRunner
         // with its own composer.json name is registered under that name
         // downstream, so this derived fallback only matches a bare skill
         // directory; the add path skips the composer.json probe by
-        // design, trading a scoped sync for a full one in that case.
+        // design, so for a composer-shaped directory the scoped sync
+        // matches nothing and copies nothing — the entry is registered
+        // and a plain `skills:update` picks it up.
         $onRegistered?->__invoke($entry, DirDonorRef::derivePackageName($resolved));
 
         return Command::SUCCESS;

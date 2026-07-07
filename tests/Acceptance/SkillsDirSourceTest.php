@@ -117,6 +117,10 @@ final class SkillsDirSourceTest
             \str_contains($out, 'dir-hello'),
             'show must list the dir donor skills. Got: ' . $out,
         );
+        Assert::true(
+            \str_contains($out, '[declared in skills.json]'),
+            'a sources[] donor is trusted by its declaration, not by a trust list. Got: ' . $out,
+        );
     }
 
     private function runUpdate(string ...$args): Process

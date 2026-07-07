@@ -292,9 +292,15 @@ final readonly class InspectionBuilder
                 );
             }
 
+            // A user-declared donor (`sources[]` entry) is trusted by the
+            // declaration itself — the planner never consults the trust
+            // lists for it, so the attributor must not credit one either
+            // (the name could coincidentally match, e.g. built-in).
             $result[] = new DonorInspection(
                 donor: $donor,
-                trustSource: $attributor->attribute($donor->packageName),
+                trustSource: $donor->implicitTrust
+                    ? TrustSource::Declared
+                    : $attributor->attribute($donor->packageName),
                 skills: $skillInspections,
             );
         }
