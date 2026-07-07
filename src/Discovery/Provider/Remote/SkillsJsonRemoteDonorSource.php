@@ -68,7 +68,7 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
                 $adapter = $this->registry->get($entry->from);
             } catch (UnknownAdapterException $e) {
                 $this->lastWarnings[] = \sprintf(
-                    'remote %s:%s skipped — %s',
+                    'source %s:%s skipped — %s',
                     $entry->from,
                     $entry->identifier(),
                     $e->getMessage(),

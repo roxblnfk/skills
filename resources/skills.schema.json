@@ -77,22 +77,37 @@
                 }
             }
         },
-        "remote": {
+        "sources": {
             "type": "array",
-            "description": "Explicit remote donor refs. Each entry tells the remote provider what to fetch and from where: an adapter id in `from`, an identifier in `package` or `url`, and optional `host`/`ref`/`skills`/adapter-specific extras.",
+            "description": "Explicit donor sources. Each entry tells the provider what to fetch and from where: an adapter id in `from`, an identifier in `package` or `url`, and optional `host`/`ref`/`skills`/adapter-specific extras.",
             "default": [],
             "items": {
                 "oneOf": [
-                    { "$ref": "#/$defs/remoteByPackage" },
-                    { "$ref": "#/$defs/remoteByUrl" }
+                    { "$ref": "#/$defs/sourceByPackage" },
+                    { "$ref": "#/$defs/sourceByUrl" }
+                ]
+            }
+        },
+        "remote": {
+            "type": "array",
+            "deprecated": true,
+            "description": "Renamed to sources; read as an alias, auto-migrated by skills:update.",
+            "default": [],
+            "items": {
+                "oneOf": [
+                    { "$ref": "#/$defs/sourceByPackage" },
+                    { "$ref": "#/$defs/sourceByUrl" }
                 ]
             }
         }
     },
+    "not": {
+        "required": ["sources", "remote"]
+    },
     "$defs": {
-        "remoteByPackage": {
+        "sourceByPackage": {
             "type": "object",
-            "description": "Remote entry for name-based adapters (github, gitlab, bitbucket, composer, npm, go, skills.sh).",
+            "description": "Donor source entry for name-based adapters (github, gitlab, bitbucket, composer, npm, go, skills.sh).",
             "required": ["from", "package"],
             "properties": {
                 "from": {
@@ -124,9 +139,9 @@
                 }
             }
         },
-        "remoteByUrl": {
+        "sourceByUrl": {
             "type": "object",
-            "description": "Remote entry for URL-only adapters (http, zip).",
+            "description": "Donor source entry for URL-only adapters (http, zip).",
             "required": ["from", "url"],
             "properties": {
                 "from": {
@@ -148,7 +163,7 @@
                 },
                 "skills": {
                     "type": "array",
-                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships; empty list → donor is registered but no skills are pulled (matches `remoteByPackage` semantics).",
+                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships; empty list → donor is registered but no skills are pulled (matches `sourceByPackage` semantics).",
                     "items": {
                         "type": "string",
                         "minLength": 1

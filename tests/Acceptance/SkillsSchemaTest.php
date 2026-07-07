@@ -53,6 +53,38 @@ final class SkillsSchemaTest
         ]);
     }
 
+    public function sourcesDocumentIsAccepted(): void
+    {
+        $this->assertAccepts([
+            'sources' => [
+                ['from' => 'github', 'package' => 'acme/skills'],
+                ['from' => 'zip', 'url' => 'https://example.com/skills.zip'],
+            ],
+        ]);
+    }
+
+    public function deprecatedRemoteDocumentIsAccepted(): void
+    {
+        // `remote` is the deprecated alias of `sources`. The schema
+        // still accepts it so editors do not flag legacy files before
+        // skills:update migrates them.
+        $this->assertAccepts([
+            'remote' => [
+                ['from' => 'github', 'package' => 'acme/skills'],
+            ],
+        ]);
+    }
+
+    public function bothSourcesAndRemoteIsRejected(): void
+    {
+        // The PHP mapper treats both keys present as fatal; the schema's
+        // root `not` clause mirrors that.
+        $this->assertRejects([
+            'sources' => [['from' => 'github', 'package' => 'acme/skills']],
+            'remote' => [['from' => 'github', 'package' => 'acme/other']],
+        ]);
+    }
+
     public function unknownTopLevelKeyIsRejected(): void
     {
         $this->assertRejects([

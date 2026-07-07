@@ -90,7 +90,7 @@ final readonly class RemoteProvider implements DonorProvider
             try {
                 $path = $this->fetcher->fetch($ref);
             } catch (RemoteFetchException $e) {
-                $warnings[] = \sprintf('remote %s: %s', $ref->describe(), $e->getMessage());
+                $warnings[] = \sprintf('source %s: %s', $ref->describe(), $e->getMessage());
                 continue;
             }
 
@@ -168,7 +168,7 @@ final readonly class RemoteProvider implements DonorProvider
         $rejection = $inspection->rejection;
         if ($rejection !== null) {
             $warnings[] = \sprintf(
-                'remote %s: %s',
+                'source %s: %s',
                 $ref->describe(),
                 $this->describeRejection($rejection, $inspection->detail),
             );
@@ -220,7 +220,7 @@ final readonly class RemoteProvider implements DonorProvider
 
     /**
      * Phrase a {@see DonorArchiveRejection} for a per-ref sync warning.
-     * The inspector owns the *classification*; the `remote <ref>:`
+     * The inspector owns the *classification*; the `source <ref>:`
      * framing is added by the caller.
      *
      * @psalm-pure
@@ -251,7 +251,7 @@ final readonly class RemoteProvider implements DonorProvider
      */
     private function decorate(VendorConfig $donor, RemoteDonorRef $ref): VendorConfig
     {
-        $provenance = $ref->provenance ?? 'remote';
+        $provenance = $ref->provenance ?? 'source';
         // `remote[]` entries are user-declared and therefore
         // implicit-trusted, regardless of `from` value. The planner's
         // trust list applies to local-provider transitive discoveries
