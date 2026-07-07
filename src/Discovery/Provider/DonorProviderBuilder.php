@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace LLM\Skills\Discovery\Provider;
 
 use Composer\Composer;
-use Composer\Config;
 use Composer\Factory;
 use Composer\IO\NullIO;
 use Internal\Path;
@@ -77,26 +76,6 @@ final readonly class DonorProviderBuilder
     }
 
     /**
-     * Build a {@see CachePathBuilder} rooted at the supplied Config's
-     * `vendor-dir` so a custom value (`deps/`, `build/vendor/`, …) is
-     * honoured. Without this, the cache would always land under a
-     * hard-coded `vendor/` directory that Composer may not even use,
-     * leaving cached archives outside the vendor tree's `.gitignore`.
-     * For the no-project mode (a default Config built via
-     * {@see Factory::createConfig()}) `vendor-dir` is the literal
-     * `vendor` default, which is exactly the right answer.
-     */
-    private static function cacheBuilderFor(Config $config): CachePathBuilder
-    {
-        /** @var mixed $vendorDir */
-        $vendorDir = $config->get('vendor-dir');
-        if (!\is_string($vendorDir) || $vendorDir === '') {
-            return new CachePathBuilder();
-        }
-        return new CachePathBuilder(Path::create($vendorDir)->join('llm-skills/cache'));
-    }
-
-    /**
      * Build the remote provider. Wires the GitHub adapter, an HTTP
      * client (so auth.json credentials apply), and an archive fetcher
      * into the {@see RemoteProvider} skeleton.
@@ -130,7 +109,7 @@ final readonly class DonorProviderBuilder
             $composer !== null
                 ? $this->guessProjectRootForFetcher($composer)
                 : Path::create(\getcwd() ?: '.'),
-            self::cacheBuilderFor($config),
+            CachePathBuilder::fromVendorDir($config->get('vendor-dir')),
         );
 
         return new RemoteProvider($source, $fetcher);

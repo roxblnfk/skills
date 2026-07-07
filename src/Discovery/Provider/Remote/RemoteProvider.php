@@ -8,11 +8,9 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedVendorConfig;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\VendorConfig;
-use LLM\Skills\Discovery\DiscoveredSkill;
 use LLM\Skills\Discovery\DonorDiscoveryResult;
 use LLM\Skills\Discovery\MalformedDonor;
 use LLM\Skills\Discovery\Provider\DonorProvider;
-use LLM\Skills\Discovery\SkillTreeScanner;
 
 /**
  * {@see DonorProvider} for donors fetched from arbitrary repository
@@ -56,7 +54,7 @@ final readonly class RemoteProvider implements DonorProvider
         private RemoteDonorSource $source = new NullRemoteDonorSource(),
         private ?RemoteFetcher $fetcher = null,
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
-        private SkillTreeScanner $scanner = new SkillTreeScanner(),
+        private DonorArchiveInspector $inspector = new DonorArchiveInspector(),
     ) {}
 
     #[\Override]
@@ -141,23 +139,17 @@ final readonly class RemoteProvider implements DonorProvider
      * archive cannot be turned into a donor. Accumulates per-ref
      * warnings + malformed entries into the caller's lists.
      *
-     * Two acceptable archive shapes:
+     * The parse-and-classify step is delegated to the shared
+     * {@see DonorArchiveInspector} — the same inspector `skills:add`
+     * runs when it fetches the archive, so what the two paths accept as
+     * a donor never drifts. This method only turns the inspection into
+     * a {@see VendorConfig} (or a warning):
      *
-     * 1. **Composer-shaped donor** — `composer.json` is present and
-     *    declares `name` + `extra.skills.source`. The donor's package
-     *    name comes from `composer.json`'s `name` field. This is the
-     *    primary supported shape for ecosystems that already publish
-     *    a Composer manifest.
-     *
-     * 2. **Bare skill repo** — no `composer.json` (or one without
-     *    `extra.skills.source`), but the archive ships `SKILL.md` files
-     *    somewhere ({@see SkillTreeScanner} finds them in conventional
-     *    roots or, failing that, anywhere in the tree). The donor's
-     *    package name falls back to `RemoteDonorRef::$packageHint` (set
-     *    from the entry's adapter-side identifier — for GitHub,
-     *    `<owner>/<repo>`). Mirrors the local-provider auto-discovery
-     *    path for ad-hoc skill packs that don't bother with a Composer
-     *    manifest.
+     * - **Composer-shaped** → hand the name + raw `extra` to the mapper;
+     *   a mapper rejection lifts to a warning AND a {@see MalformedDonor}.
+     * - **Bare skill repo** → synthesise a `VendorConfig` from the
+     *   auto-discovered skill directories.
+     * - **Rejected** → a per-ref warning, no donor.
      *
      * @param list<string>             $warnings  appended to in place
      * @param list<MalformedDonor>     $malformed appended to in place
@@ -171,56 +163,23 @@ final readonly class RemoteProvider implements DonorProvider
         array &$warnings,
         array &$malformed,
     ): ?VendorConfig {
-        $composerJsonPath = (string) $path->join('composer.json');
-        $extra = null;
-        $packageName = null;
+        $inspection = $this->inspector->inspect($path, $ref->packageHint);
 
-        if (\is_file($composerJsonPath)) {
-            $contents = \file_get_contents($composerJsonPath);
-            if ($contents === false) {
-                $warnings[] = \sprintf(
-                    'remote %s: failed to read composer.json',
-                    $ref->describe(),
-                );
-                return null;
-            }
-
-            try {
-                /** @var mixed $decoded */
-                $decoded = \json_decode($contents, true, flags: \JSON_THROW_ON_ERROR);
-            } catch (\JsonException $e) {
-                $warnings[] = \sprintf(
-                    'remote %s: composer.json is not valid JSON: %s',
-                    $ref->describe(),
-                    $e->getMessage(),
-                );
-                return null;
-            }
-
-            if (!\is_array($decoded)) {
-                $warnings[] = \sprintf(
-                    'remote %s: composer.json must be a JSON object',
-                    $ref->describe(),
-                );
-                return null;
-            }
-
-            /** @var mixed $rawName */
-            $rawName = $decoded['name'] ?? null;
-            if (\is_string($rawName) && $rawName !== '' && \str_contains($rawName, '/')) {
-                /** @var non-empty-string $packageName */
-                $packageName = $rawName;
-            }
-
-            /** @var mixed $extra */
-            $extra = $decoded['extra'] ?? null;
+        $rejection = $inspection->rejection;
+        if ($rejection !== null) {
+            $warnings[] = \sprintf(
+                'remote %s: %s',
+                $ref->describe(),
+                $this->describeRejection($rejection, $inspection->detail),
+            );
+            return null;
         }
 
-        // Composer-shaped donor: composer.json present, name well-shaped,
-        // extra.skills.source declared. Hand off to the mapper.
-        if ($packageName !== null && VendorConfigMapper::declaresSkills($extra)) {
+        if ($inspection->isComposerShaped) {
+            /** @var non-empty-string $packageName */
+            $packageName = $inspection->packageName;
             try {
-                $donor = $this->vendorMapper->fromExtra($packageName, $path, $extra);
+                $donor = $this->vendorMapper->fromExtra($packageName, $path, $inspection->extra);
             } catch (MalformedVendorConfig $e) {
                 $warnings[] = $e->getMessage();
                 /** @var non-empty-string $reason */
@@ -235,52 +194,53 @@ final readonly class RemoteProvider implements DonorProvider
             return $this->decorate($donor, $ref);
         }
 
-        // Auto-discovery fallback: no usable composer.json metadata, but
-        // the archive may still ship SKILL.md files. Scan for them —
-        // conventional roots first, then a bounded recursion — so repos
-        // that nest skills (e.g. `maintenance/skills/<name>/`) are caught
-        // too. Synthesise a donor using the entry's `packageHint` as the
-        // name. Without a hint we have nothing stable to call it — abort.
-        $discovered = $this->scanner->scan($path);
-        if ($discovered === []) {
-            $warnings[] = \sprintf(
-                'remote %s: archive ships neither a composer.json with extra.skills.source '
-                . 'nor any SKILL.md files — not a donor',
-                $ref->describe(),
-            );
-            return null;
-        }
-        $synthesisedName = $packageName ?? $ref->packageHint;
-        if ($synthesisedName === null) {
-            $warnings[] = \sprintf(
-                'remote %s: archive ships SKILL.md files but no package name to '
-                . 'register it under (composer.json missing AND the adapter could not '
-                . 'derive a `vendor/repo` identifier)',
-                $ref->describe(),
-            );
-            return null;
-        }
-
-        // NOTE: `discovered: false` even though the skills were auto-found.
-        // The `discovered` flag drives "auto-found locally, opt in via
-        // --discovery" semantics — but remote entries are already explicit
-        // (the user typed `skills:add`). Treating them as discoverable
-        // would show a misleading [discovered] badge and gate them behind
-        // a flag they shouldn't need. The explicit skill directories ride
-        // on `discoveredSkillDirs` so the enumerator finds them at whatever
+        // Bare skill repo. NOTE: `discovered: false` even though the
+        // skills were auto-found. The `discovered` flag drives
+        // "auto-found locally, opt in via --discovery" semantics — but
+        // remote entries are already explicit (the user typed
+        // `skills:add`). Treating them as discoverable would show a
+        // misleading [discovered] badge and gate them behind a flag they
+        // shouldn't need. The explicit skill directories ride on
+        // `discoveredSkillDirs` so the enumerator finds them at whatever
         // depth they live.
+        /** @var non-empty-string $packageName */
+        $packageName = $inspection->packageName;
+        /** @var non-empty-string $source */
+        $source = $inspection->source;
         return $this->decorate(
             new VendorConfig(
-                packageName: $synthesisedName,
+                packageName: $packageName,
                 packageRoot: $path,
-                source: $discovered[0]->container,
-                discoveredSkillDirs: \array_map(
-                    static fn(DiscoveredSkill $skill): Path => $skill->dir,
-                    $discovered,
-                ),
+                source: $source,
+                discoveredSkillDirs: $inspection->discoveredSkillDirs,
             ),
             $ref,
         );
+    }
+
+    /**
+     * Phrase a {@see DonorArchiveRejection} for a per-ref sync warning.
+     * The inspector owns the *classification*; the `remote <ref>:`
+     * framing is added by the caller.
+     *
+     * @psalm-pure
+     */
+    private function describeRejection(DonorArchiveRejection $rejection, ?string $detail): string
+    {
+        return match ($rejection) {
+            DonorArchiveRejection::ComposerJsonUnreadable =>
+                'failed to read composer.json',
+            DonorArchiveRejection::ComposerJsonInvalidJson =>
+                'composer.json is not valid JSON: ' . ($detail ?? ''),
+            DonorArchiveRejection::ComposerJsonNotObject =>
+                'composer.json must be a JSON object',
+            DonorArchiveRejection::NoDonorShape =>
+                'archive ships neither a composer.json with extra.skills.source '
+                . 'nor any SKILL.md files — not a donor',
+            DonorArchiveRejection::NoPackageName =>
+                'archive ships SKILL.md files but no package name to register it under '
+                . '(composer.json missing AND the adapter could not derive a `vendor/repo` identifier)',
+        };
     }
 
     /**

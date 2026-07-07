@@ -77,6 +77,31 @@ final readonly class CachePathBuilder
     ) {}
 
     /**
+     * Build a cache builder from a Composer `vendor-dir` config value.
+     *
+     * Honours a custom `vendor-dir` (`deps/`, `build/vendor/`, …) so the
+     * cache lands inside the actual vendor tree — gitignored by the same
+     * rule as the rest of `vendor/`. A missing / non-string / empty value
+     * falls back to the default `vendor/` layout.
+     *
+     * Takes the raw config value (`mixed`) rather than a Composer
+     * `Config` so this class stays Composer-agnostic; the caller does the
+     * one-line `$config->get('vendor-dir')` read. Centralises what was
+     * three identical `cacheBuilderFor()` helpers across the `skills:add`
+     * entrypoints and {@see \LLM\Skills\Discovery\Provider\DonorProviderBuilder}.
+     *
+     * @psalm-mutation-free
+     */
+    public static function fromVendorDir(mixed $vendorDir): self
+    {
+        if (!\is_string($vendorDir) || $vendorDir === '') {
+            return new self();
+        }
+        /** @psalm-suppress ImpureMethodCall Path::create()/join() are mutation-free; psalm conservatism */
+        return new self(Path::create($vendorDir)->join('llm-skills/cache'));
+    }
+
+    /**
      * Build the cache directory path for the given entry and
      * resolved ref. The directory may not exist yet — the fetcher
      * decides whether to create it. The path is always absolute,
