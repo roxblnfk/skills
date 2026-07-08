@@ -10,13 +10,13 @@ use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Config\AddOptions;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
-use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
-use LLM\Skills\Discovery\Provider\Remote\RemoteFetchException;
-use LLM\Skills\Discovery\Provider\Remote\RemoteFetcher;
+use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapter;
+use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Source\Adapter\ParsedAddInput;
+use LLM\Skills\Discovery\Provider\Source\Adapter\RemoteResolveException;
+use LLM\Skills\Discovery\Provider\Source\RemoteDonorRef;
+use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
+use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Symfony\Component\Console\Command\Command;
 use Testo\Assert;
@@ -704,7 +704,7 @@ final class AddRunnerTest
 
     /**
      * Seed a directory with a single bare skill (`<dir>/greeting/SKILL.md`)
-     * so the add-time {@see \LLM\Skills\Discovery\Provider\Remote\DonorArchiveInspector}
+     * so the add-time {@see \LLM\Skills\Discovery\Provider\Source\DonorArchiveInspector}
      * accepts it as a bare skill donor.
      */
     private function seedBareSkill(string $dir): void

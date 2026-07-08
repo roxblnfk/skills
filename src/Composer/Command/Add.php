@@ -10,12 +10,12 @@ use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Add\PostAddSync;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Console\AddCliDefinition;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
-use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
-use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
-use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
+use LLM\Skills\Discovery\Provider\Source\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Source\Adapter\GitlabAdapter;
+use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Source\CachePathBuilder;
+use LLM\Skills\Discovery\Provider\Source\Http\ComposerHttpClient;
+use LLM\Skills\Discovery\Provider\Source\HttpArchiveFetcher;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 

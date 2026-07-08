@@ -172,7 +172,7 @@ final readonly class SyncRunner
         // `--from=<id>` narrows the sync to a single
         // provider's donors. Provenance is tagged at the source
         // (`composer` for ComposerProvider, the entry's `from` for
-        // RemoteProvider) so a simple equality filter is enough.
+        // SourceProvider) so a simple equality filter is enough.
         if ($options->fromFilter !== null) {
             $filter = $options->fromFilter;
             $donors = \array_values(\array_filter(

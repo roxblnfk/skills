@@ -30,30 +30,30 @@ final class ProviderIdTest
 
     public function knownRemoteCoversAllSpecAdapters(): void
     {
-        Assert::true(ProviderId::isKnownRemote(ProviderId::GITHUB));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::GITLAB));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::BITBUCKET));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::COMPOSER));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::NPM));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::GO));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::SKILLS_SH));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::HTTP));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::ZIP));
-        Assert::true(ProviderId::isKnownRemote(ProviderId::DIR));
+        Assert::true(ProviderId::isKnownSource(ProviderId::GITHUB));
+        Assert::true(ProviderId::isKnownSource(ProviderId::GITLAB));
+        Assert::true(ProviderId::isKnownSource(ProviderId::BITBUCKET));
+        Assert::true(ProviderId::isKnownSource(ProviderId::COMPOSER));
+        Assert::true(ProviderId::isKnownSource(ProviderId::NPM));
+        Assert::true(ProviderId::isKnownSource(ProviderId::GO));
+        Assert::true(ProviderId::isKnownSource(ProviderId::SKILLS_SH));
+        Assert::true(ProviderId::isKnownSource(ProviderId::HTTP));
+        Assert::true(ProviderId::isKnownSource(ProviderId::ZIP));
+        Assert::true(ProviderId::isKnownSource(ProviderId::DIR));
 
-        Assert::false(ProviderId::isKnownRemote('unknown'));
+        Assert::false(ProviderId::isKnownSource('unknown'));
     }
 
     public function httpAndZipAreUrlOnly(): void
     {
-        Assert::true(ProviderId::isUrlOnlyRemote(ProviderId::HTTP));
-        Assert::true(ProviderId::isUrlOnlyRemote(ProviderId::ZIP));
+        Assert::true(ProviderId::isUrlOnlySource(ProviderId::HTTP));
+        Assert::true(ProviderId::isUrlOnlySource(ProviderId::ZIP));
     }
 
     public function nameBasedAdaptersAreNotUrlOnly(): void
     {
-        Assert::false(ProviderId::isUrlOnlyRemote(ProviderId::GITHUB));
-        Assert::false(ProviderId::isUrlOnlyRemote(ProviderId::COMPOSER));
+        Assert::false(ProviderId::isUrlOnlySource(ProviderId::GITHUB));
+        Assert::false(ProviderId::isUrlOnlySource(ProviderId::COMPOSER));
     }
 
     public function dirIsPathOnly(): void
@@ -74,7 +74,7 @@ final class ProviderIdTest
     public function dirIsNotAUrlOnlyAdapter(): void
     {
         // Path-only and url-only are disjoint categories.
-        Assert::false(ProviderId::isUrlOnlyRemote(ProviderId::DIR));
+        Assert::false(ProviderId::isUrlOnlySource(ProviderId::DIR));
     }
 
     public function dirIsNotKnownLocal(): void

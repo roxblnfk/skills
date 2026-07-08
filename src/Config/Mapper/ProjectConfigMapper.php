@@ -855,12 +855,12 @@ final readonly class ProjectConfigMapper
                 $field . '.from must be a non-empty string',
             );
         }
-        if (!ProviderId::isKnownRemote($rawFrom)) {
+        if (!ProviderId::isKnownSource($rawFrom)) {
             throw new MalformedProjectConfig(\sprintf(
                 '%s.from "%s" is not a known source adapter (known: %s)',
                 $field,
                 $rawFrom,
-                \implode(', ', ProviderId::REMOTE_IDS),
+                \implode(', ', ProviderId::SOURCE_IDS),
             ));
         }
         /** @var non-empty-string $from */
@@ -907,7 +907,7 @@ final readonly class ProjectConfigMapper
                     $field . '.path is not allowed for adapter "' . $from . '" (dir only)',
                 );
             }
-            if (ProviderId::isUrlOnlyRemote($from)) {
+            if (ProviderId::isUrlOnlySource($from)) {
                 if ($url === null) {
                     throw new MalformedProjectConfig(
                         $field . '.url is required for adapter "' . $from . '"',

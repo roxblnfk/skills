@@ -49,12 +49,13 @@ final class ProviderId
 
     /**
      * Identifiers that may appear as `from` values inside `sources[]`.
-     * Larger than {@see LOCAL_IDS} because remote adapters cover both
-     * VCS hosts (no local manifest) and package registries.
+     * Larger than {@see LOCAL_IDS} because source adapters cover VCS
+     * hosts and package registries (no local manifest) as well as
+     * local directories.
      *
      * @var list<non-empty-string>
      */
-    public const REMOTE_IDS = [
+    public const SOURCE_IDS = [
         self::GITHUB,
         self::GITLAB,
         self::BITBUCKET,
@@ -72,7 +73,7 @@ final class ProviderId
      *
      * @var list<non-empty-string>
      */
-    public const URL_ONLY_REMOTE_IDS = [
+    public const URL_ONLY_SOURCE_IDS = [
         self::HTTP,
         self::ZIP,
     ];
@@ -101,9 +102,9 @@ final class ProviderId
     /**
      * @psalm-pure
      */
-    public static function isKnownRemote(string $id): bool
+    public static function isKnownSource(string $id): bool
     {
-        return \in_array($id, self::REMOTE_IDS, true);
+        return \in_array($id, self::SOURCE_IDS, true);
     }
 
     /**
@@ -113,9 +114,9 @@ final class ProviderId
      *
      * @psalm-pure
      */
-    public static function isUrlOnlyRemote(string $id): bool
+    public static function isUrlOnlySource(string $id): bool
     {
-        return \in_array($id, self::URL_ONLY_REMOTE_IDS, true);
+        return \in_array($id, self::URL_ONLY_SOURCE_IDS, true);
     }
 
     /**

@@ -9,17 +9,17 @@ use Internal\Path;
 use LLM\Skills\Config\AddOptions;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\UnknownAdapterException;
-use LLM\Skills\Discovery\Provider\Remote\DirDonorRef;
-use LLM\Skills\Discovery\Provider\Remote\DonorArchiveInspector;
-use LLM\Skills\Discovery\Provider\Remote\DonorArchiveRejection;
-use LLM\Skills\Discovery\Provider\Remote\RefResolver;
-use LLM\Skills\Discovery\Provider\Remote\RemoteFetchException;
-use LLM\Skills\Discovery\Provider\Remote\RemoteFetcher;
+use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapter;
+use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Source\Adapter\ParsedAddInput;
+use LLM\Skills\Discovery\Provider\Source\Adapter\RemoteResolveException;
+use LLM\Skills\Discovery\Provider\Source\Adapter\UnknownAdapterException;
+use LLM\Skills\Discovery\Provider\Source\DirDonorRef;
+use LLM\Skills\Discovery\Provider\Source\DonorArchiveInspector;
+use LLM\Skills\Discovery\Provider\Source\DonorArchiveRejection;
+use LLM\Skills\Discovery\Provider\Source\RefResolver;
+use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
+use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -452,7 +452,7 @@ final readonly class AddRunner
      * Confirm the fetched archive is a usable donor and return the name
      * to scope the follow-up sync on. Delegates the parse-and-classify
      * rules to the shared {@see DonorArchiveInspector} — the same
-     * inspector {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider}
+     * inspector {@see \LLM\Skills\Discovery\Provider\Source\SourceProvider}
      * runs during sync, so the two paths agree on what counts as a donor.
      *
      * Both accepted shapes (Composer-shaped and bare skill repo) carry a
