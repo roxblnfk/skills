@@ -71,7 +71,7 @@ composer skills:show
 composer skills:update
 ```
 
-Project-level settings (`target`, `trusted`, `discovery`, …) live in the consumer project's
+Project-level settings (`target`, `dependencies`, `discovery`, …) live in the consumer project's
 `skills.json` at the project root. See [Project configuration](#project-configuration) for the
 full reference.
 
@@ -172,13 +172,13 @@ where to put it, who to trust, whether to auto-sync.
   "$schema": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
   "target": ".agents/skills",
   "aliases": [".claude/skills", ".cursor/skills"],
-  "trusted": ["acme/*", "myorg/skills-internal"],
-  "trusted-replace": false,
   "discovery": false,
   "auto-sync": true,
   "path-from-root": "packages/api",
 
-  "local":  { "composer": true },
+  "dependencies": {
+    "composer": { "trusted": ["acme/*", "myorg/skills-internal"] }
+  },
   "sources": [
     { "from": "github", "package": "acme/skills", "ref": "^1.2.0" },
     { "from": "github", "package": "team/skills-pack", "ref": "^2",
@@ -191,12 +191,10 @@ where to put it, who to trust, whether to auto-sync.
 |-------------------|-------------|------------------|-----------------------------------------------------------------------------------------|
 | `target`          | string      | `.agents/skills` | Destination directory, relative to the project root.                                    |
 | `aliases`         | string[]    | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).          |
-| `trusted`         | string[]    | `[]`             | Extra trust patterns (see [Trust](#trust)).                                             |
-| `trusted-replace` | bool        | `false`          | When `true`, the built-in trust list and direct-dependency auto-trust are both ignored. |
 | `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
-| `local`           | object      | `{}`             | Per-local-provider on/off map. Keys: `composer` (default `true`), `npm`/`go` (future, default `false`). See [Donor sources](#donor-sources). |
+| `dependencies`    | object      | `{}`             | Per-package-manager config: `<id>` → `bool` (walk toggle) or `{ enabled, trusted, trusted-replace }`. Ids: `composer` (walk default `true`), `npm`/`go` (future, default `false`). `trusted` extends the manager's trust list; `trusted-replace` makes it fully replace the built-in and direct-dependency trust. Deprecated aliases `trusted`, `trusted-replace`, `local` fold into this block. See [Trust](#trust) and [Donor sources](#donor-sources). |
 | `sources`         | object[]    | `[]`             | Explicit donor source entries. Managed by `skills:add`; documented in [Donor sources](#donor-sources). |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
@@ -211,6 +209,16 @@ it once and commit it alongside `composer.json`.
 > migrates the key in place and prints a `[migrate]` line; read-only `skills:show` just emits a
 > `[deprecated]` notice. Having both `remote` and `sources` in the same file is a fatal config
 > error — keep `sources` only.
+
+> [!NOTE]
+> **`trusted`, `trusted-replace` and `local` moved into `dependencies`.** Trust is now
+> scoped per package manager, so the flat trust surface and the `local` toggle map collapse
+> into one block: `dependencies.<id>` takes a bool (the old `local` toggle) or an object with
+> `enabled` / `trusted` / `trusted-replace`. The three legacy keys keep working as deprecated
+> aliases — flat `trusted`/`trusted-replace` fold into `dependencies.composer`. Write-mode
+> commands migrate the file in place with a `[migrate]` line; `skills:show` just emits a
+> `[deprecated]` notice. Having `dependencies` alongside any legacy key in the same file is a
+> fatal config error — keep `dependencies` only.
 
 ### Strict shape
 
@@ -378,9 +386,10 @@ Effective trust list:
 builtin ∪ project.trusted ∪ --trust=<pattern> ∪ direct-deps
 ```
 
-`project.trusted` is the `trusted` array from `skills.json`. `direct-deps` is the set of
-packages declared under `require` and `require-dev` in the consumer's root `composer.json`.
-Setting `trusted-replace: true` drops both implicit sources
+`project.trusted` is the `dependencies.composer.trusted` array from `skills.json` (the
+deprecated flat `trusted` key folds into it). `direct-deps` is the set of packages declared
+under `require` and `require-dev` in the consumer's root `composer.json`. Setting
+`dependencies.composer.trusted-replace: true` drops both implicit sources
 (`builtin` and `direct-deps`) from the union, leaving only project trust and `--trust=` —
 the explicit-only mode.
 
@@ -403,7 +412,8 @@ Bare `vendor` without `/` is rejected as ambiguous.
 - **Direct dependencies are implicit trust.** A package the consumer chose to depend on
   (`require` / `require-dev`) does not need a trust pattern: the dependency declaration is
   already a trust decision. Transitive dependencies are still gated by the trust list.
-  Setting `trusted-replace: true` turns this off for projects that want explicit-only trust.
+  Setting `dependencies.composer.trusted-replace: true` turns this off for projects that want
+  explicit-only trust.
 
 ### Built-in trusted vendors
 
@@ -536,15 +546,15 @@ composer skills:update --from=composer    # only local Composer donors
 composer skills:update --from=github      # only remote GitHub donors
 ```
 
-The id matches `local.{id}` keys and `sources[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `RemoteProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
+The id matches `dependencies.{id}` keys and `sources[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `RemoteProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
 
-### Local provider toggles
+### Dependency walk toggles
 
 ```jsonc
-{ "local": { "composer": false } }    // disable Composer discovery entirely
+{ "dependencies": { "composer": false } }    // disable Composer discovery entirely
 ```
 
-`local.composer` defaults to `true` (preserves the pre-`local` behaviour). When set to `false`, transitive Composer packages are no longer scanned — useful when the project wants its donors purely from `sources[]`.
+`dependencies.composer` defaults to `true` (transitive Composer packages are scanned for donors). Set it to `false` — either the bool short form above or `{ "composer": { "enabled": false } }` — to stop scanning, useful when the project wants its donors purely from `sources[]`. The per-manager `trusted` / `trusted-replace` fields configure which of those scanned packages are allowed to ship skills (see [Trust](#trust)).
 
 For the full architectural rationale, the version-resolution cascade, the cache layout, and the multi-registry trust model, see [`spec-remote.md`](spec-remote.md).
 

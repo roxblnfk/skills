@@ -18,6 +18,15 @@ use Testo\Test;
  * and invalid documents and asserting the schema agrees with what
  * the PHP mapper would do.
  *
+ * Deliberate asymmetry: the schema is STRICTER than the PHP mapper on
+ * legacy keys. The schema describes only the canonical config form
+ * (`sources`, `dependencies`), so `remote`, `local`, `trusted` and
+ * `trusted-replace` are unknown top-level keys and any document using
+ * them fails validation — a useful editor nudge toward `skills:update`.
+ * The mapper still reads those legacy keys as aliases and write-mode
+ * commands auto-migrate them in place, so such files keep working at
+ * runtime; the schema simply does not document the transitional form.
+ *
  * `justinrainbow/json-schema` is pulled in transitively via
  * `composer/composer` (already required for the plugin) so no new
  * production dependency is added.
@@ -46,8 +55,12 @@ final class SkillsSchemaTest
         $this->assertAccepts([
             'target' => '.agents/skills',
             'aliases' => ['.claude/skills', '.cursor/skills'],
-            'trusted' => ['acme/skills-basic', 'acme/*'],
-            'trusted-replace' => true,
+            'dependencies' => [
+                'composer' => [
+                    'trusted' => ['acme/skills-basic', 'acme/*'],
+                    'trusted-replace' => true,
+                ],
+            ],
             'discovery' => true,
             'auto-sync' => true,
         ]);
@@ -100,12 +113,12 @@ final class SkillsSchemaTest
         ]);
     }
 
-    public function deprecatedRemoteDocumentIsAccepted(): void
+    public function legacyRemoteDocumentIsRejected(): void
     {
-        // `remote` is the deprecated alias of `sources`. The schema
-        // still accepts it so editors do not flag legacy files before
-        // skills:update migrates them.
-        $this->assertAccepts([
+        // `remote` is the legacy alias of `sources`. The schema documents
+        // only the canonical form, so `remote` is an unknown key and the
+        // document is rejected. The mapper still reads it and migrates it.
+        $this->assertRejects([
             'remote' => [
                 ['from' => 'github', 'package' => 'acme/skills'],
             ],
@@ -114,8 +127,9 @@ final class SkillsSchemaTest
 
     public function bothSourcesAndRemoteIsRejected(): void
     {
-        // The PHP mapper treats both keys present as fatal; the schema's
-        // root `not` clause mirrors that.
+        // `sources` is canonical and `remote` is an unknown key, so the
+        // document is rejected regardless of the mapper's own "both keys
+        // present is fatal" rule.
         $this->assertRejects([
             'sources' => [['from' => 'github', 'package' => 'acme/skills']],
             'remote' => [['from' => 'github', 'package' => 'acme/other']],
@@ -176,19 +190,128 @@ final class SkillsSchemaTest
         ]);
     }
 
-    public function bareVendorPatternIsRejected(): void
+    public function legacyTrustedDocumentIsRejected(): void
     {
-        // The mapper rejects `acme` (no slash); the schema mirrors
-        // that with a pattern constraint.
+        // The flat `trusted` list moved into `dependencies.composer.trusted`.
+        // The schema documents only the canonical form, so top-level
+        // `trusted` is an unknown key and the document is rejected.
         $this->assertRejects([
-            'trusted' => ['acme'],
+            'trusted' => ['acme/skills-basic', 'acme/*'],
         ]);
     }
 
-    public function emptyTrustedEntryIsRejected(): void
+    public function dependenciesBoolFormIsAccepted(): void
+    {
+        // Short form: a plain enable/disable toggle per manager.
+        $this->assertAccepts([
+            'dependencies' => [
+                'composer' => true,
+                'npm' => false,
+            ],
+        ]);
+    }
+
+    public function dependenciesComposerObjectFormIsAccepted(): void
+    {
+        $this->assertAccepts([
+            'dependencies' => [
+                'composer' => [
+                    'enabled' => true,
+                    'trusted' => ['acme/*', 'myorg/skills'],
+                    'trusted-replace' => false,
+                ],
+            ],
+        ]);
+    }
+
+    public function dependenciesNpmAndGoBlocksAreAccepted(): void
+    {
+        // npm/go trust patterns validate structurally only — bare names,
+        // scoped names and module paths all pass without a pattern.
+        $this->assertAccepts([
+            'dependencies' => [
+                'npm' => [
+                    'enabled' => true,
+                    'trusted' => ['lodash', '@myorg/pkg', '@myorg/*'],
+                ],
+                'go' => [
+                    'trusted' => ['github.com/myorg/mod', 'github.com/myorg/*'],
+                    'trusted-replace' => true,
+                ],
+            ],
+        ]);
+    }
+
+    public function dependenciesComposerBadPatternIsRejected(): void
+    {
+        // Composer's `trusted` carries the vendor/pkg pattern; a bare name
+        // matches neither the boolean branch nor the object branch.
+        $this->assertRejects([
+            'dependencies' => [
+                'composer' => ['trusted' => ['acme']],
+            ],
+        ]);
+    }
+
+    public function legacyLocalDocumentIsRejected(): void
+    {
+        // The `local` toggle map folded into `dependencies` (bool values
+        // map one-to-one). As an unknown key it is rejected by the schema;
+        // the mapper still reads it as an alias and migrates it.
+        $this->assertRejects([
+            'local' => ['composer' => true, 'npm' => false],
+        ]);
+    }
+
+    public function legacyTrustedReplaceDocumentIsRejected(): void
+    {
+        // The flat `trusted-replace` moved into
+        // `dependencies.composer.trusted-replace`; the top-level key is
+        // unknown to the schema and rejected.
+        $this->assertRejects([
+            'trusted-replace' => true,
+        ]);
+    }
+
+    public function dependenciesWithLegacyTrustedIsRejected(): void
+    {
+        // A canonical block next to a legacy key: `trusted` is unknown to
+        // the schema, so the document is rejected outright.
+        $this->assertRejects([
+            'dependencies' => ['composer' => true],
+            'trusted' => ['acme/*'],
+        ]);
+    }
+
+    public function dependenciesWithLegacyLocalIsRejected(): void
     {
         $this->assertRejects([
-            'trusted' => [''],
+            'dependencies' => ['composer' => true],
+            'local' => ['composer' => false],
+        ]);
+    }
+
+    public function dependenciesWithLegacyTrustedReplaceIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => ['composer' => true],
+            'trusted-replace' => true,
+        ]);
+    }
+
+    public function dependenciesUnknownManagerIdIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => ['pip' => true],
+        ]);
+    }
+
+    public function dependenciesUnknownObjectFieldIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => [
+                'composer' => ['enabled' => true, 'rogue-field' => 'x'],
+            ],
         ]);
     }
 

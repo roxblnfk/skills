@@ -140,6 +140,10 @@ final readonly class InitRunner
             return Command::FAILURE;
         }
 
+        if ($this->migrator->restructureDependencies($projectRoot, $io)->status === MigrationStatus::Failed) {
+            return Command::FAILURE;
+        }
+
         $result = $this->migrator->migrate($projectRoot, $io);
 
         switch ($result->status) {
@@ -206,14 +210,18 @@ final readonly class InitRunner
         $defaults = [];
 
         // Existing skills.json (only under --force; the early refusal
-        // check would have failed otherwise).
+        // check would have failed otherwise). The file is read raw —
+        // deliberately without running the file migrators — so the
+        // wizard can present the current values as prompt defaults;
+        // {@see self::foldLegacyDefaults()} normalises the legacy trust
+        // keys the wizard no longer reads directly.
         if (\is_file($target)) {
             $existing = $this->readJsonObject($target, $io, 'skills.json');
             if ($existing === null) {
                 return Command::FAILURE;
             }
             unset($existing['$schema']);
-            $defaults = $existing;
+            $defaults = $this->foldLegacyDefaults($existing);
         }
 
         $inlineKeys = [];
@@ -279,6 +287,54 @@ final readonly class InitRunner
         $io->write('<info>[init]</info> done.');
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Normalise a raw `skills.json` map into the shape the wizard reads
+     * its defaults from — and, since the wizard now preserves the keys it
+     * does not prompt for, the shape those preserved keys should be
+     * written back under.
+     *
+     * Three legacy shapes are canonicalised here, all through the same
+     * {@see ProjectConfigMigrator} helpers the file migrators use so a
+     * single implementation owns each rule:
+     *
+     * - the flat trust trio (`trusted` / `trusted-replace` / `local`)
+     *   folds into `dependencies`, so the wizard reads trust from
+     *   `dependencies.composer` and a preserved block is never re-emitted
+     *   under a legacy key. A map already carrying `dependencies` is left
+     *   untouched: mixing it with a legacy key is the mapper's to reject
+     *   on write, not this normaliser's to silently merge;
+     * - the deprecated `remote` key is renamed to `sources`, so a
+     *   preserved donor list lands under its canonical name rather than
+     *   surviving verbatim;
+     * - `$schema` is dropped — the renderer re-adds it, and a preserved
+     *   copy would duplicate it.
+     *
+     * @param array<string, mixed> $defaults
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    private function foldLegacyDefaults(array $defaults): array
+    {
+        // The renderer re-adds `$schema`; drop it so it never leaks into a
+        // preserved key.
+        unset($defaults['$schema']);
+
+        if (
+            !\array_key_exists(ProjectConfigMapper::DEPENDENCIES_KEY, $defaults)
+            && ProjectConfigMigrator::hasLegacyDependencyKeys($defaults)
+        ) {
+            $folded = ProjectConfigMigrator::foldLegacyDependencies($defaults);
+            foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $key) {
+                unset($defaults[$key]);
+            }
+            $defaults[ProjectConfigMapper::DEPENDENCIES_KEY] = $folded;
+        }
+
+        return ProjectConfigMigrator::renameSourcesInMap($defaults);
     }
 
     /**
@@ -428,6 +484,10 @@ final readonly class InitRunner
             return Command::FAILURE;
         }
 
+        if ($this->migrator->restructureDependencies($projectRoot, $io)->status === MigrationStatus::Failed) {
+            return Command::FAILURE;
+        }
+
         $result = $this->migrator->migrate($projectRoot, $io);
 
         if ($result->status === MigrationStatus::Failed) {
@@ -508,13 +568,13 @@ final readonly class InitRunner
             return false;
         }
 
-        // Stub `skills.json` ships with the `local` and `sources`
+        // Stub `skills.json` ships with the `dependencies` and `sources`
         // knobs visible so users discover them without reading docs.
-        // `local.composer: true` is also the default, but we emit it
-        // explicitly — hiding it would make the npm / go toggles seem
+        // `dependencies.composer: true` is also the default, but we emit
+        // it explicitly — hiding it would make the npm / go toggles seem
         // surprise-feature-y when they arrive.
         $content = ProjectConfigMigrator::renderSkillsJson([
-            'local' => ['composer' => true],
+            'dependencies' => ['composer' => true],
             'sources' => [],
         ]);
         if (\file_put_contents($target, $content) === false) {

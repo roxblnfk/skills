@@ -372,7 +372,12 @@ final class SkillsJsonConfigTest
         Assert::true(\is_file(self::SKILLS_JSON), 'skills.json must exist after init');
         $skills = $this->readSkillsJson();
         Assert::same($skills['target'] ?? null, 'external-target/skills');
-        Assert::same($skills['trusted'] ?? null, ['acme/skills-basic']);
+        // Flat `trusted` folds into the `dependencies.composer` block.
+        Assert::false(\array_key_exists('trusted', $skills));
+        Assert::same(
+            $skills['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/skills-basic']]],
+        );
         Assert::true(
             \array_key_exists('$schema', $skills),
             '$schema pointer must be emitted into the generated file',

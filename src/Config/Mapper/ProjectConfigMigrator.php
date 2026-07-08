@@ -78,10 +78,13 @@ final readonly class ProjectConfigMigrator
      * Pull the project-level keys out of an inline `extra.skills`
      * block, in canonical order, as they should be written into
      * `skills.json`. Donor `source` and any unrelated keys are
-     * deliberately dropped, and a deprecated `remote` value is folded
-     * into the canonical `sources` key so the written file never
-     * carries the alias. A block with both keys is rejected pre-flight
-     * by the mapper, so at most one of the pair is present here.
+     * deliberately dropped. Two families of deprecated keys are folded
+     * into their canonical replacement so the written file never
+     * carries an alias: a `remote` value becomes `sources`, and the
+     * legacy trust trio (`local`, flat `trusted`, flat
+     * `trusted-replace`) becomes a `dependencies` block. A block that
+     * mixes an alias with its canonical key is rejected pre-flight by
+     * the mapper, so at most one form of each pair is present here.
      *
      * @param array<array-key, mixed> $skills the inline `extra.skills` value
      *
@@ -93,9 +96,23 @@ final readonly class ProjectConfigMigrator
     {
         $out = [];
         foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
-            // The alias never lands in the output under its own name;
-            // its value is picked up when the canonical key is visited.
-            if ($key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY) {
+            // Aliases never land in the output under their own name;
+            // their values are picked up when the canonical key is
+            // visited (`remote` → `sources`, the legacy trust trio →
+            // `dependencies`).
+            if (
+                $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
+                || \in_array($key, ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS, true)
+            ) {
+                continue;
+            }
+            if ($key === ProjectConfigMapper::DEPENDENCIES_KEY) {
+                if (\array_key_exists($key, $skills)) {
+                    /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
+                    $out[$key] = $skills[$key];
+                } elseif (self::hasLegacyDependencyKeys($skills)) {
+                    $out[$key] = self::foldLegacyDependencies($skills);
+                }
                 continue;
             }
             if (\array_key_exists($key, $skills)) {
@@ -113,6 +130,80 @@ final readonly class ProjectConfigMigrator
         }
 
         return $out;
+    }
+
+    /**
+     * Whether the block carries any of the legacy trust keys folded
+     * into `dependencies` (`trusted`, `trusted-replace`, `local`).
+     *
+     * @param array<array-key, mixed> $block a `skills.json` / `extra.skills` block
+     *
+     * @psalm-pure
+     */
+    public static function hasLegacyDependencyKeys(array $block): bool
+    {
+        foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $key) {
+            if (\array_key_exists($key, $block)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Fold the legacy trust trio into a `dependencies` block. Starts
+     * from the `local` map verbatim, then upgrades the `composer` entry
+     * to object form when a flat `trusted` / `trusted-replace` value is
+     * present, carrying an explicit `local.composer` bool across as the
+     * object's `enabled`. Only keys the user actually wrote are emitted:
+     * an absent `enabled` or `trusted-replace` is not materialised as
+     * its default.
+     *
+     * Values are copied verbatim, not validated — the mapper enforces
+     * the shape after migration exactly as it would for a hand-written
+     * `dependencies` block.
+     *
+     * @param array<array-key, mixed> $block a `skills.json` / `extra.skills` block
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    public static function foldLegacyDependencies(array $block): array
+    {
+        /** @var mixed $local */
+        $local = $block['local'] ?? null;
+        $hasTrusted = \array_key_exists('trusted', $block);
+        $hasReplace = \array_key_exists('trusted-replace', $block);
+
+        $dependencies = [];
+        if (\is_array($local)) {
+            /** @var mixed $enabled */
+            foreach ($local as $id => $enabled) {
+                /** @psalm-suppress MixedAssignment value copied verbatim; mapper validates */
+                $dependencies[(string) $id] = $enabled;
+            }
+        }
+
+        if ($hasTrusted || $hasReplace) {
+            $composer = [];
+            if (\is_array($local) && \array_key_exists('composer', $local)) {
+                /** @psalm-suppress MixedAssignment */
+                $composer['enabled'] = $local['composer'];
+            }
+            if ($hasTrusted) {
+                /** @psalm-suppress MixedAssignment */
+                $composer['trusted'] = $block['trusted'];
+            }
+            if ($hasReplace) {
+                /** @psalm-suppress MixedAssignment */
+                $composer['trusted-replace'] = $block['trusted-replace'];
+            }
+            $dependencies['composer'] = $composer;
+        }
+
+        return $dependencies;
     }
 
     /**
@@ -139,6 +230,43 @@ final readonly class ProjectConfigMigrator
         }
 
         return $out;
+    }
+
+    /**
+     * Rename the deprecated `remote` key to `sources` in an in-memory
+     * config map, preserving the renamed key's slot and every sibling
+     * verbatim. When the map already carries `sources` (or carries both
+     * keys, or neither), it is returned untouched — the "both present"
+     * case is the mapper's to reject, not this helper's to silently
+     * merge. This is the pure core the file-level {@see
+     * self::renameSourcesKey()} and the wizard's defaults normaliser both
+     * lean on, so one implementation owns the rename rule.
+     *
+     * @param array<string, mixed> $map
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    public static function renameSourcesInMap(array $map): array
+    {
+        $hasDeprecated = \array_key_exists(ProjectConfigMapper::DEPRECATED_SOURCES_KEY, $map);
+        $hasCanonical = \array_key_exists(ProjectConfigMapper::SOURCES_KEY, $map);
+        if (!$hasDeprecated || $hasCanonical) {
+            return $map;
+        }
+
+        $rebuilt = [];
+        /** @var mixed $value */
+        foreach ($map as $key => $value) {
+            $target = $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
+                ? ProjectConfigMapper::SOURCES_KEY
+                : $key;
+            /** @psalm-suppress MixedAssignment value type is validated later by the mapper */
+            $rebuilt[$target] = $value;
+        }
+
+        return $rebuilt;
     }
 
     /**
@@ -321,15 +449,8 @@ final readonly class ProjectConfigMigrator
 
         // Rebuild the map so the renamed key keeps its original slot and
         // every sibling key stays verbatim.
-        $rebuilt = [];
-        /** @var mixed $value */
-        foreach ($decoded as $key => $value) {
-            $target = $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
-                ? ProjectConfigMapper::SOURCES_KEY
-                : $key;
-            /** @psalm-suppress MixedAssignment value type is validated later by the mapper */
-            $rebuilt[$target] = $value;
-        }
+        /** @var array<string, mixed> $decoded */
+        $rebuilt = self::renameSourcesInMap($decoded);
 
         $json = \json_encode(
             $rebuilt,
@@ -357,5 +478,130 @@ final readonly class ProjectConfigMigrator
         ));
 
         return MigrationResult::migrated([ProjectConfigMapper::SOURCES_KEY]);
+    }
+
+    /**
+     * Restructure the legacy trust trio (`local`, flat `trusted`, flat
+     * `trusted-replace`) into a single `dependencies` block in an
+     * existing `skills.json`, in place. Runs next to
+     * {@see self::renameSourcesKey()} on the write-mode entrypoints and
+     * after it, so a fully-legacy file gets both fixes in one run.
+     * Returns:
+     *
+     * - {@see MigrationStatus::Skipped} when there is no `skills.json`,
+     *   when `dependencies` is already present (new form, or an illegal
+     *   mix with legacy keys the mapper will reject — migration must not
+     *   guess which form wins), when no legacy key is present, or when
+     *   `local` is present but not an object (it cannot be transformed
+     *   into a per-manager map without dropping data; the mapper reports
+     *   the shape error on the original file instead). Malformed JSON is
+     *   skipped too, letting {@see ExternalProjectConfigLoader} surface
+     *   the parse error during mapping.
+     * - {@see MigrationStatus::Migrated} after rewriting the file with
+     *   `dependencies` at the slot of the first legacy key, every other
+     *   key and its position preserved and the remaining legacy keys
+     *   dropped.
+     * - {@see MigrationStatus::Failed} when the file exists but a read,
+     *   encode, or write step errored out (message already on `$io`).
+     */
+    public function restructureDependencies(Path $projectRoot, IOInterface $io): MigrationResult
+    {
+        $skillsJsonPath = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
+        if (!\is_file($skillsJsonPath)) {
+            return MigrationResult::skipped();
+        }
+
+        $original = \file_get_contents($skillsJsonPath);
+        if ($original === false) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] failed to read skills.json at %s</error>',
+                $skillsJsonPath,
+            ));
+            return MigrationResult::failed();
+        }
+
+        try {
+            /** @var mixed $decoded */
+            $decoded = \json_decode($original, true, flags: \JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return MigrationResult::skipped();
+        }
+
+        if (!\is_array($decoded)) {
+            return MigrationResult::skipped();
+        }
+
+        // Already on the canonical key — a new-form file, or an illegal
+        // mix of `dependencies` with a legacy key. Either way, leave it:
+        // the mapper's fatal "both present" check must stand rather than
+        // the migration guessing which trust surface wins.
+        if (\array_key_exists(ProjectConfigMapper::DEPENDENCIES_KEY, $decoded)) {
+            return MigrationResult::skipped();
+        }
+
+        $found = [];
+        foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $key) {
+            if (\array_key_exists($key, $decoded)) {
+                $found[] = $key;
+            }
+        }
+        if ($found === []) {
+            return MigrationResult::skipped();
+        }
+
+        // A non-object `local` cannot fold into a per-manager map
+        // without discarding it; leave the file untouched so the mapper
+        // reports the shape error on the original rather than migration
+        // dropping data.
+        if (\array_key_exists('local', $decoded) && !\is_array($decoded['local'])) {
+            return MigrationResult::skipped();
+        }
+
+        $dependencies = self::foldLegacyDependencies($decoded);
+
+        // Rebuild so `dependencies` takes the slot of the first legacy
+        // key encountered and every sibling key keeps its position; the
+        // remaining legacy keys drop out.
+        $rebuilt = [];
+        $placed = false;
+        /** @var mixed $value */
+        foreach ($decoded as $key => $value) {
+            if (\in_array($key, ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS, true)) {
+                if (!$placed) {
+                    $rebuilt[ProjectConfigMapper::DEPENDENCIES_KEY] = $dependencies;
+                    $placed = true;
+                }
+                continue;
+            }
+            /** @psalm-suppress MixedAssignment value type is validated later by the mapper */
+            $rebuilt[$key] = $value;
+        }
+
+        $json = \json_encode(
+            $rebuilt,
+            \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
+        );
+        if ($json === false) {
+            $io->writeError('<error>[llm/skills] failed to encode skills.json during dependency restructure</error>');
+            return MigrationResult::failed();
+        }
+
+        try {
+            AtomicFileWriter::write($skillsJsonPath, $json . "\n");
+        } catch (\RuntimeException $e) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] failed to write skills.json during dependency restructure: %s</error>',
+                $e->getMessage(),
+            ));
+            return MigrationResult::failed();
+        }
+
+        $io->write(\sprintf(
+            '<info>[migrate]</info> restructured %s into "%s" in skills.json',
+            \implode(', ', \array_map(static fn(string $k): string => '"' . $k . '"', $found)),
+            ProjectConfigMapper::DEPENDENCIES_KEY,
+        ));
+
+        return MigrationResult::migrated([ProjectConfigMapper::DEPENDENCIES_KEY]);
     }
 }

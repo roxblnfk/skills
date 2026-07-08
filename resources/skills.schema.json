@@ -26,21 +26,6 @@
             "uniqueItems": true,
             "default": []
         },
-        "trusted": {
-            "type": "array",
-            "description": "Packages or vendor patterns allowed to ship skills into this project. Each pattern is either an exact name like \"vendor/package\" or a wildcard like \"vendor/*\". Bare vendor names (no slash) are rejected.",
-            "items": {
-                "type": "string",
-                "minLength": 1,
-                "pattern": "^[^/]+/[^/]+$"
-            },
-            "default": []
-        },
-        "trusted-replace": {
-            "type": "boolean",
-            "description": "When true, the project's trusted list completely replaces both the built-in trusted vendors and the implicit direct-dependency trust. Default: false (project list extends the implicit sources).",
-            "default": false
-        },
         "discovery": {
             "type": "boolean",
             "description": "When true, packages without an explicit extra.skills.source block are still considered as donors if they ship a top-level skills/ directory. CLI --discovery overrides this.",
@@ -55,25 +40,31 @@
             "type": "string",
             "description": "The project's own location relative to an intended outer containment root, e.g. \"packages/api\" in a monorepo. When set, target and aliases are resolved against (and confined to) that root instead of the project directory, after verifying the declared suffix matches the real project location. Must be a relative path with plain segments (no \".\"/\"..\"). Omit to confine writes to the project root."
         },
-        "local": {
+        "dependencies": {
             "type": "object",
-            "description": "Per-local-provider on/off toggles. Keys must come from the locked vocabulary (composer, npm, go). Absent keys fall back to per-provider defaults: composer enabled, others disabled until their provider implementation lands.",
+            "description": "Per-package-manager configuration: how each manager's installed dependency tree becomes a skill donor, and its trust list. Keys come from the locked vocabulary (composer, npm, go). Each value is a boolean toggle (short form: enable/disable the walk) or a configuration object.",
             "additionalProperties": false,
             "properties": {
                 "composer": {
-                    "type": "boolean",
-                    "description": "Enable the Composer/Packagist local donor provider. Default: true.",
-                    "default": true
+                    "description": "Composer/Packagist dependencies. Trust patterns use the vendor/pkg grammar: exact \"vendor/package\" or wildcard \"vendor/*\"; bare vendor names (no slash) are rejected.",
+                    "oneOf": [
+                        { "type": "boolean" },
+                        { "$ref": "#/$defs/dependencyManagerConfigComposer" }
+                    ]
                 },
                 "npm": {
-                    "type": "boolean",
-                    "description": "Enable the npm local donor provider (future). Default: false.",
-                    "default": false
+                    "description": "npm dependencies (provider forthcoming). Trust patterns target npm names: bare package (\"lodash\"), scoped package (\"@scope/pkg\"), or scope wildcard (\"@scope/*\"). Grammar is documented but not enforced until the provider lands.",
+                    "oneOf": [
+                        { "type": "boolean" },
+                        { "$ref": "#/$defs/dependencyManagerConfig" }
+                    ]
                 },
                 "go": {
-                    "type": "boolean",
-                    "description": "Enable the Go modules local donor provider (future). Default: false.",
-                    "default": false
+                    "description": "Go module dependencies (provider forthcoming). Trust patterns target module paths: prefix patterns like \"github.com/owner/mod\" or \"github.com/owner/*\". Grammar is documented but not enforced until the provider lands.",
+                    "oneOf": [
+                        { "type": "boolean" },
+                        { "$ref": "#/$defs/dependencyManagerConfig" }
+                    ]
                 }
             }
         },
@@ -88,25 +79,60 @@
                     { "$ref": "#/$defs/sourceByDir" }
                 ]
             }
-        },
-        "remote": {
-            "type": "array",
-            "deprecated": true,
-            "description": "Renamed to sources; read as an alias, auto-migrated by skills:update.",
-            "default": [],
-            "items": {
-                "oneOf": [
-                    { "$ref": "#/$defs/sourceByPackage" },
-                    { "$ref": "#/$defs/sourceByUrl" },
-                    { "$ref": "#/$defs/sourceByDir" }
-                ]
-            }
         }
     },
-    "not": {
-        "required": ["sources", "remote"]
-    },
     "$defs": {
+        "dependencyManagerConfig": {
+            "type": "object",
+            "description": "Per-manager configuration object. enabled toggles the dependency-tree walk; trusted extends the manager's trust list; trusted-replace makes trusted fully replace the built-in and direct-dependency trust.",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Walk this manager's installed dependency tree for donors. Absent → per-manager default (composer true; npm/go false until their providers land). Configuring trusted does not implicitly enable the walk."
+                },
+                "trusted": {
+                    "type": "array",
+                    "description": "Trust patterns for this manager. Extends the built-in per-manager list and the direct-dependency implicit trust.",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "default": []
+                },
+                "trusted-replace": {
+                    "type": "boolean",
+                    "description": "When true, this manager's trusted list fully replaces both its built-in list and its direct-dependency implicit trust. Default: false.",
+                    "default": false
+                }
+            }
+        },
+        "dependencyManagerConfigComposer": {
+            "type": "object",
+            "description": "Composer per-manager configuration object. Identical to dependencyManagerConfig except trusted patterns are enforced against the vendor/pkg grammar.",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Walk the installed Composer dependency tree for donors. Absent → true. Configuring trusted does not implicitly enable the walk."
+                },
+                "trusted": {
+                    "type": "array",
+                    "description": "Composer trust patterns: exact \"vendor/package\" or wildcard \"vendor/*\"; bare vendor names (no slash) are rejected.",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^/]+/[^/]+$"
+                    },
+                    "default": []
+                },
+                "trusted-replace": {
+                    "type": "boolean",
+                    "description": "When true, the Composer trusted list fully replaces both the built-in list and the direct-dependency implicit trust. Default: false.",
+                    "default": false
+                }
+            }
+        },
         "sourceByPackage": {
             "type": "object",
             "description": "Donor source entry for name-based adapters (github, gitlab, bitbucket, composer, npm, go, skills.sh).",

@@ -73,6 +73,20 @@ final readonly class ShowRunner
             );
         }
 
+        // Same read-only surface for the legacy trust trio folded into
+        // `dependencies`: warn at normal verbosity and point the user at
+        // the command that migrates the file.
+        if ($resolution->usedDeprecatedDependencyKeys !== []) {
+            $io->writeError(\sprintf(
+                '<comment>[deprecated] config keys %s were replaced by "dependencies"; '
+                . 'skills:update migrates the file automatically</comment>',
+                \implode(', ', \array_map(
+                    static fn(string $k): string => '"' . $k . '"',
+                    $resolution->usedDeprecatedDependencyKeys,
+                )),
+            ));
+        }
+
         // See SyncRunner: notice is provider-neutral, specifics flow
         // through `-v` warnings emitted at the entrypoint.
         if (!$provider->isActive($projectRoot)) {

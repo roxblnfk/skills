@@ -63,29 +63,90 @@ final class SkillsSourcesMigrationTest
 
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
 
-        // The renamed file keeps every sibling key in its original slot,
-        // with `remote` replaced by `sources` in place.
+        // A fully-legacy file gets both write-mode fixes in one run:
+        // `remote` is renamed to `sources` in its slot, and the legacy
+        // `trusted` list is folded into a `dependencies` block in its
+        // slot. Every non-legacy key keeps its position.
         $skills = $this->readSkillsJson();
         Assert::same(
             \array_keys($skills),
-            ['$schema', 'target', 'sources', 'trusted'],
-            'key order must be preserved with remote renamed to sources in place',
+            ['$schema', 'target', 'sources', 'dependencies'],
+            'both migrations run in place, each replacing its key in its original slot',
         );
         Assert::false(\array_key_exists('remote', $skills), 'the deprecated remote key must be gone');
+        Assert::false(\array_key_exists('trusted', $skills), 'the legacy trusted key must be folded away');
         Assert::same($skills['sources'], []);
         Assert::same($skills['target'], '.agents/skills');
-        Assert::same($skills['trusted'], ['acme/skills-basic']);
+        Assert::same($skills['dependencies'], ['composer' => ['trusted' => ['acme/skills-basic']]]);
 
         $combined = $process->getOutput() . $process->getErrorOutput();
         Assert::true(
             \str_contains($combined, '[migrate] renamed "remote" to "sources" in skills.json'),
             'update must announce the in-place rename. Got: ' . $combined,
         );
+        Assert::true(
+            \str_contains($combined, '[migrate] restructured "trusted" into "dependencies" in skills.json'),
+            'update must announce the dependency restructure. Got: ' . $combined,
+        );
 
         // The sync proceeded against the Composer donor with the renamed config.
         Assert::true(
             \is_file(self::TARGET_DIR . '/greeting/SKILL.md'),
             'skills must sync after the key rename',
+        );
+    }
+
+    #[WithSkillsJson([
+        '$schema' => ProjectConfigMigrator::SCHEMA_URL,
+        'target' => '.agents/skills',
+        'remote' => [],
+        'trusted' => ['acme/skills-basic'],
+        'local' => ['composer' => true],
+    ])]
+    public function updateRunsBothMigrationsOnAFullyLegacyFileInOneRun(): void
+    {
+        // A file carrying the deprecated `remote` alias alongside the
+        // full legacy trust trio (`trusted` + `local`) gets both
+        // write-mode fixes in a single run: `remote` renames to `sources`
+        // in its slot, and the trust keys fold into a `dependencies` block
+        // at the first legacy key's slot — with `local.composer` carried
+        // across as the composer entry's `enabled`.
+        $process = $this->runUpdate();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+
+        $skills = $this->readSkillsJson();
+        Assert::same(
+            \array_keys($skills),
+            ['$schema', 'target', 'sources', 'dependencies'],
+            'both migrations run in place, each replacing its key in its original slot',
+        );
+        Assert::false(\array_key_exists('remote', $skills), 'the deprecated remote key must be gone');
+        Assert::false(\array_key_exists('trusted', $skills), 'the legacy trusted key must be folded away');
+        Assert::false(\array_key_exists('local', $skills), 'the legacy local key must be folded away');
+        Assert::same($skills['sources'], []);
+        Assert::same(
+            $skills['dependencies'],
+            ['composer' => ['enabled' => true, 'trusted' => ['acme/skills-basic']]],
+            'local.composer folds into the composer entry as `enabled`, trusted rides along',
+        );
+
+        $combined = $process->getOutput() . $process->getErrorOutput();
+        Assert::true(
+            \str_contains($combined, '[migrate] renamed "remote" to "sources" in skills.json'),
+            'update must announce the in-place rename. Got: ' . $combined,
+        );
+        Assert::true(
+            \str_contains(
+                $combined,
+                '[migrate] restructured "trusted", "local" into "dependencies" in skills.json',
+            ),
+            'update must announce the dependency restructure naming both keys found. Got: ' . $combined,
+        );
+
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/greeting/SKILL.md'),
+            'skills must sync after both migrations',
         );
     }
 
@@ -120,7 +181,6 @@ final class SkillsSourcesMigrationTest
         'target' => '.agents/skills',
         'sources' => [],
         'remote' => [],
-        'trusted' => ['acme/skills-basic'],
     ])]
     public function updateFailsWhenBothSourcesAndRemoteArePresent(): void
     {

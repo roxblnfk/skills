@@ -49,6 +49,7 @@ final readonly class ExternalProjectConfigLoader
         '$schema',
         'target',
         'aliases',
+        'dependencies',
         'trusted',
         'trusted-replace',
         'discovery',

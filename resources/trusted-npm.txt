@@ -1,0 +1,28 @@
+# Built-in trusted-vendors list for the npm provider.
+#
+# Only ownership-verified npm scopes are built in. A package whose npm name
+# matches any of these scope patterns may ship AI skills into a consumer
+# project without an explicit opt-in.
+#
+# Bare (unscoped) package names are deliberately absent: an unscoped name can
+# change hands on the registry, so there is no stable ownership guarantee.
+# Trust those per-project via "dependencies.npm.trusted" in skills.json.
+#
+# Format: one pattern per line. Blank lines and lines starting with `#` are
+# ignored. Surrounding whitespace is trimmed.
+
+# AI / agent ecosystem
+@anthropic-ai/*
+@modelcontextprotocol/*
+@openai/*
+@google/*
+
+# Frameworks & platform vendors
+@angular/*
+@vue/*
+@sveltejs/*
+@nestjs/*
+@nuxt/*
+@astrojs/*
+@remix-run/*
+@vercel/*

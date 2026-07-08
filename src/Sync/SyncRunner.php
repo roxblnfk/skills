@@ -104,6 +104,14 @@ final readonly class SyncRunner
                 return Command::FAILURE;
             }
 
+            // Fold the legacy trust trio into a `dependencies` block in
+            // an existing skills.json, after the sources rename so a
+            // fully-legacy file gets both fixes in one write-mode run.
+            $restructure = $this->migrator->restructureDependencies($projectRoot, $io);
+            if ($restructure->status === MigrationStatus::Failed) {
+                return Command::FAILURE;
+            }
+
             $migration = $this->migrator->migrate($projectRoot, $io);
             if ($migration->status === MigrationStatus::Failed) {
                 return Command::FAILURE;
@@ -131,6 +139,7 @@ final readonly class SyncRunner
         $project = $configResolution->config;
         $this->emitShadowedKeysWarning($io, $configResolution->ignoredInlineKeys);
         $this->emitDeprecatedSourcesKeyNotice($io, $configResolution->usedDeprecatedSourcesKey);
+        $this->emitDeprecatedDependencyKeysNotice($io, $configResolution->usedDeprecatedDependencyKeys);
 
         // No donor provider can contribute. Reasons vary by provider —
         // {@see \LLM\Skills\Discovery\Provider\ComposerProvider} is
@@ -466,6 +475,28 @@ final readonly class SyncRunner
             '<comment>[deprecated] config key "remote" was renamed to "sources"; '
             . 'skills:update migrates the file automatically</comment>',
         );
+    }
+
+    /**
+     * The winning config block declared trust and donor toggles under
+     * the legacy `trusted` / `trusted-replace` / `local` keys instead of
+     * the `dependencies` block. Surface a notice at normal verbosity;
+     * write mode restructures the file first, so this fires only when
+     * migration was suppressed (the `post-install-cmd` auto-sync hook).
+     *
+     * @param list<non-empty-string> $used legacy keys the block relied on
+     */
+    private function emitDeprecatedDependencyKeysNotice(IOInterface $io, array $used): void
+    {
+        if ($used === []) {
+            return;
+        }
+
+        $io->writeError(\sprintf(
+            '<comment>[deprecated] config keys %s were replaced by "dependencies"; '
+            . 'skills:update migrates the file automatically</comment>',
+            \implode(', ', \array_map(static fn(string $k): string => '"' . $k . '"', $used)),
+        ));
     }
 
     /**

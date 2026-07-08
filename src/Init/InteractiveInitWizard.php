@@ -78,31 +78,51 @@ final readonly class InteractiveInitWizard
         $discovery = $this->askDiscovery($io, $defaults);
         $autoSync = $this->askAutoSync($io, $defaults);
 
-        $result = [];
-        // Order matches ProjectConfigMapper::PROJECT_KEYS so generated
-        // skills.json files are diff-stable. We compare against the
-        // canonical default rather than the literal string so this
-        // wizard tracks any future change to DEFAULT_TARGET in one place.
+        // Seed from the (already normalised) defaults so every key the
+        // wizard does NOT prompt for — `sources`, `path-from-root`, other
+        // managers' `dependencies` entries, `dependencies.composer.enabled`
+        // — survives a `--force` rewrite verbatim. The prompted answers
+        // below override only the keys the wizard owns.
+        $result = $defaults;
+
+        // Prompted keys are compared against their canonical default: an
+        // answer equal to the default stays un-emitted (dropping any seeded
+        // copy), tracking DEFAULT_TARGET in one place. A non-default answer
+        // overrides the seed.
         if ($target !== ProjectConfig::DEFAULT_TARGET) {
             $result['target'] = $target;
+        } else {
+            unset($result['target']);
         }
         if ($aliases !== []) {
             $result['aliases'] = $aliases;
+        } else {
+            unset($result['aliases']);
         }
-        if ($trusted !== []) {
-            $result['trusted'] = $trusted;
-        }
-        if ($trustedReplace) {
-            $result['trusted-replace'] = true;
-        }
+
+        // Trust answers land under `dependencies.composer`; the wizard owns
+        // only `trusted` / `trusted-replace` there. `enabled` and sibling
+        // manager entries (`npm`, `go`) are preserved by merging at the
+        // composer-object / dependencies-map level rather than rebuilding
+        // from scratch.
+        $this->applyComposerTrust($result, $trusted, $trustedReplace);
+
         if ($discovery) {
             $result['discovery'] = true;
+        } else {
+            unset($result['discovery']);
         }
-        // auto-sync's default is `true`; only emit the key when the
-        // user opted out, otherwise let the default carry it.
+        // auto-sync's default is `true`; only emit the key when the user
+        // opted out, otherwise let the default carry it.
         if (!$autoSync) {
             $result['auto-sync'] = false;
+        } else {
+            unset($result['auto-sync']);
         }
+
+        // Emit in PROJECT_KEYS order so generated skills.json files are
+        // diff-stable regardless of the seeded defaults' key order.
+        $result = $this->orderProjectKeys($result);
 
         $this->renderSummary($io, $result);
 
@@ -112,6 +132,70 @@ final readonly class InteractiveInitWizard
         }
 
         return $result;
+    }
+
+    /**
+     * The `composer` entry of a `dependencies` defaults block, as an
+     * object. Defaults reach the wizard from a migrated `skills.json`
+     * (or a folded inline block), both of which carry trust under
+     * `dependencies.composer` rather than the flat legacy keys. A short
+     * `"composer": true` toggle carries no trust fields, so it maps to
+     * an empty object here.
+     *
+     * @param array<string, mixed> $defaults
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    private static function composerDependencyDefault(array $defaults): array
+    {
+        /** @var mixed $dependencies */
+        $dependencies = $defaults['dependencies'] ?? null;
+        if (!\is_array($dependencies)) {
+            return [];
+        }
+        /** @var mixed $composer */
+        $composer = $dependencies['composer'] ?? null;
+
+        /** @var array<string, mixed> */
+        return \is_array($composer) ? $composer : [];
+    }
+
+    /**
+     * Build the `dependencies.composer` entry from the inherited default
+     * and the wizard-owned trust knobs, in canonical field order
+     * (`enabled`, `trusted`, `trusted-replace`). Composer defaults to
+     * enabled, so only an explicit `enabled: false` is carried across; a
+     * `true` or absent flag is the default and stays unwritten. Returns
+     * `null` when the entry would hold nothing.
+     *
+     * @param list<non-empty-string> $trusted
+     *
+     * @return array<string, mixed>|null
+     *
+     * @psalm-pure
+     */
+    private static function mergeComposerTrust(mixed $default, array $trusted, bool $trustedReplace): ?array
+    {
+        // A bare bool toggle carries only `enabled`; an object carries it
+        // under the `enabled` field. Either way, only `false` is meaningful
+        // to preserve — it flips composer off its enabled-by-default state.
+        /** @var mixed $rawEnabled */
+        $rawEnabled = \is_array($default) ? ($default['enabled'] ?? null) : $default;
+
+        $composer = [];
+        if ($rawEnabled === false) {
+            $composer['enabled'] = false;
+        }
+        if ($trusted !== []) {
+            $composer['trusted'] = $trusted;
+        }
+        if ($trustedReplace) {
+            $composer['trusted-replace'] = true;
+        }
+
+        return $composer === [] ? null : $composer;
     }
 
     /**
@@ -192,6 +276,65 @@ final readonly class InteractiveInitWizard
             // Anything else: literal path
             /** @var non-empty-string $token */
             $out[] = $token;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Overlay the wizard-owned `trusted` / `trusted-replace` knobs onto the
+     * seeded `dependencies.composer` entry, writing the merged map back into
+     * `$result`. Sibling manager entries (`npm`, `go`) and composer's own
+     * `enabled` flag survive because the merge happens at the composer-object
+     * / dependencies-map level rather than rebuilding from the prompts alone.
+     * An emptied composer entry, and an emptied `dependencies` block, are
+     * dropped — the only content that can empty them is the wizard-owned
+     * trust the user just cleared.
+     *
+     * @param array<string, mixed> $result
+     * @param list<non-empty-string> $trusted
+     */
+    private function applyComposerTrust(array &$result, array $trusted, bool $trustedReplace): void
+    {
+        /** @var array<string, mixed> $dependencies */
+        $dependencies = \is_array($result[ProjectConfigMapper::DEPENDENCIES_KEY] ?? null)
+            ? $result[ProjectConfigMapper::DEPENDENCIES_KEY]
+            : [];
+        /** @var mixed $composerDefault */
+        $composerDefault = $dependencies['composer'] ?? null;
+
+        $composer = self::mergeComposerTrust($composerDefault, $trusted, $trustedReplace);
+        if ($composer === null) {
+            unset($dependencies['composer']);
+        } else {
+            $dependencies['composer'] = $composer;
+        }
+
+        if ($dependencies === []) {
+            unset($result[ProjectConfigMapper::DEPENDENCIES_KEY]);
+        } else {
+            $result[ProjectConfigMapper::DEPENDENCIES_KEY] = $dependencies;
+        }
+    }
+
+    /**
+     * Re-order a project-keys map to {@see ProjectConfigMapper::PROJECT_KEYS}
+     * order for diff-stable output; keys outside that list are dropped.
+     *
+     * @param array<string, mixed> $values
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    private function orderProjectKeys(array $values): array
+    {
+        $out = [];
+        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
+            if (\array_key_exists($key, $values)) {
+                /** @psalm-suppress MixedAssignment */
+                $out[$key] = $values[$key];
+            }
         }
 
         return $out;
@@ -305,7 +448,7 @@ final readonly class InteractiveInitWizard
     {
         $current = [];
         /** @var mixed $rawTrusted */
-        $rawTrusted = $defaults['trusted'] ?? null;
+        $rawTrusted = self::composerDependencyDefault($defaults)['trusted'] ?? null;
         if (\is_array($rawTrusted)) {
             /** @var mixed $value */
             foreach ($rawTrusted as $value) {
@@ -364,7 +507,7 @@ final readonly class InteractiveInitWizard
      */
     private function askTrustedReplace(IOInterface $io, array $defaults): bool
     {
-        $default = (bool) ($defaults['trusted-replace'] ?? false);
+        $default = (bool) (self::composerDependencyDefault($defaults)['trusted-replace'] ?? false);
 
         $io->write('<info>4/6  trusted-replace</info> — when <comment>true</comment>, the project trust');
         $io->write('     list <comment>replaces</comment> both the built-in trusted vendors and the');

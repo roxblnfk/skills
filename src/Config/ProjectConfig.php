@@ -56,6 +56,12 @@ final readonly class ProjectConfig
      * @param list<SourceEntry> $sources donor sources declared by the project. The remote
      *         provider treats each entry as an explicit fetch target. Empty list means
      *         the remote provider stays inactive — symmetric with `local.composer == false`.
+     * @param array<non-empty-string, DependencyConfig> $dependencies full per-manager
+     *         `dependencies` block, keyed by package-manager id. Populated only from the
+     *         `dependencies` config key; the `trusted`, `trustedReplace` and `local` fields
+     *         above are folded out of it so downstream stages keep reading the flat model
+     *         until the per-manager providers land. Empty when the block is absent (legacy
+     *         `trusted` / `local` forms leave it empty and feed the flat fields directly).
      *
      * @psalm-mutation-free
      */
@@ -69,6 +75,7 @@ final readonly class ProjectConfig
         public ?string $pathFromRoot = null,
         public array $local = [],
         public array $sources = [],
+        public array $dependencies = [],
     ) {}
 
     /**
@@ -89,6 +96,7 @@ final readonly class ProjectConfig
             pathFromRoot: null,
             local: [],
             sources: [],
+            dependencies: [],
         );
     }
 
@@ -126,6 +134,7 @@ final readonly class ProjectConfig
             $this->pathFromRoot,
             $this->local,
             $this->sources,
+            $this->dependencies,
         );
     }
 
@@ -146,6 +155,7 @@ final readonly class ProjectConfig
             $this->pathFromRoot,
             $this->local,
             $this->sources,
+            $this->dependencies,
         );
     }
 }

@@ -10,13 +10,15 @@ use LLM\Skills\Info;
 /**
  * Loader for the per-provider built-in trust files.
  *
- * Each provider that supports transitive donor discovery (today only
- * Composer; later npm, go) ships an opinionated list of trusted
- * vendor patterns under `resources/trusted-<providerId>.txt`. The
- * registry picks the right file by id, parses it into a
- * {@see TrustedVendors}, and falls back to an empty list when the
- * file does not exist — keeping a future provider opt-in until its
- * own trust file ships.
+ * Each provider that supports transitive donor discovery (Composer,
+ * npm, go) ships an opinionated list of trusted vendor patterns under
+ * `resources/trusted-<providerId>.txt`. The registry picks the right
+ * file by id, parses each line through that ecosystem's grammar
+ * ({@see VendorPattern} for composer, {@see NpmPattern} for npm,
+ * {@see GoPattern} for go) into a {@see TrustedVendors}, and falls
+ * back to an empty list when the id is unregistered or the file is
+ * missing — keeping a future provider opt-in until its own trust file
+ * ships.
  *
  * The trust files apply only to **local-provider transitive
  * discoveries**. Direct deps are implicit-trusted because the user
@@ -38,16 +40,20 @@ final readonly class TrustedVendorRegistry
      */
     private const FILE_BY_PROVIDER = [
         ProviderId::COMPOSER => 'trusted-composer.txt',
+        ProviderId::NPM => 'trusted-npm.txt',
+        ProviderId::GO => 'trusted-go.txt',
     ];
 
     /**
      * Load the built-in trust list for `$providerId`. Returns
      * {@see TrustedVendors::empty()} when:
      *
-     * - the provider id is not registered (e.g. `npm` until its file ships),
+     * - the provider id is not registered (e.g. `github`, which has no
+     *   built-in trust list),
      * - the registered file is missing on disk.
      *
-     * Throws only when the file exists but cannot be read.
+     * Throws only when the file exists but cannot be read, or when a
+     * line violates the provider's pattern grammar.
      *
      * @param non-empty-string $providerId
      *
@@ -79,9 +85,32 @@ final readonly class TrustedVendorRegistry
             if ($line === '' || \str_starts_with($line, '#')) {
                 continue;
             }
-            $patterns[] = $line;
+            $patterns[] = self::parse($providerId, $line);
         }
 
-        return TrustedVendors::fromStrings(...$patterns);
+        return new TrustedVendors($patterns);
+    }
+
+    /**
+     * Parse one non-empty, non-comment line through the grammar of the
+     * given provider. The set of ids handled here mirrors
+     * {@see self::FILE_BY_PROVIDER}: only registered providers ever
+     * reach parsing.
+     *
+     * @param non-empty-string $providerId
+     * @param non-empty-string $line
+     *
+     * @psalm-pure
+     */
+    private static function parse(string $providerId, string $line): TrustPattern
+    {
+        return match ($providerId) {
+            ProviderId::COMPOSER => VendorPattern::fromString($line),
+            ProviderId::NPM => NpmPattern::fromString($line),
+            ProviderId::GO => GoPattern::fromString($line),
+            default => throw new \RuntimeException(
+                'No trust-pattern grammar registered for provider "' . $providerId . '"',
+            ),
+        };
     }
 }

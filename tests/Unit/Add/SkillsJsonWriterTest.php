@@ -86,12 +86,13 @@ final class SkillsJsonWriterTest
 
     public function preservesUnrelatedTopLevelKeys(): void
     {
-        // The writer must NOT clobber `target` / `aliases` / `trusted`
-        // — only `sources[]` is its concern.
+        // The writer must NOT clobber unrelated keys like `target` /
+        // `aliases` — only `sources[]` is its concern (the legacy trust
+        // trio is the one exception; it is normalised into `dependencies`,
+        // covered by its own test).
         $this->writeSkillsJson([
             'target' => '.agents/skills',
             'aliases' => ['.claude/skills'],
-            'trusted' => ['acme/*'],
         ]);
 
         (new SkillsJsonWriter())->upsertSource(
@@ -102,7 +103,6 @@ final class SkillsJsonWriterTest
         $payload = $this->readSkillsJson();
         Assert::same($payload['target'] ?? null, '.agents/skills');
         Assert::same($payload['aliases'] ?? null, ['.claude/skills']);
-        Assert::same($payload['trusted'] ?? null, ['acme/*']);
     }
 
     public function upsertReplacesEntryWithSameCompositeKey(): void
@@ -424,6 +424,36 @@ final class SkillsJsonWriterTest
             ['alpha', 'beta'],
             'the legacy entry allowlist must merge with the new one',
         );
+    }
+
+    public function upsertNormalisesLegacyTrustTrioIntoDependencies(): void
+    {
+        // A file still on the legacy trust trio is normalised on write:
+        // `local` / `trusted` / `trusted-replace` fold into a
+        // `dependencies` block, the legacy keys are dropped, and
+        // unrelated keys survive.
+        $this->writeSkillsJson([
+            'target' => '.agents/skills',
+            'trusted' => ['acme/*'],
+            'trusted-replace' => false,
+            'local' => ['composer' => true, 'npm' => false],
+        ]);
+
+        (new SkillsJsonWriter())->upsertSource(
+            Path::create($this->tmp),
+            self::entry('acme/skills'),
+        );
+
+        $payload = $this->readSkillsJson();
+        Assert::false(\array_key_exists('trusted', $payload), 'legacy trusted must be dropped');
+        Assert::false(\array_key_exists('trusted-replace', $payload), 'legacy trusted-replace must be dropped');
+        Assert::false(\array_key_exists('local', $payload), 'legacy local must be dropped');
+        Assert::same($payload['target'] ?? null, '.agents/skills', 'unrelated keys must survive');
+        Assert::same($payload['dependencies'] ?? null, [
+            'composer' => ['enabled' => true, 'trusted' => ['acme/*'], 'trusted-replace' => false],
+            'npm' => false,
+        ]);
+        Assert::count((array) $payload['sources'], 1);
     }
 
     public function dirEntryStoresPathAsIdentifier(): void

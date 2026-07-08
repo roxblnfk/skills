@@ -41,9 +41,9 @@ final class InitRunnerTest
 
     public function standaloneModeCreatesStubWithSchemaAndProviderDefaults(): void
     {
-        // The stub advertises the `local` and `sources` knobs explicitly,
-        // even when their values match the defaults, so users discover
-        // them without reading docs.
+        // The stub advertises the `dependencies` and `sources` knobs
+        // explicitly, even when their values match the defaults, so users
+        // discover them without reading docs.
         $io = new BufferIO();
         $code = (new InitRunner())->run(
             Path::create($this->tmp),
@@ -54,13 +54,13 @@ final class InitRunnerTest
         Assert::same($code, Command::SUCCESS);
 
         $written = $this->readSkillsJson();
-        Assert::same(\array_keys($written), ['$schema', 'local', 'sources']);
+        Assert::same(\array_keys($written), ['$schema', 'dependencies', 'sources']);
         Assert::same(
             $written['$schema'],
             InitRunner::SCHEMA_URL,
             '$schema pointer must use the published GitHub raw URL',
         );
-        Assert::same($written['local'], ['composer' => true]);
+        Assert::same($written['dependencies'], ['composer' => true]);
         Assert::same($written['sources'], []);
 
         // Output advertises the mode so the user understands no composer.json
@@ -183,7 +183,10 @@ final class InitRunnerTest
 
         $skills = $this->readSkillsJson();
         Assert::same($skills['target'], 'custom/skills');
-        Assert::same($skills['trusted'], ['acme/*']);
+        // Flat `trusted` folds into the `dependencies.composer` block;
+        // the migrated file never carries the legacy key.
+        Assert::false(\array_key_exists('trusted', $skills));
+        Assert::same($skills['dependencies'], ['composer' => ['trusted' => ['acme/*']]]);
         Assert::same($skills['auto-sync'], true);
 
         // The migrated keys must be gone from composer.json.
@@ -279,7 +282,7 @@ final class InitRunnerTest
         );
 
         Assert::same($code, Command::SUCCESS);
-        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'local', 'sources']);
+        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'dependencies', 'sources']);
         Assert::true(\str_contains($io->getOutput(), 'no project keys to migrate'));
     }
 
@@ -382,6 +385,168 @@ final class InitRunnerTest
 
         // Non-default path always carries the auto-discovery warning.
         Assert::true(\str_contains($io->getOutput(), 'will not be discovered'));
+    }
+
+    public function forceInteractiveFoldsLegacyTrustKeysAndRoundTripsThem(): void
+    {
+        // Regression guard: the interactive `--force` path reads the
+        // existing skills.json raw (no file migrators) so the wizard can
+        // show current values as defaults. A legacy flat `trusted` /
+        // `trusted-replace` / `local` file must still surface those as
+        // trust defaults; accepting every prompt verbatim must round-trip
+        // the config into the `dependencies` form without dropping the
+        // patterns or flipping `trusted-replace` back off.
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            (string) \json_encode(
+                [
+                    '$schema' => InitRunner::SCHEMA_URL,
+                    'target' => 'custom/skills',
+                    'trusted' => ['acme/*'],
+                    'trusted-replace' => true,
+                    'local' => ['composer' => true],
+                ],
+                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
+            ) . "\n",
+        );
+
+        // `setUserInputs` flips BufferIO into interactive mode, which is
+        // what routes the runner through the wizard. Empty answers accept
+        // each surfaced default; the final `yes` confirms the write.
+        $io = new BufferIO();
+        $io->setUserInputs([
+            '',    // target → keep custom/skills
+            '',    // aliases → keep none
+            '',    // trusted → keep acme/*
+            '',    // trusted-replace → keep true
+            '',    // discovery → keep default
+            '',    // auto-sync → keep default
+            'yes', // confirm write
+        ]);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+
+        $written = $this->readSkillsJson();
+        Assert::same($written['target'] ?? null, 'custom/skills');
+        // The flat legacy keys are gone; trust lands under the canonical
+        // `dependencies.composer` block with both the patterns and the
+        // replace flag intact. `local.composer: true` is the composer
+        // default, so the wizard omits the redundant `enabled` toggle.
+        Assert::false(\array_key_exists('trusted', $written), 'flat trusted must not survive the rewrite');
+        Assert::false(
+            \array_key_exists('trusted-replace', $written),
+            'flat trusted-replace must not survive the rewrite',
+        );
+        Assert::false(\array_key_exists('local', $written), 'flat local must not survive the rewrite');
+        Assert::same(
+            $written['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/*'], 'trusted-replace' => true]],
+            'trust must round-trip into the dependencies form without loss',
+        );
+    }
+
+    public function forceInteractivePreservesUnpromptedConfig(): void
+    {
+        // A rich existing skills.json carrying keys the wizard never prompts
+        // for: `sources`, `path-from-root`, a sibling `npm` block, and an
+        // explicit `composer.enabled: false`. Running `skills:init --force`
+        // interactively and pressing Enter through every prompt must rewrite
+        // the file WITHOUT dropping any of them — the six prompted knobs are
+        // the only ones the wizard owns.
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            (string) \json_encode(
+                [
+                    '$schema' => InitRunner::SCHEMA_URL,
+                    'target' => 'custom/skills',
+                    'aliases' => ['.claude/skills'],
+                    'dependencies' => [
+                        'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+                        'npm' => ['trusted' => ['@scope/*']],
+                    ],
+                    'path-from-root' => 'packages/api',
+                    'sources' => [['from' => 'dir', 'path' => '../shared/skills']],
+                ],
+                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
+            ) . "\n",
+        );
+
+        $io = new BufferIO();
+        $io->setUserInputs(['', '', '', '', '', '', 'yes']);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+
+        $written = $this->readSkillsJson();
+        // Unprompted keys survive verbatim.
+        Assert::same($written['sources'] ?? null, [['from' => 'dir', 'path' => '../shared/skills']]);
+        Assert::same($written['path-from-root'] ?? null, 'packages/api');
+        // composer.enabled=false and the sibling npm block are preserved; the
+        // kept trusted list lands under dependencies.composer.
+        Assert::same($written['dependencies'] ?? null, [
+            'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+            'npm' => ['trusted' => ['@scope/*']],
+        ]);
+        // No legacy flat keys survive; keys come out in canonical order.
+        Assert::false(\array_key_exists('trusted', $written));
+        Assert::false(\array_key_exists('trusted-replace', $written));
+        Assert::false(\array_key_exists('local', $written));
+        Assert::false(\array_key_exists('remote', $written));
+        Assert::same(
+            \array_keys($written),
+            ['$schema', 'target', 'aliases', 'dependencies', 'path-from-root', 'sources'],
+        );
+    }
+
+    public function forceInteractiveMigratesLegacyRemoteAndFlatTrust(): void
+    {
+        // A legacy skills.json using the deprecated `remote` alias and the
+        // flat trust trio. The interactive `--force` path reads it raw, so
+        // the defaults normaliser must rename `remote` to `sources` and fold
+        // the flat trust into `dependencies` before the wizard preserves
+        // them. The rewritten file carries `sources` + `dependencies` and
+        // none of the legacy keys.
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            (string) \json_encode(
+                [
+                    '$schema' => InitRunner::SCHEMA_URL,
+                    'remote' => [['from' => 'dir', 'path' => '../shared/skills']],
+                    'trusted' => ['acme/*'],
+                ],
+                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
+            ) . "\n",
+        );
+
+        $io = new BufferIO();
+        $io->setUserInputs(['', '', '', '', '', '', 'yes']);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+
+        $written = $this->readSkillsJson();
+        // `remote` renamed to the canonical `sources`, entries verbatim.
+        Assert::false(\array_key_exists('remote', $written), 'legacy remote must not survive');
+        Assert::same($written['sources'] ?? null, [['from' => 'dir', 'path' => '../shared/skills']]);
+        // Flat trust folded into dependencies.composer.
+        Assert::false(\array_key_exists('trusted', $written), 'flat trusted must not survive');
+        Assert::same($written['dependencies'] ?? null, ['composer' => ['trusted' => ['acme/*']]]);
     }
 
     /**
