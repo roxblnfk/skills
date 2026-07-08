@@ -9,14 +9,14 @@ use Composer\Factory;
 use Composer\IO\NullIO;
 use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\GithubAdapter;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\GitlabAdapter;
-use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
-use LLM\Skills\Discovery\Provider\Remote\CachePathBuilder;
-use LLM\Skills\Discovery\Provider\Remote\Http\ComposerHttpClient;
-use LLM\Skills\Discovery\Provider\Remote\HttpArchiveFetcher;
-use LLM\Skills\Discovery\Provider\Remote\RemoteProvider;
-use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
+use LLM\Skills\Discovery\Provider\Source\Adapter\GithubAdapter;
+use LLM\Skills\Discovery\Provider\Source\Adapter\GitlabAdapter;
+use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
+use LLM\Skills\Discovery\Provider\Source\CachePathBuilder;
+use LLM\Skills\Discovery\Provider\Source\Http\ComposerHttpClient;
+use LLM\Skills\Discovery\Provider\Source\HttpArchiveFetcher;
+use LLM\Skills\Discovery\Provider\Source\SourceProvider;
+use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
 
 /**
  * Constructs the {@see CompositeDonorProvider} for an entrypoint.
@@ -32,20 +32,20 @@ use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
  *
  * The composite that comes out:
  *
- *  1. **`ComposerProvider`** — local, honours the `local.composer`
+ *  1. **`ComposerProvider`** — local, honours the `dependencies.composer`
  *     toggle. Inactive when no Composer instance is supplied or when
  *     the toggle is `false`.
- *  2. **`RemoteProvider`** — wired with a {@see SkillsJsonRemoteDonorSource}
+ *  2. **`SourceProvider`** — wired with a {@see SkillsJsonDonorRefSource}
  *     (reads `sources[]` from `skills.json`) and a {@see HttpArchiveFetcher}
  *     (downloads + extracts archives into `vendor/llm-skills/cache/...`).
  *     Inactive when `sources[]` is empty.
  *
- * Remote is wired LAST so the composite's "later-wins" semantic
- * makes explicit remote entries override transitive local discoveries
+ * Source is wired LAST so the composite's "later-wins" semantic
+ * makes explicit source entries override transitive local discoveries
  * of the same package name.
  *
  * The builder does a **best-effort** read of `skills.json` to pick up
- * the `local` toggles. If that read throws (malformed config), the
+ * the `dependencies` toggles. If that read throws (malformed config), the
  * builder defaults every provider to its built-in default — the
  * {@see \LLM\Skills\Sync\SyncRunner} then re-reads the same file and
  * surfaces the proper {@see \LLM\Skills\Config\Exception\MalformedProjectConfig}
@@ -67,18 +67,18 @@ final readonly class DonorProviderBuilder
      */
     public function build(Path $projectRoot, ?Composer $composer, mixed $extra): DonorProvider
     {
-        $composerEnabled = $this->resolveLocalEnabled($projectRoot, $extra, ProviderId::COMPOSER);
+        $composerEnabled = $this->resolveManagerEnabled($projectRoot, $extra, ProviderId::COMPOSER);
 
         $local = new ComposerProvider($composer, enabled: $composerEnabled);
-        $remote = $this->buildRemoteProvider($composer);
+        $source = $this->buildSourceProvider($composer);
 
-        return new CompositeDonorProvider($local, $remote);
+        return new CompositeDonorProvider($local, $source);
     }
 
     /**
-     * Build the remote provider. Wires the GitHub adapter, an HTTP
+     * Build the source provider. Wires the GitHub adapter, an HTTP
      * client (so auth.json credentials apply), and an archive fetcher
-     * into the {@see RemoteProvider} skeleton.
+     * into the {@see SourceProvider} skeleton.
      *
      * Works **with or without** a Composer instance:
      *
@@ -91,10 +91,10 @@ final readonly class DonorProviderBuilder
      *   environment variables still apply, the cache lives under
      *   `<cwd>/vendor/llm-skills/cache`, and `skills.json` is read
      *   from `<cwd>`. This matters because the local Composer donor
-     *   is just one provider — refusing to wire remote when local is
+     *   is just one provider — refusing to wire source when local is
      *   unavailable would defeat the multi-source design.
      */
-    private function buildRemoteProvider(?Composer $composer): RemoteProvider
+    private function buildSourceProvider(?Composer $composer): SourceProvider
     {
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
         $httpClient = ComposerHttpClient::fromConfig($config);
@@ -103,7 +103,7 @@ final readonly class DonorProviderBuilder
             new GithubAdapter($httpClient),
             new GitlabAdapter($httpClient),
         );
-        $source = new SkillsJsonRemoteDonorSource($registry, $this->mapper);
+        $source = new SkillsJsonDonorRefSource($registry, $this->mapper);
         $fetcher = new HttpArchiveFetcher(
             $httpClient,
             $composer !== null
@@ -112,7 +112,7 @@ final readonly class DonorProviderBuilder
             CachePathBuilder::fromVendorDir($config->get('vendor-dir')),
         );
 
-        return new RemoteProvider($source, $fetcher);
+        return new SourceProvider($source, $fetcher);
     }
 
     /**
@@ -131,21 +131,21 @@ final readonly class DonorProviderBuilder
     }
 
     /**
-     * Read the `local.<id>` toggle from `skills.json` (or inline
-     * `extra.skills.local`), falling back to
-     * {@see ProviderId::defaultLocalEnabled()} on any failure.
+     * Read the `dependencies.<id>` toggle from `skills.json` (or inline
+     * `extra.skills.dependencies`), falling back to
+     * {@see ProviderId::defaultManagerEnabled()} on any failure.
      *
      * Malformed config is not surfaced here — the runner does that on
      * its own read.
      */
-    private function resolveLocalEnabled(Path $projectRoot, mixed $extra, string $providerId): bool
+    private function resolveManagerEnabled(Path $projectRoot, mixed $extra, string $providerId): bool
     {
         try {
             $config = $this->mapper->forProject($projectRoot, $extra)->config;
         } catch (\Throwable) {
-            return ProviderId::defaultLocalEnabled($providerId);
+            return ProviderId::defaultManagerEnabled($providerId);
         }
 
-        return $config->isLocalEnabled($providerId);
+        return $config->isManagerEnabled($providerId);
     }
 }

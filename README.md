@@ -546,7 +546,7 @@ composer skills:update --from=composer    # only local Composer donors
 composer skills:update --from=github      # only remote GitHub donors
 ```
 
-The id matches `dependencies.{id}` keys and `sources[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `RemoteProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
+The id matches `dependencies.{id}` keys and `sources[].from` values. Each donor's provenance is set at the source: `ComposerProvider` tags `composer`; `SourceProvider` tags the entry's `from`. The filter is a simple equality check on that tag.
 
 ### Dependency walk toggles
 

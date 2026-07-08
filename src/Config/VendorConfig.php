@@ -32,7 +32,7 @@ final readonly class VendorConfig
      *         to {@see ProviderId::COMPOSER} for back-compat. Used by
      *         `skills:update --from=<id>` to filter the donor list.
      * @param bool $implicitTrust the user explicitly declared this donor — the trust
-     *         list is not consulted. Set by {@see \LLM\Skills\Discovery\Provider\Remote\RemoteProvider}
+     *         list is not consulted. Set by {@see \LLM\Skills\Discovery\Provider\Source\SourceProvider}
      *         for every `sources[]` entry, regardless of `from` value. Local providers
      *         keep this `false` and let {@see \LLM\Skills\Sync\SyncPlanner} run the
      *         per-registry trust check.

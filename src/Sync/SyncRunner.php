@@ -172,7 +172,7 @@ final readonly class SyncRunner
         // `--from=<id>` narrows the sync to a single
         // provider's donors. Provenance is tagged at the source
         // (`composer` for ComposerProvider, the entry's `from` for
-        // RemoteProvider) so a simple equality filter is enough.
+        // SourceProvider) so a simple equality filter is enough.
         if ($options->fromFilter !== null) {
             $filter = $options->fromFilter;
             $donors = \array_values(\array_filter(
@@ -461,8 +461,8 @@ final readonly class SyncRunner
     /**
      * The winning config block declared its donor sources under the
      * deprecated `remote` key. Surface a notice at normal verbosity —
-     * deprecations should be seen. In write mode the §2.1 in-place
-     * rename runs first, so this fires only when migration was
+     * deprecations should be seen. In write mode the `remote`-to-`sources`
+     * in-place rename runs first, so this fires only when migration was
      * suppressed (the `post-install-cmd` auto-sync hook).
      */
     private function emitDeprecatedSourcesKeyNotice(IOInterface $io, bool $used): void

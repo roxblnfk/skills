@@ -493,13 +493,13 @@ final class ProjectConfigMapperTest
     {
         // Sparse storage: an absent `local` block means "every provider
         // uses its per-provider default" — codified by
-        // ProjectConfig::isLocalEnabled() rather than by filling the
+        // ProjectConfig::isManagerEnabled() rather than by filling the
         // map up front.
         $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
 
-        Assert::same($cfg->local, []);
-        Assert::true($cfg->isLocalEnabled('composer'));
-        Assert::false($cfg->isLocalEnabled('npm'));
+        Assert::same($cfg->managerEnabled, []);
+        Assert::true($cfg->isManagerEnabled('composer'));
+        Assert::false($cfg->isManagerEnabled('npm'));
     }
 
     public function localCanDisableComposer(): void
@@ -508,8 +508,8 @@ final class ProjectConfigMapperTest
             'skills' => ['local' => ['composer' => false]],
         ]);
 
-        Assert::same($cfg->local, ['composer' => false]);
-        Assert::false($cfg->isLocalEnabled('composer'));
+        Assert::same($cfg->managerEnabled, ['composer' => false]);
+        Assert::false($cfg->isManagerEnabled('composer'));
     }
 
     public function localUnknownIdThrows(): void
@@ -517,7 +517,7 @@ final class ProjectConfigMapperTest
         // Typos must surface as load-time errors — silent ignore would
         // make `loc.composer: false` look like it worked.
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('known local provider');
+            ->withMessageContaining('known package manager');
 
         (new ProjectConfigMapper())->fromExtra([
             'skills' => ['local' => ['githubz' => true]],
@@ -613,9 +613,9 @@ final class ProjectConfigMapperTest
 
     public function remoteUnknownAdapterThrows(): void
     {
-        // `from` vocabulary is locked at the spec table; unknown values
-        // must fail at load so a typo never reaches the fetcher (which
-        // would otherwise give a less helpful error).
+        // the `from` vocabulary is a locked set; unknown values must fail
+        // at load so a typo never reaches the fetcher (which would
+        // otherwise give a less helpful error).
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('not a known source adapter');
 
@@ -1193,9 +1193,9 @@ final class ProjectConfigMapperTest
             'skills' => ['dependencies' => ['composer' => true, 'npm' => false]],
         ]);
 
-        Assert::same($cfg->local, ['composer' => true, 'npm' => false]);
-        Assert::true($cfg->isLocalEnabled('composer'));
-        Assert::false($cfg->isLocalEnabled('npm'));
+        Assert::same($cfg->managerEnabled, ['composer' => true, 'npm' => false]);
+        Assert::true($cfg->isManagerEnabled('composer'));
+        Assert::false($cfg->isManagerEnabled('npm'));
         Assert::same($cfg->trusted->patterns, []);
         Assert::same($cfg->trustedReplace, false);
     }
@@ -1210,7 +1210,7 @@ final class ProjectConfigMapperTest
             'skills' => ['dependencies' => ['npm' => ['enabled' => true]]],
         ]);
 
-        Assert::same($boolForm->local, $objectForm->local);
+        Assert::same($boolForm->managerEnabled, $objectForm->managerEnabled);
         Assert::same($boolForm->dependencies['npm']->enabled, true);
         Assert::same($objectForm->dependencies['npm']->enabled, true);
     }
@@ -1241,7 +1241,7 @@ final class ProjectConfigMapperTest
             'skills' => ['dependencies' => ['npm' => ['trusted' => ['@myorg/*']]]],
         ]);
 
-        Assert::false($cfg->isLocalEnabled('npm'));
+        Assert::false($cfg->isManagerEnabled('npm'));
         Assert::same($cfg->dependencies['npm']->enabled, null);
         Assert::same($cfg->dependencies['npm']->trusted, ['@myorg/*']);
     }
@@ -1254,7 +1254,7 @@ final class ProjectConfigMapperTest
             'skills' => ['dependencies' => ['composer' => ['trusted' => ['acme/*']]]],
         ]);
 
-        Assert::true($cfg->isLocalEnabled('composer'));
+        Assert::true($cfg->isManagerEnabled('composer'));
         Assert::same($cfg->dependencies['composer']->enabled, null);
     }
 
@@ -1411,7 +1411,7 @@ final class ProjectConfigMapperTest
         Assert::same($cfg->dependencies['go']->enabled, null);
         Assert::same($cfg->dependencies['go']->trustedReplace, true);
         // composer entry drives the flat fields even when disabled.
-        Assert::same($cfg->local['composer'], false);
+        Assert::same($cfg->managerEnabled['composer'], false);
         Assert::true($cfg->trusted->trusts('acme/x'));
     }
 
@@ -1420,7 +1420,7 @@ final class ProjectConfigMapperTest
     public function dependenciesFoldingMatchesFlatForm(): void
     {
         // The new block and the equivalent flat trio must produce
-        // identical `trusted` / `trustedReplace` / `local` fields.
+        // identical `trusted` / `trustedReplace` / `managerEnabled` fields.
         $flat = (new ProjectConfigMapper())->fromExtra([
             'skills' => [
                 'trusted' => ['acme/*', 'foo/bar'],
@@ -1438,7 +1438,7 @@ final class ProjectConfigMapperTest
         ]);
 
         Assert::same($flat->trustedReplace, $new->trustedReplace);
-        Assert::same($flat->local, $new->local);
+        Assert::same($flat->managerEnabled, $new->managerEnabled);
         Assert::same(
             \array_map(static fn(\LLM\Skills\Config\VendorPattern $p): string => $p->raw, $flat->trusted->patterns),
             \array_map(static fn(\LLM\Skills\Config\VendorPattern $p): string => $p->raw, $new->trusted->patterns),

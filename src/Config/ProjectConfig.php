@@ -48,20 +48,21 @@ final readonly class ProjectConfig
      *         and uses the result as the root that `target` and aliases must stay inside —
      *         letting them legitimately reach a shared monorepo-level directory. When `null`
      *         (default) the containment root is the project root itself, unchanged.
-     * @param array<non-empty-string, bool> $local local-provider toggles. Keys are provider ids
-     *         from {@see ProviderId::LOCAL_IDS}; values turn the provider on/off. Absent keys
-     *         fall back to {@see ProviderId::defaultLocalEnabled()} — `composer` defaults to
-     *         enabled (preserves the pre-`local` behaviour), every other id defaults to off
-     *         so a new provider stays opt-in until its implementation lands.
-     * @param list<SourceEntry> $sources donor sources declared by the project. The remote
+     * @param array<non-empty-string, bool> $managerEnabled package-manager toggles. Keys are
+     *         manager ids from {@see ProviderId::MANAGER_IDS}; values turn the manager on/off.
+     *         Absent keys fall back to {@see ProviderId::defaultManagerEnabled()} — `composer`
+     *         defaults to enabled (preserves the pre-`dependencies` behaviour), every other id
+     *         defaults to off so a new manager stays opt-in until its implementation lands.
+     * @param list<SourceEntry> $sources donor sources declared by the project. The source
      *         provider treats each entry as an explicit fetch target. Empty list means
-     *         the remote provider stays inactive — symmetric with `local.composer == false`.
+     *         the source provider stays inactive — symmetric with `dependencies.composer == false`.
      * @param array<non-empty-string, DependencyConfig> $dependencies full per-manager
      *         `dependencies` block, keyed by package-manager id. Populated only from the
-     *         `dependencies` config key; the `trusted`, `trustedReplace` and `local` fields
-     *         above are folded out of it so downstream stages keep reading the flat model
-     *         until the per-manager providers land. Empty when the block is absent (legacy
-     *         `trusted` / `local` forms leave it empty and feed the flat fields directly).
+     *         `dependencies` config key; the `trusted`, `trustedReplace` and `managerEnabled`
+     *         fields above are folded out of it so downstream stages keep reading the flat
+     *         model until the per-manager providers land. Empty when the block is absent
+     *         (legacy `trusted` / `local` forms leave it empty and feed the flat fields
+     *         directly).
      *
      * @psalm-mutation-free
      */
@@ -73,7 +74,7 @@ final readonly class ProjectConfig
         public array $aliases = [],
         public bool $autoSync = true,
         public ?string $pathFromRoot = null,
-        public array $local = [],
+        public array $managerEnabled = [],
         public array $sources = [],
         public array $dependencies = [],
     ) {}
@@ -94,27 +95,27 @@ final readonly class ProjectConfig
             aliases: [],
             autoSync: true,
             pathFromRoot: null,
-            local: [],
+            managerEnabled: [],
             sources: [],
             dependencies: [],
         );
     }
 
     /**
-     * Whether the given local-provider id is enabled for this project.
-     * Explicit `local: { <id>: bool }` settings win; absent keys fall
-     * back to the per-provider default
-     * ({@see ProviderId::defaultLocalEnabled()}).
+     * Whether the given package-manager id is enabled for this project.
+     * Explicit `dependencies: { <id>: bool }` settings win; absent keys
+     * fall back to the per-manager default
+     * ({@see ProviderId::defaultManagerEnabled()}).
      *
      * @psalm-mutation-free
      */
-    public function isLocalEnabled(string $providerId): bool
+    public function isManagerEnabled(string $providerId): bool
     {
-        if (\array_key_exists($providerId, $this->local)) {
-            return $this->local[$providerId];
+        if (\array_key_exists($providerId, $this->managerEnabled)) {
+            return $this->managerEnabled[$providerId];
         }
 
-        return ProviderId::defaultLocalEnabled($providerId);
+        return ProviderId::defaultManagerEnabled($providerId);
     }
 
     /**
@@ -132,7 +133,7 @@ final readonly class ProjectConfig
             $this->aliases,
             $this->autoSync,
             $this->pathFromRoot,
-            $this->local,
+            $this->managerEnabled,
             $this->sources,
             $this->dependencies,
         );
@@ -153,7 +154,7 @@ final readonly class ProjectConfig
             $aliases,
             $this->autoSync,
             $this->pathFromRoot,
-            $this->local,
+            $this->managerEnabled,
             $this->sources,
             $this->dependencies,
         );

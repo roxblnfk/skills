@@ -26,7 +26,7 @@ final readonly class DependencyConfig
 {
     /**
      * @param bool|null $enabled resolved enable flag, or `null` when the user left
-     *        it out — callers fall back to {@see ProviderId::defaultLocalEnabled()}
+     *        it out — callers fall back to {@see ProviderId::defaultManagerEnabled()}
      * @param list<non-empty-string> $trusted raw per-manager trust patterns, validated
      *        against the manager's grammar at map time
      * @param bool $trustedReplace when true, `$trusted` fully replaces the manager's
@@ -47,7 +47,7 @@ final readonly class DependencyConfig
      */
     public function isEnabled(string $id): bool
     {
-        return $this->enabled ?? ProviderId::defaultLocalEnabled($id);
+        return $this->enabled ?? ProviderId::defaultManagerEnabled($id);
     }
 
     /**

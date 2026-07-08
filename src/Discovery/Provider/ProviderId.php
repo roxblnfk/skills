@@ -9,11 +9,12 @@ namespace LLM\Skills\Discovery\Provider;
  *
  * Used in three places:
  *
- * - `skills.json` `local: { <id>: bool }` keys — which local providers
- *   are enabled in the current project.
+ * - `skills.json` `dependencies: { <id>: bool }` keys — which package
+ *   managers are enabled in the current project. Only `composer` has an
+ *   implementation today; `npm` and `go` lock the vocabulary.
  * - `skills.json` `sources[].from` values — which source adapter resolves
  *   a given remote entry.
- * - The `--from=<id>` CLI flag on `skills:update` (Phase 5).
+ * - The `--from=<id>` CLI flag on `skills:update`.
  *
  * The vocabulary is locked up front so the format can accommodate future
  * adapters without a schema migration. The constants below are the
@@ -35,13 +36,13 @@ final class ProviderId
     public const DIR = 'dir';
 
     /**
-     * Identifiers that may appear as keys under `local`. Today only
-     * `composer` has an implementation; the others lock the vocabulary
-     * so future providers ship without a migration.
+     * Identifiers that may appear as keys under `dependencies`. Today
+     * only `composer` has an implementation; the others lock the
+     * vocabulary so future providers ship without a migration.
      *
      * @var list<non-empty-string>
      */
-    public const LOCAL_IDS = [
+    public const MANAGER_IDS = [
         self::COMPOSER,
         self::NPM,
         self::GO,
@@ -49,12 +50,13 @@ final class ProviderId
 
     /**
      * Identifiers that may appear as `from` values inside `sources[]`.
-     * Larger than {@see LOCAL_IDS} because remote adapters cover both
-     * VCS hosts (no local manifest) and package registries.
+     * Larger than {@see MANAGER_IDS} because source adapters cover VCS
+     * hosts and package registries (no local manifest) as well as
+     * local directories.
      *
      * @var list<non-empty-string>
      */
-    public const REMOTE_IDS = [
+    public const SOURCE_IDS = [
         self::GITHUB,
         self::GITLAB,
         self::BITBUCKET,
@@ -72,7 +74,7 @@ final class ProviderId
      *
      * @var list<non-empty-string>
      */
-    public const URL_ONLY_REMOTE_IDS = [
+    public const URL_ONLY_SOURCE_IDS = [
         self::HTTP,
         self::ZIP,
     ];
@@ -93,17 +95,17 @@ final class ProviderId
     /**
      * @psalm-pure
      */
-    public static function isKnownLocal(string $id): bool
+    public static function isKnownManager(string $id): bool
     {
-        return \in_array($id, self::LOCAL_IDS, true);
+        return \in_array($id, self::MANAGER_IDS, true);
     }
 
     /**
      * @psalm-pure
      */
-    public static function isKnownRemote(string $id): bool
+    public static function isKnownSource(string $id): bool
     {
-        return \in_array($id, self::REMOTE_IDS, true);
+        return \in_array($id, self::SOURCE_IDS, true);
     }
 
     /**
@@ -113,9 +115,9 @@ final class ProviderId
      *
      * @psalm-pure
      */
-    public static function isUrlOnlyRemote(string $id): bool
+    public static function isUrlOnlySource(string $id): bool
     {
-        return \in_array($id, self::URL_ONLY_REMOTE_IDS, true);
+        return \in_array($id, self::URL_ONLY_SOURCE_IDS, true);
     }
 
     /**
@@ -132,15 +134,15 @@ final class ProviderId
     }
 
     /**
-     * Default activation state for a local provider when the user has
+     * Default activation state for a package manager when the user has
      * not pinned it explicitly. `composer` defaults to enabled
-     * (preserves the pre-`local` behaviour); every other provider
+     * (preserves the pre-`dependencies` behaviour); every other manager
      * defaults to disabled so it stays opt-in until its implementation
      * lands.
      *
      * @psalm-pure
      */
-    public static function defaultLocalEnabled(string $id): bool
+    public static function defaultManagerEnabled(string $id): bool
     {
         return $id === self::COMPOSER;
     }

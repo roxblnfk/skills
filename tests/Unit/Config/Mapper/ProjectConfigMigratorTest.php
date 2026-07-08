@@ -432,11 +432,11 @@ final class ProjectConfigMigratorTest
 
     public function restructuresLegacyTrustTrioIntoDependenciesBlock(): void
     {
-        // Spec §3.1 worked example, verbatim. `dependencies` takes the
-        // slot of the first legacy key (`trusted`), the composer entry is
-        // upgraded to object form carrying the explicit `local.composer`
-        // enable flag and both flat trust fields, `npm` stays a bare
-        // bool, and every non-legacy key keeps its position.
+        // Worked example: `dependencies` takes the slot of the first
+        // legacy key (`trusted`), the composer entry is upgraded to
+        // object form carrying the explicit `local.composer` enable flag
+        // and both flat trust fields, `npm` stays a bare bool, and every
+        // non-legacy key keeps its position.
         $this->writeSkillsJson([
             'target' => '.claude/skills',
             'trusted' => ['acme/*'],

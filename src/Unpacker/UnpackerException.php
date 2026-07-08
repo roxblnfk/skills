@@ -6,7 +6,7 @@ namespace LLM\Skills\Unpacker;
 
 /**
  * Unpacker-level failure — bubble up to the fetcher, which wraps it
- * into a {@see \LLM\Skills\Discovery\Provider\Remote\RemoteFetchException}
+ * into a {@see \LLM\Skills\Discovery\Provider\Source\RemoteFetchException}
  * with full ref context.
  *
  * Two shapes:
