@@ -1185,6 +1185,394 @@ final class ProjectConfigMapperTest
         ]);
     }
 
+    // ── dependencies: per-manager config & scoped trust ─────────────────
+
+    public function dependenciesBoolShortFormTogglesManagers(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => true, 'npm' => false]],
+        ]);
+
+        Assert::same($cfg->local, ['composer' => true, 'npm' => false]);
+        Assert::true($cfg->isLocalEnabled('composer'));
+        Assert::false($cfg->isLocalEnabled('npm'));
+        Assert::same($cfg->trusted->patterns, []);
+        Assert::same($cfg->trustedReplace, false);
+    }
+
+    public function dependenciesBoolFormEqualsEnabledObject(): void
+    {
+        // `true` ≡ `{ enabled: true }`, `false` ≡ `{ enabled: false }`.
+        $boolForm = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['npm' => true]],
+        ]);
+        $objectForm = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['npm' => ['enabled' => true]]],
+        ]);
+
+        Assert::same($boolForm->local, $objectForm->local);
+        Assert::same($boolForm->dependencies['npm']->enabled, true);
+        Assert::same($objectForm->dependencies['npm']->enabled, true);
+    }
+
+    public function dependenciesComposerTrustedIsFoldedIntoFlatTrusted(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'dependencies' => [
+                    'composer' => ['trusted' => ['acme/*', 'foo/bar'], 'trusted-replace' => true],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->trustedReplace, true);
+        Assert::same(\count($cfg->trusted->patterns), 2);
+        Assert::true($cfg->trusted->trusts('acme/anything'));
+        Assert::true($cfg->trusted->trusts('foo/bar'));
+        Assert::false($cfg->trusted->trusts('foo/baz'));
+    }
+
+    public function dependenciesTrustedDoesNotImplicitlyEnableManager(): void
+    {
+        // Configuring `trusted` is separate from opting the walk in — an
+        // npm object without `enabled` stays disabled by its per-manager
+        // default.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['npm' => ['trusted' => ['@myorg/*']]]],
+        ]);
+
+        Assert::false($cfg->isLocalEnabled('npm'));
+        Assert::same($cfg->dependencies['npm']->enabled, null);
+        Assert::same($cfg->dependencies['npm']->trusted, ['@myorg/*']);
+    }
+
+    public function dependenciesComposerObjectWithoutEnabledKeepsDefaultOn(): void
+    {
+        // composer's per-manager default is enabled, so a composer object
+        // without `enabled` still resolves to on.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['trusted' => ['acme/*']]]],
+        ]);
+
+        Assert::true($cfg->isLocalEnabled('composer'));
+        Assert::same($cfg->dependencies['composer']->enabled, null);
+    }
+
+    public function dependenciesTrustedReplaceDefaultsFalse(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['trusted' => ['acme/*']]]],
+        ]);
+
+        Assert::same($cfg->trustedReplace, false);
+        Assert::same($cfg->dependencies['composer']->trustedReplace, false);
+    }
+
+    public function dependenciesNpmAcceptsRegistryNamesVendorPatternRejects(): void
+    {
+        // npm patterns validate structurally only and are stored raw —
+        // bare and scoped names that VendorPattern would reject pass.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'dependencies' => ['npm' => ['trusted' => ['lodash', '@scope/pkg', '@scope/*']]],
+            ],
+        ]);
+
+        Assert::same($cfg->dependencies['npm']->trusted, ['lodash', '@scope/pkg', '@scope/*']);
+    }
+
+    public function dependenciesGoAcceptsModulePaths(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'dependencies' => ['go' => ['trusted' => ['github.com/owner/mod', 'github.com/owner/*']]],
+            ],
+        ]);
+
+        Assert::same($cfg->dependencies['go']->trusted, ['github.com/owner/mod', 'github.com/owner/*']);
+    }
+
+    public function dependenciesComposerBadPatternThrows(): void
+    {
+        // composer entries go through the VendorPattern grammar exactly
+        // like the flat `trusted` list.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.dependencies.composer.trusted[0]');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['trusted' => ['bare-name']]]],
+        ]);
+    }
+
+    public function dependenciesNpmNonStringEntryThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills.dependencies.npm.trusted[0] must be a non-empty string');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['npm' => ['trusted' => [42]]]],
+        ]);
+    }
+
+    public function dependenciesDuplicateTrustedEntryThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('duplicates an earlier entry');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['npm' => ['trusted' => ['lodash', 'lodash']]]],
+        ]);
+    }
+
+    public function dependenciesTrustedNotAListThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('dependencies.composer.trusted must be a list of patterns');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['trusted' => ['acme' => '*']]]],
+        ]);
+    }
+
+    public function dependenciesUnknownManagerIdThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('not a known package manager');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['pip' => true]],
+        ]);
+    }
+
+    public function dependenciesUnknownObjectFieldThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('unknown field "enabledd"');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['enabledd' => true]]],
+        ]);
+    }
+
+    public function dependenciesEnabledNonBoolThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('dependencies.composer.enabled must be a boolean');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['enabled' => 'yes']]],
+        ]);
+    }
+
+    public function dependenciesTrustedReplaceNonBoolThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('dependencies.composer.trusted-replace must be a boolean');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['trusted-replace' => 'yes']]],
+        ]);
+    }
+
+    public function dependenciesAsListThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('must be a map of package-manager id');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer']],
+        ]);
+    }
+
+    public function dependencyEntryAsListThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('dependencies.composer must be a boolean or an object');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => ['acme/*']]],
+        ]);
+    }
+
+    public function dependenciesStructureIsExposedOnProjectConfig(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'dependencies' => [
+                    'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+                    'go' => ['trusted' => ['github.com/x/*'], 'trusted-replace' => true],
+                ],
+            ],
+        ]);
+
+        Assert::same(\array_keys($cfg->dependencies), ['composer', 'go']);
+        Assert::same($cfg->dependencies['composer']->enabled, false);
+        Assert::same($cfg->dependencies['composer']->trusted, ['acme/*']);
+        Assert::same($cfg->dependencies['go']->enabled, null);
+        Assert::same($cfg->dependencies['go']->trustedReplace, true);
+        // composer entry drives the flat fields even when disabled.
+        Assert::same($cfg->local['composer'], false);
+        Assert::true($cfg->trusted->trusts('acme/x'));
+    }
+
+    // ── dependencies: folding equivalence with the flat legacy form ─────
+
+    public function dependenciesFoldingMatchesFlatForm(): void
+    {
+        // The new block and the equivalent flat trio must produce
+        // identical `trusted` / `trustedReplace` / `local` fields.
+        $flat = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'trusted' => ['acme/*', 'foo/bar'],
+                'trusted-replace' => true,
+                'local' => ['composer' => true, 'npm' => false],
+            ],
+        ]);
+        $new = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'dependencies' => [
+                    'composer' => ['enabled' => true, 'trusted' => ['acme/*', 'foo/bar'], 'trusted-replace' => true],
+                    'npm' => false,
+                ],
+            ],
+        ]);
+
+        Assert::same($flat->trustedReplace, $new->trustedReplace);
+        Assert::same($flat->local, $new->local);
+        Assert::same(
+            \array_map(static fn(\LLM\Skills\Config\VendorPattern $p): string => $p->raw, $flat->trusted->patterns),
+            \array_map(static fn(\LLM\Skills\Config\VendorPattern $p): string => $p->raw, $new->trusted->patterns),
+        );
+    }
+
+    public function legacyFlatFormLeavesDependenciesStructureEmpty(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['trusted' => ['acme/*']],
+        ]);
+
+        Assert::same($cfg->dependencies, []);
+        Assert::true($cfg->trusted->trusts('acme/x'));
+    }
+
+    // ── dependencies: mixing with legacy keys is fatal ──────────────────
+
+    public function dependenciesWithLegacyTrustedInlineThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills: both "dependencies" and legacy "trusted" are present; keep "dependencies" only');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => true], 'trusted' => ['acme/*']],
+        ]);
+    }
+
+    public function dependenciesWithLegacyTrustedReplaceInlineThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills: both "dependencies" and legacy "trusted-replace" are present; keep "dependencies" only');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => true], 'trusted-replace' => true],
+        ]);
+    }
+
+    public function dependenciesWithLegacyLocalInlineThrows(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('extra.skills: both "dependencies" and legacy "local" are present; keep "dependencies" only');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['dependencies' => ['composer' => true], 'local' => ['npm' => true]],
+        ]);
+    }
+
+    public function dependenciesWithLegacyTrustedInSkillsJsonThrows(): void
+    {
+        $this->writeSkillsJson(['dependencies' => ['composer' => true], 'trusted' => ['acme/*']]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json: both "dependencies" and legacy "trusted" are present; keep "dependencies" only');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function dependenciesWithLegacyTrustedReplaceInSkillsJsonThrows(): void
+    {
+        $this->writeSkillsJson(['dependencies' => ['composer' => true], 'trusted-replace' => true]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json: both "dependencies" and legacy "trusted-replace" are present; keep "dependencies" only');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function dependenciesWithLegacyLocalInSkillsJsonThrows(): void
+    {
+        $this->writeSkillsJson(['dependencies' => ['composer' => true], 'local' => ['npm' => true]]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json: both "dependencies" and legacy "local" are present; keep "dependencies" only');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    // ── dependencies: deprecation flag lists the legacy keys used ───────
+
+    public function forProjectInlineDependenciesDoesNotFlagDeprecation(): void
+    {
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['dependencies' => ['composer' => true]]],
+        );
+
+        Assert::same($resolution->usedDeprecatedDependencyKeys, []);
+    }
+
+    public function forProjectInlineLegacyTrustedFlagsDeprecation(): void
+    {
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['trusted' => ['acme/*']]],
+        );
+
+        Assert::same($resolution->usedDeprecatedDependencyKeys, ['trusted']);
+    }
+
+    public function forProjectListsEveryLegacyDependencyKeyFound(): void
+    {
+        // The flag names exactly the legacy keys the winning block used,
+        // in canonical order.
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => [
+                'trusted' => ['acme/*'],
+                'trusted-replace' => true,
+                'local' => ['composer' => true],
+            ]],
+        );
+
+        Assert::same($resolution->usedDeprecatedDependencyKeys, ['trusted', 'trusted-replace', 'local']);
+    }
+
+    public function forProjectExternalLegacyDependencyKeysFlagDeprecation(): void
+    {
+        $this->writeSkillsJson(['local' => ['composer' => true], 'trusted' => ['acme/*']]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->usedDeprecatedDependencyKeys, ['trusted', 'local']);
+    }
+
+    public function forProjectExternalDependenciesDoesNotFlagDeprecation(): void
+    {
+        $this->writeSkillsJson(['dependencies' => ['composer' => ['trusted' => ['acme/*']]]]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->usedDeprecatedDependencyKeys, []);
+    }
+
     /**
      * @param array<string, mixed> $data
      */

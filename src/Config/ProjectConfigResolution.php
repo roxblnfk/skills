@@ -26,6 +26,11 @@ final readonly class ProjectConfigResolution
      *        its donor sources under the deprecated `remote` key instead of `sources`.
      *        Callers surface a deprecation notice; write-mode callers migrate the file
      *        before mapping, so they never observe it set.
+     * @param list<non-empty-string> $usedDeprecatedDependencyKeys legacy dependency keys
+     *        (`trusted`, `trusted-replace`, `local`) the winning block used instead of the
+     *        `dependencies` key. Empty when the block used `dependencies` or declared no
+     *        dependency config. Callers surface a deprecation notice naming these keys;
+     *        write-mode callers migrate the file before mapping, so they never observe it set.
      *
      * @psalm-mutation-free
      */
@@ -33,5 +38,6 @@ final readonly class ProjectConfigResolution
         public ProjectConfig $config,
         public array $ignoredInlineKeys = [],
         public bool $usedDeprecatedSourcesKey = false,
+        public array $usedDeprecatedDependencyKeys = [],
     ) {}
 }

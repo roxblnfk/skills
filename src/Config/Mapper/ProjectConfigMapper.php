@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Config\Mapper;
 
 use Internal\Path;
+use LLM\Skills\Config\DependencyConfig;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\ProjectConfigResolution;
@@ -53,19 +54,40 @@ final readonly class ProjectConfigMapper
     public const DEPRECATED_SOURCES_KEY = 'remote';
 
     /**
+     * Canonical key for per-package-manager dependency config (donor
+     * scanning toggles and scoped trust).
+     */
+    public const DEPENDENCIES_KEY = 'dependencies';
+
+    /**
+     * Legacy keys folded into {@see self::DEPENDENCIES_KEY}, still read
+     * everywhere project config is read and auto-migrated by write-mode
+     * commands. Any of these present alongside `dependencies` is fatal.
+     *
+     * @var list<non-empty-string>
+     */
+    public const DEPRECATED_DEPENDENCY_KEYS = [
+        'trusted',
+        'trusted-replace',
+        'local',
+    ];
+
+    /**
      * Project-level keys understood under `extra.skills`. Donor-side
      * keys (`source`) are deliberately excluded — they describe the
      * package as a donor, not as a consumer, and must not be flagged
      * as "shadowed" when `skills.json` is in effect.
      *
-     * The deprecated `remote` alias stays in the list so a shadowed
-     * inline block still reports it and inline migration can extract it.
+     * The deprecated `remote` alias and the legacy dependency keys stay
+     * in the list so a shadowed inline block still reports them and
+     * inline migration can extract them.
      *
      * @var list<non-empty-string>
      */
     public const PROJECT_KEYS = [
         'target',
         'aliases',
+        self::DEPENDENCIES_KEY,
         'trusted',
         'trusted-replace',
         'discovery',
@@ -104,7 +126,12 @@ final readonly class ProjectConfigMapper
             $mapped = $this->mapSkillsBlock($external, 'skills.json');
             $ignored = $this->collectIgnoredInlineKeys($extra);
 
-            return new ProjectConfigResolution($mapped->config, $ignored, $mapped->usedDeprecatedSourcesKey);
+            return new ProjectConfigResolution(
+                $mapped->config,
+                $ignored,
+                $mapped->usedDeprecatedSourcesKey,
+                $mapped->usedDeprecatedDependencyKeys,
+            );
         }
 
         $mapped = $this->mapExtra($extra);
@@ -112,6 +139,7 @@ final readonly class ProjectConfigMapper
         return new ProjectConfigResolution(
             $mapped->config,
             usedDeprecatedSourcesKey: $mapped->usedDeprecatedSourcesKey,
+            usedDeprecatedDependencyKeys: $mapped->usedDeprecatedDependencyKeys,
         );
     }
 
@@ -329,15 +357,6 @@ final readonly class ProjectConfigMapper
 
         $aliases = $this->mapAliases($skills['aliases'] ?? [], $target, $prefix);
 
-        $trusted = $this->mapTrusted($skills['trusted'] ?? [], $prefix);
-
-        $replace = $skills['trusted-replace'] ?? false;
-        if (!\is_bool($replace)) {
-            throw new MalformedProjectConfig(
-                self::field($prefix, 'trusted-replace') . ' must be a boolean',
-            );
-        }
-
         $discovery = $skills['discovery'] ?? false;
         if (!\is_bool($discovery)) {
             throw new MalformedProjectConfig(
@@ -354,7 +373,31 @@ final readonly class ProjectConfigMapper
 
         $pathFromRoot = $this->mapPathFromRoot($skills['path-from-root'] ?? null, $prefix);
 
-        $local = $this->mapLocal($skills['local'] ?? [], $prefix);
+        // `dependencies` is canonical; `trusted`, `trusted-replace` and
+        // `local` are the legacy aliases folded into it. Either form is
+        // accepted, but mixing them in one block is fatal — the file is
+        // ours and strict, so there is no merge or precedence rule.
+        $usedDeprecatedDependencyKeys = $this->presentLegacyDependencyKeys($skills);
+        if (\array_key_exists(self::DEPENDENCIES_KEY, $skills)) {
+            if ($usedDeprecatedDependencyKeys !== []) {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s: both "%s" and legacy "%s" are present; keep "%s" only',
+                    $prefix,
+                    self::DEPENDENCIES_KEY,
+                    $usedDeprecatedDependencyKeys[0],
+                    self::DEPENDENCIES_KEY,
+                ));
+            }
+
+            $dependencies = $this->mapDependencies($skills[self::DEPENDENCIES_KEY], $prefix);
+            [$trusted, $replace, $local] = $this->foldDependencies($dependencies);
+            $usedDeprecatedDependencyKeys = [];
+        } else {
+            $trusted = $this->mapTrusted($skills['trusted'] ?? [], $prefix);
+            $replace = $this->mapTrustedReplace($skills['trusted-replace'] ?? false, $prefix);
+            $local = $this->mapLocal($skills['local'] ?? [], $prefix);
+            $dependencies = [];
+        }
 
         // `sources` is canonical; `remote` is the deprecated alias feeding
         // the same validator. Both keys in one block is fatal — the file
@@ -383,9 +426,10 @@ final readonly class ProjectConfigMapper
             pathFromRoot: $pathFromRoot,
             local: $local,
             sources: $sources,
+            dependencies: $dependencies,
         );
 
-        return new MappedSkillsBlock($config, $usedDeprecatedSourcesKey);
+        return new MappedSkillsBlock($config, $usedDeprecatedSourcesKey, $usedDeprecatedDependencyKeys);
     }
 
     /**
@@ -438,6 +482,242 @@ final readonly class ProjectConfigMapper
         }
 
         return $raw;
+    }
+
+    /**
+     * Names of the legacy dependency keys (`trusted`, `trusted-replace`,
+     * `local`) present in the block, in canonical order. Used both to
+     * detect illegal mixing with `dependencies` and to record which
+     * aliases the block relied on for the deprecation notice.
+     *
+     * @param array<array-key, mixed> $skills
+     *
+     * @return list<non-empty-string>
+     *
+     * @psalm-pure
+     */
+    private function presentLegacyDependencyKeys(array $skills): array
+    {
+        $present = [];
+        foreach (self::DEPRECATED_DEPENDENCY_KEYS as $key) {
+            if (\array_key_exists($key, $skills)) {
+                $present[] = $key;
+            }
+        }
+
+        return $present;
+    }
+
+    /**
+     * Validate the `trusted-replace` toggle. Shared by the legacy flat
+     * form and, indirectly, the per-manager object form.
+     *
+     * @param non-empty-string $prefix
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
+     */
+    private function mapTrustedReplace(mixed $raw, string $prefix): bool
+    {
+        if (!\is_bool($raw)) {
+            throw new MalformedProjectConfig(
+                self::field($prefix, 'trusted-replace') . ' must be a boolean',
+            );
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Parse the `dependencies` block: a map of package-manager id to a
+     * bool toggle or a per-manager object. Each key must be a known
+     * package manager ({@see ProviderId::LOCAL_IDS}).
+     *
+     * @param non-empty-string $prefix
+     *
+     * @return array<non-empty-string, DependencyConfig>
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function mapDependencies(mixed $raw, string $prefix): array
+    {
+        if ($raw === [] || $raw === null) {
+            return [];
+        }
+        if (!\is_array($raw) || \array_is_list($raw)) {
+            throw new MalformedProjectConfig(
+                self::field($prefix, self::DEPENDENCIES_KEY)
+                . ' must be a map of package-manager id to boolean or object',
+            );
+        }
+
+        $out = [];
+        /** @var mixed $value */
+        foreach ($raw as $id => $value) {
+            if (!\is_string($id) || $id === '') {
+                throw new MalformedProjectConfig(
+                    self::field($prefix, self::DEPENDENCIES_KEY) . ' keys must be non-empty strings',
+                );
+            }
+            if (!ProviderId::isKnownLocal($id)) {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s.%s is not a known package manager (known: %s)',
+                    self::field($prefix, self::DEPENDENCIES_KEY),
+                    $id,
+                    \implode(', ', ProviderId::LOCAL_IDS),
+                ));
+            }
+            $out[$id] = $this->mapDependencyEntry($value, $id, $prefix);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Parse one `dependencies` entry. `true` / `false` are shorthand for
+     * `{ "enabled": <bool> }`; an object carries `enabled`, `trusted` and
+     * `trusted-replace`, all optional. Unknown object fields are fatal —
+     * the structure is ours and strict.
+     *
+     * @param non-empty-string $id already-validated package-manager id
+     * @param non-empty-string $prefix
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function mapDependencyEntry(mixed $raw, string $id, string $prefix): DependencyConfig
+    {
+        $field = self::field($prefix, self::DEPENDENCIES_KEY) . '.' . $id;
+
+        if (\is_bool($raw)) {
+            return new DependencyConfig(enabled: $raw, trusted: [], trustedReplace: false);
+        }
+
+        if (!\is_array($raw) || \array_is_list($raw)) {
+            throw new MalformedProjectConfig($field . ' must be a boolean or an object');
+        }
+
+        foreach ($raw as $key => $_value) {
+            if ($key !== 'enabled' && $key !== 'trusted' && $key !== 'trusted-replace') {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s has unknown field "%s"; allowed fields: enabled, trusted, trusted-replace',
+                    $field,
+                    (string) $key,
+                ));
+            }
+        }
+
+        // `enabled` absent stays null so the caller can fall back to the
+        // per-manager default — configuring `trusted` never enables a
+        // manager implicitly.
+        $enabled = $raw['enabled'] ?? null;
+        if ($enabled !== null && !\is_bool($enabled)) {
+            throw new MalformedProjectConfig($field . '.enabled must be a boolean');
+        }
+
+        $replace = $raw['trusted-replace'] ?? false;
+        if (!\is_bool($replace)) {
+            throw new MalformedProjectConfig($field . '.trusted-replace must be a boolean');
+        }
+
+        $trusted = $this->mapDependencyTrusted($raw['trusted'] ?? [], $id, $field);
+
+        return new DependencyConfig(enabled: $enabled, trusted: $trusted, trustedReplace: $replace);
+    }
+
+    /**
+     * Validate a per-manager `trusted` list. Composer patterns go through
+     * the {@see VendorPattern} grammar exactly like the flat `trusted`
+     * list; npm/go patterns validate structurally only (non-empty
+     * strings) — their grammars reject npm/go names by design and are
+     * enforced when the providers land. Duplicates are fatal for every
+     * manager. Patterns are stored raw regardless of manager.
+     *
+     * @param non-empty-string $id already-validated package-manager id
+     * @param non-empty-string $field error-message prefix, e.g. `skills.json: dependencies.npm`
+     *
+     * @return list<non-empty-string>
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function mapDependencyTrusted(mixed $raw, string $id, string $field): array
+    {
+        if (!\is_array($raw) || !\array_is_list($raw)) {
+            throw new MalformedProjectConfig($field . '.trusted must be a list of patterns');
+        }
+
+        $isComposer = $id === ProviderId::COMPOSER;
+        $out = [];
+        $seen = [];
+        /** @var int $index */
+        foreach ($raw as $index => $value) {
+            if (!\is_string($value) || $value === '') {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s.trusted[%d] must be a non-empty string',
+                    $field,
+                    $index,
+                ));
+            }
+
+            if ($isComposer) {
+                try {
+                    VendorPattern::fromString($value);
+                } catch (\InvalidArgumentException $e) {
+                    throw new MalformedProjectConfig(\sprintf(
+                        '%s.trusted[%d]: %s',
+                        $field,
+                        $index,
+                        $e->getMessage(),
+                    ));
+                }
+            }
+
+            if (isset($seen[$value])) {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s.trusted[%d] (%s) duplicates an earlier entry',
+                    $field,
+                    $index,
+                    $value,
+                ));
+            }
+            $seen[$value] = true;
+            $out[] = $value;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Fold the parsed per-manager block into the flat runtime fields
+     * {@see ProjectConfig} still exposes: every manager's resolved
+     * `enabled` populates the `local` toggle map, and the `composer`
+     * entry (the only manager with a live provider) drives `trusted` and
+     * `trustedReplace`.
+     *
+     * @param array<non-empty-string, DependencyConfig> $dependencies
+     *
+     * @return array{TrustedVendors, bool, array<non-empty-string, bool>}
+     *
+     * @psalm-mutation-free
+     */
+    private function foldDependencies(array $dependencies): array
+    {
+        $local = [];
+        foreach ($dependencies as $id => $config) {
+            $local[$id] = $config->isEnabled($id);
+        }
+
+        $composer = $dependencies[ProviderId::COMPOSER] ?? null;
+        $trusted = $composer?->trustedVendors() ?? TrustedVendors::empty();
+        $replace = $composer?->trustedReplace ?? false;
+
+        return [$trusted, $replace, $local];
     }
 
     /**
