@@ -177,6 +177,24 @@ final class ReportFormatterTest
         Assert::true(\str_contains($joined, '[via built-in trust]'));
     }
 
+    public function annotatesDeclaredTrustOnPackageRow(): void
+    {
+        // A donor the user declared as a `sources[]` entry is trusted by
+        // that declaration itself; the annotation must credit it instead
+        // of whichever trust list the name happens to match.
+        $donor = $this->donorInspection(
+            packageName: 'myorg/local-skills',
+            source: '.',
+            trust: TrustSource::Declared,
+            skills: [['dir-hello', SyncStatus::InSync]],
+        );
+
+        $joined = $this->renderJoined($donor);
+
+        Assert::true(\str_contains($joined, '[declared in skills.json]'));
+        Assert::false(\str_contains($joined, '[via built-in trust]'));
+    }
+
     public function doesNotAnnotateProjectOrCliTrust(): void
     {
         $project = $this->donorInspection(

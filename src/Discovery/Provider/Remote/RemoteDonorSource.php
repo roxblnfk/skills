@@ -26,7 +26,7 @@ use Internal\Path;
 interface RemoteDonorSource
 {
     /**
-     * @return iterable<RemoteDonorRef>
+     * @return iterable<RemoteDonorRef|DirDonorRef>
      *
      * @psalm-suppress MissingAbstractPureAnnotation
      *         implementations talk to filesystem / config and are not pure

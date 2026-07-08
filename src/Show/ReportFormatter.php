@@ -186,6 +186,7 @@ final readonly class ReportFormatter
             foreach ($donors as $donor) {
                 [, $pkgTail] = $this->splitName($donor->donor->packageName);
                 $trustNote = match ($donor->trustSource) {
+                    TrustSource::Declared => '    [declared in skills.json]',
                     TrustSource::Builtin => '    [via built-in trust]',
                     TrustSource::DirectDep => '    [via direct dependency]',
                     default => '',

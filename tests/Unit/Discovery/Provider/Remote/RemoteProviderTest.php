@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Discovery\Provider\Remote;
 
 use Internal\Path;
+use LLM\Skills\Discovery\Provider\Remote\DirDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\NullRemoteDonorSource;
 use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\RemoteDonorSource;
@@ -33,6 +34,7 @@ use Testo\Test;
 #[Covers(RemoteProvider::class)]
 #[Covers(NullRemoteDonorSource::class)]
 #[Covers(RemoteDonorRef::class)]
+#[Covers(DirDonorRef::class)]
 #[Covers(RemoteFetchException::class)]
 final class RemoteProviderTest
 {
@@ -351,6 +353,120 @@ final class RemoteProviderTest
         Assert::count($result->warnings, 1);
     }
 
+    // ── dir refs ──────────────────────────────────────────────────────────────
+
+    public function dirRefReadsLiveDirectoryAndDecoratesDonor(): void
+    {
+        // A dir ref carries a resolved directory; the provider reads it
+        // in place (no fetcher wired) and decorates the donor with the
+        // ref's `dir` provenance + implicit trust.
+        $dir = $this->makeExtracted(
+            'live-dir',
+            \json_encode([
+                'name' => 'acme/local',
+                'extra' => ['skills' => ['source' => 'skills']],
+            ]),
+        );
+
+        $provider = new RemoteProvider(
+            $this->sourceWithMixedRefs($this->dirRef($dir, packageHint: 'acme/local')),
+        );
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/local');
+        Assert::same($result->donors[0]->provenance, 'dir');
+        Assert::true($result->donors[0]->implicitTrust);
+        Assert::same($result->warnings, []);
+    }
+
+    public function dirRefMissingDirectoryWarnsAndSkipsWithoutBlockingSiblings(): void
+    {
+        // First dir ref points at a directory that does not exist → a
+        // per-entry warning, skipped. The sibling dir ref still produces
+        // its donor.
+        $missing = Path::create($this->tmp . '/does-not-exist');
+        $good = $this->makeExtracted(
+            'good-dir',
+            \json_encode([
+                'name' => 'acme/good',
+                'extra' => ['skills' => ['source' => 'skills']],
+            ]),
+        );
+
+        $provider = new RemoteProvider($this->sourceWithMixedRefs(
+            $this->dirRef($missing, spelling: './missing'),
+            $this->dirRef($good, spelling: './good', packageHint: 'acme/good'),
+        ));
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/good');
+        Assert::count($result->warnings, 1);
+        Assert::true(\str_contains($result->warnings[0], 'dir ./missing'));
+        Assert::true(\str_contains($result->warnings[0], 'directory does not exist'));
+    }
+
+    public function dirRefBareSkillDirUsesDerivedHintForItsName(): void
+    {
+        // No composer.json, but the directory ships SKILL.md files: the
+        // donor name comes from the ref's packageHint (the derived
+        // `<parent>/<basename>` name the source computed).
+        $dir = $this->makeExtracted('bare-dir');
+        $this->writeSkill($dir);
+
+        $provider = new RemoteProvider(
+            $this->sourceWithMixedRefs($this->dirRef($dir, packageHint: 'team/skills')),
+        );
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'team/skills');
+        Assert::false($result->donors[0]->discovered);
+        Assert::same($result->warnings, []);
+    }
+
+    public function dirRefComposerShapedUsesItsOwnComposerName(): void
+    {
+        // The directory carries a composer.json with a name + skills
+        // source; that name wins over the ref's derived packageHint.
+        $dir = $this->makeExtracted(
+            'composer-dir',
+            \json_encode([
+                'name' => 'real/name',
+                'extra' => ['skills' => ['source' => 'skills']],
+            ]),
+        );
+
+        $provider = new RemoteProvider(
+            $this->sourceWithMixedRefs($this->dirRef($dir, packageHint: 'derived/hint')),
+        );
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'real/name');
+    }
+
+    public function dirRefAllowlistThreadsIntoDonor(): void
+    {
+        $dir = $this->makeExtracted(
+            'allowlist-dir',
+            \json_encode([
+                'name' => 'acme/local',
+                'extra' => ['skills' => ['source' => 'skills']],
+            ]),
+        );
+        $this->writeSkill($dir);
+
+        $provider = new RemoteProvider($this->sourceWithMixedRefs(
+            $this->dirRef($dir, packageHint: 'acme/local', skillFilter: ['example']),
+        ));
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->skillFilter, ['example']);
+    }
+
     public function directDependenciesAlwaysEmpty(): void
     {
         // Even with active source + working fetcher: remote refs are
@@ -381,6 +497,52 @@ final class RemoteProviderTest
     private function ref(string $url, string $ref): RemoteDonorRef
     {
         return new RemoteDonorRef($url, $ref);
+    }
+
+    /**
+     * @param non-empty-string $spelling
+     * @param non-empty-string|null $packageHint
+     * @param list<non-empty-string>|null $skillFilter
+     */
+    private function dirRef(
+        Path $directory,
+        string $spelling = './dir-src',
+        ?string $packageHint = 'acme/local',
+        ?array $skillFilter = null,
+    ): DirDonorRef {
+        return new DirDonorRef(
+            directory: $directory,
+            spelling: $spelling,
+            provenance: 'dir',
+            skillFilter: $skillFilter,
+            packageHint: $packageHint,
+        );
+    }
+
+    private function sourceWithMixedRefs(RemoteDonorRef|DirDonorRef ...$refs): RemoteDonorSource
+    {
+        return new class($refs) implements RemoteDonorSource {
+            /** @param list<RemoteDonorRef|DirDonorRef> $refs */
+            public function __construct(private readonly array $refs) {}
+
+            #[\Override]
+            public function refs(Path $projectRoot): iterable
+            {
+                return $this->refs;
+            }
+
+            #[\Override]
+            public function warnings(): array
+            {
+                return [];
+            }
+
+            #[\Override]
+            public function hasRefs(Path $projectRoot): bool
+            {
+                return $this->refs !== [];
+            }
+        };
     }
 
     private function sourceWithRefs(RemoteDonorRef ...$refs): RemoteDonorSource

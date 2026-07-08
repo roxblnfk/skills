@@ -37,16 +37,20 @@ final class AddCliDefinition
                 'input',
                 InputArgument::REQUIRED,
                 'Adapter-specific identifier: shorthand (owner/repo), a full URL, '
-                . 'or shorthand@ref. The adapter (selected via --from or inferred '
-                . 'from a URL) decides how to interpret it.',
+                . 'shorthand@ref, or a local directory path (./skills, ../shared, '
+                . 'an absolute path). The adapter (selected via --from, inferred '
+                . 'from a URL, or inferred from a path prefix) decides how to '
+                . 'interpret it.',
             )
             ->addOption(
                 'from',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Adapter id (github, gitlab, …). Defaults to "github" for shorthand '
-                . 'input. When a full URL is passed, the adapter is selected from '
-                . 'the URL\'s host (and `--from` is only needed to override).',
+                'Adapter id (github, gitlab, dir, …). Defaults to "github" for '
+                . 'shorthand input. A path-shaped input (./skills, ../shared, an '
+                . 'absolute path) selects "dir" automatically. When a full URL is '
+                . 'passed, the adapter is selected from the URL\'s host (and '
+                . '`--from` is only needed to override).',
             )
             ->addOption(
                 'host',

@@ -9,6 +9,7 @@ use LLM\Skills\Discovery\DiscoveredSkill;
 use LLM\Skills\Discovery\SkillTreeScanner;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -186,6 +187,27 @@ final class SkillTreeScannerTest
         $skills = (new SkillTreeScanner())->scan(Path::create($packageRoot));
 
         Assert::same($skills, []);
+    }
+
+    public function doesNotDiscoverSkillsInsideALinkedSubdirectory(): void
+    {
+        // A symlink/junction inside a container is not first-party content and
+        // could point anywhere; the scan must not follow it into discovery,
+        // even when its target sits within the package root (so the realpath
+        // containment check alone would not catch it).
+        $this->makeSkill('skills/real');
+
+        $planted = $this->tmp . '/outside/planted';
+        \mkdir($planted, 0o777, true);
+        \file_put_contents($planted . '/SKILL.md', "---\nname: planted\n---\nbody");
+
+        $made = Filesystem::makeDirLink($this->tmp . '/outside', $this->tmp . '/skills/linked');
+        if (!$made) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        // Only the genuine directory is discovered; the linked subtree is not.
+        Assert::same($this->names($this->scan()), ['real']);
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

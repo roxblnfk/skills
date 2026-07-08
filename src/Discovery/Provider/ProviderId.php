@@ -32,6 +32,7 @@ final class ProviderId
     public const SKILLS_SH = 'skills.sh';
     public const HTTP = 'http';
     public const ZIP = 'zip';
+    public const DIR = 'dir';
 
     /**
      * Identifiers that may appear as keys under `local`. Today only
@@ -63,6 +64,7 @@ final class ProviderId
         self::SKILLS_SH,
         self::HTTP,
         self::ZIP,
+        self::DIR,
     ];
 
     /**
@@ -73,6 +75,19 @@ final class ProviderId
     public const URL_ONLY_REMOTE_IDS = [
         self::HTTP,
         self::ZIP,
+    ];
+
+    /**
+     * Adapters that identify the donor by a filesystem `path` — neither
+     * URL-only nor name-based. A path-only entry is an explicit local
+     * directory declaration; it requires `path`, forbids `url`, and
+     * treats `package` as an optional name override rather than the
+     * identifier.
+     *
+     * @var list<non-empty-string>
+     */
+    public const PATH_ONLY_SOURCE_IDS = [
+        self::DIR,
     ];
 
     /**
@@ -101,6 +116,19 @@ final class ProviderId
     public static function isUrlOnlyRemote(string $id): bool
     {
         return \in_array($id, self::URL_ONLY_REMOTE_IDS, true);
+    }
+
+    /**
+     * Whether the adapter identifies its donor by a filesystem `path`
+     * (rather than by package name or URL). Path-only adapters require
+     * `path`, reject `url`, and accept `package` only as an optional
+     * name override.
+     *
+     * @psalm-pure
+     */
+    public static function isPathOnlySource(string $id): bool
+    {
+        return \in_array($id, self::PATH_ONLY_SOURCE_IDS, true);
     }
 
     /**

@@ -10,6 +10,7 @@ use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
+use LLM\Skills\Discovery\Provider\Remote\DirDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\RemoteDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\SkillsJsonRemoteDonorSource;
 use LLM\Skills\Tests\Testo\Filesystem;
@@ -184,8 +185,109 @@ final class SkillsJsonRemoteDonorSourceTest
         Assert::count($source->warnings(), 1);
     }
 
+    public function dirEntryResolvesRelativeToProjectRoot(): void
+    {
+        // A `dir` entry never touches the host-adapter registry; the
+        // source resolves the path (relative → anchored at the project
+        // root) into a DirDonorRef tagged with `dir` provenance.
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'dir', 'path' => './skills']],
+        ]);
+        $source = new SkillsJsonRemoteDonorSource(new HostAdapterRegistry());
+
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        Assert::count($refs, 1);
+        $ref = $refs[0];
+        Assert::instanceOf($ref, DirDonorRef::class);
+        Assert::same((string) $ref->directory, (string) Path::create($this->tmp)->join('skills'));
+        Assert::same($ref->spelling, './skills');
+        Assert::same($ref->describe(), 'dir ./skills');
+        Assert::same($ref->provenance, 'dir');
+        Assert::same($source->warnings(), []);
+    }
+
+    public function dirEntryHonoursAbsolutePathAsIs(): void
+    {
+        $absolute = $this->tmp . '/shared-skills';
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'dir', 'path' => $absolute]],
+        ]);
+        $source = new SkillsJsonRemoteDonorSource(new HostAdapterRegistry());
+
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        Assert::count($refs, 1);
+        $ref = $refs[0];
+        Assert::instanceOf($ref, DirDonorRef::class);
+        // Absolute input is used verbatim, not re-anchored at the root.
+        Assert::same((string) $ref->directory, (string) Path::create($absolute));
+    }
+
+    public function dirEntryDerivesPackageNameFromResolvedPath(): void
+    {
+        // No `package` override → the donor name is `<parent>/<basename>`
+        // of the resolved path, lowercased.
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'dir', 'path' => './Team/Skills']],
+        ]);
+        $source = new SkillsJsonRemoteDonorSource(new HostAdapterRegistry());
+
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        $ref = $refs[0];
+        Assert::instanceOf($ref, DirDonorRef::class);
+        Assert::same($ref->packageHint, 'team/skills');
+    }
+
+    public function dirEntryPackageOverrideWinsOverDerivedName(): void
+    {
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'dir', 'path' => './skills', 'package' => 'myorg/shared']],
+        ]);
+        $source = new SkillsJsonRemoteDonorSource(new HostAdapterRegistry());
+
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        $ref = $refs[0];
+        Assert::instanceOf($ref, DirDonorRef::class);
+        Assert::same($ref->packageHint, 'myorg/shared');
+    }
+
+    public function dirEntryAtFilesystemRootFallsBackToDirVendor(): void
+    {
+        // A path whose resolved parent is a filesystem root has no usable
+        // vendor segment, so the name falls back to `dir/<basename>`.
+        // The resolution is purely lexical — the directory need not exist.
+        $rootChild = \DIRECTORY_SEPARATOR === '\\' ? 'Z:/loneskills' : '/loneskills';
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'dir', 'path' => $rootChild]],
+        ]);
+        $source = new SkillsJsonRemoteDonorSource(new HostAdapterRegistry());
+
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        $ref = $refs[0];
+        Assert::instanceOf($ref, DirDonorRef::class);
+        Assert::same($ref->packageHint, 'dir/loneskills');
+    }
+
+    public function dirEntryCarriesSkillAllowlist(): void
+    {
+        $this->writeSkillsJson([
+            'sources' => [['from' => 'dir', 'path' => './skills', 'skills' => ['deploy']]],
+        ]);
+        $source = new SkillsJsonRemoteDonorSource(new HostAdapterRegistry());
+
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        $ref = $refs[0];
+        Assert::instanceOf($ref, DirDonorRef::class);
+        Assert::same($ref->skillFilter, ['deploy']);
+    }
+
     /**
-     * @return list<RemoteDonorRef>
+     * @return list<RemoteDonorRef|DirDonorRef>
      */
     private function collect(iterable $refs): array
     {

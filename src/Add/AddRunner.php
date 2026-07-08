@@ -14,6 +14,7 @@ use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\ParsedAddInput;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\UnknownAdapterException;
+use LLM\Skills\Discovery\Provider\Remote\DirDonorRef;
 use LLM\Skills\Discovery\Provider\Remote\DonorArchiveInspector;
 use LLM\Skills\Discovery\Provider\Remote\DonorArchiveRejection;
 use LLM\Skills\Discovery\Provider\Remote\RefResolver;
@@ -51,6 +52,13 @@ use Symfony\Component\Console\Command\Command;
  *
  * Errors at any step return {@see Command::FAILURE} with a clear
  * message via the {@see IOInterface}.
+ *
+ * A path-only `dir` input short-circuits this flow: it has no host,
+ * ref, or archive to fetch, so {@see self::runDir()} handles it ahead
+ * of adapter selection — normalise the path, inspect the directory
+ * (refusing a missing or non-donor shape, just as the remote path
+ * refuses an unusable archive), upsert the entry, and hand the
+ * inspected donor name to `$onRegistered` for the scoped sync.
  */
 final readonly class AddRunner
 {
@@ -86,6 +94,14 @@ final readonly class AddRunner
         AddOptions $options,
         ?\Closure $onRegistered = null,
     ): int {
+        // A `dir` input never flows through a HostAdapter — there is no
+        // host, no ref cascade, and no network — so it takes a dedicated
+        // branch ahead of adapter selection instead of a synthetic
+        // adapter that would have nothing to resolve.
+        if (self::isDirInput($options)) {
+            return $this->runDir($projectRoot, $io, $options, $onRegistered);
+        }
+
         // Step 1: adapter selection.
         $adapter = $this->selectAdapter($options, $io);
         if ($adapter === null) {
@@ -165,6 +181,41 @@ final readonly class AddRunner
     }
 
     /**
+     * Whether the input selects the path-only `dir` adapter. Explicit
+     * `--from=dir` forces it (even for a bare name that happens to be a
+     * directory); otherwise, with no `--from`, an input that opens with
+     * a path prefix (`./`, `../`, `/`, `\`, a drive letter `X:`, or the
+     * backslash spellings of those) is treated as a local directory.
+     * A shorthand like `owner/repo` lacks a path prefix, so it never
+     * collides with this heuristic.
+     *
+     * @psalm-pure
+     */
+    private static function isDirInput(AddOptions $options): bool
+    {
+        if ($options->from === ProviderId::DIR) {
+            return true;
+        }
+        if ($options->from !== null) {
+            return false;
+        }
+        return self::looksLikePath($options->input);
+    }
+
+    /**
+     * Path-shape heuristic: the input starts with `./`, `../`, a bare
+     * separator (`/` or `\`), or a Windows drive-letter prefix (`X:`).
+     * The `./` and `../` forms accept either separator so a Windows
+     * `.\skills` spelling is recognised too.
+     *
+     * @psalm-pure
+     */
+    private static function looksLikePath(string $input): bool
+    {
+        return \preg_match('~^(\.\.?[/\\\\]|[/\\\\]|[a-zA-Z]:)~', $input) === 1;
+    }
+
+    /**
      * Build a {@see SourceEntry} from the parsed input for the
      * adapter's `resolve()` call. The synthesised entry differs
      * from what will eventually land in `skills.json` only in that
@@ -195,6 +246,112 @@ final readonly class AddRunner
     private static function looksLikeUrl(string $input): bool
     {
         return \preg_match('~^https?://~i', $input) === 1;
+    }
+
+    /**
+     * Register a local directory donor. No adapter, no ref resolution,
+     * no fetch: the input is normalised to forward slashes and kept as
+     * typed (relative stays relative, absolute stays absolute), and the
+     * directory's existence is checked once — an explicit add of a
+     * missing directory is a typo worth refusing loudly.
+     *
+     * The directory is then inspected through the shared
+     * {@see DonorArchiveInspector} — a cheap local read, no network —
+     * with the same package hint the sync source derives. A non-donor
+     * shape (no composer.json donor declaration, no SKILL.md files) is
+     * refused before anything is written, mirroring the remote path's
+     * "refuse to register a donor we cannot actually use" contract.
+     * On success the inspection yields the donor's true package name,
+     * which scopes the follow-up sync so it filters on the same name
+     * the sync pipeline registers this directory under.
+     *
+     * @param \Closure(SourceEntry, non-empty-string):void|null $onRegistered
+     */
+    private function runDir(
+        Path $projectRoot,
+        IOInterface $io,
+        AddOptions $options,
+        ?\Closure $onRegistered,
+    ): int {
+        // `--ref` / `--host` carry no meaning for a directory; reject
+        // them up front with the same framing the mapper uses when it
+        // finds `ref`/`host` on a stored `dir` entry.
+        if ($options->ref !== null) {
+            $io->writeError('<error>[llm/skills] --ref is not allowed for adapter "dir"</error>');
+            return Command::INVALID;
+        }
+        if ($options->host !== null) {
+            $io->writeError('<error>[llm/skills] --host is not allowed for adapter "dir"</error>');
+            return Command::INVALID;
+        }
+
+        /** @var non-empty-string $spelling forward-slash spelling of a non-empty input */
+        $spelling = \str_replace('\\', '/', $options->input);
+
+        $typed = Path::create($spelling);
+        $resolved = $typed->isAbsolute() ? $typed : $projectRoot->join($typed);
+
+        if (!$resolved->isDir()) {
+            $io->writeError(\sprintf(
+                '<error>[llm/skills] dir %s: directory does not exist</error>',
+                $spelling,
+            ));
+            return Command::FAILURE;
+        }
+
+        // Inspect the live directory with the same shared inspector the
+        // sync path runs, using the package hint the sync source derives
+        // (§4.1). Refusing a non-donor shape here keeps `skills:add` from
+        // writing an entry the sync would then ignore — a skill declared
+        // but never copied.
+        $inspection = $this->inspector->inspect(
+            $resolved,
+            DirDonorRef::derivePackageName($resolved),
+        );
+
+        $rejection = $inspection->rejection;
+        if ($rejection !== null) {
+            $io->writeError('<error>[llm/skills] '
+                . $this->describeDirRejection($rejection, $inspection->detail, $spelling)
+                . '</error>');
+            return Command::FAILURE;
+        }
+
+        /** @var non-empty-string $donorPackageName the inspector always names an accepted donor */
+        $donorPackageName = $inspection->packageName;
+
+        $entry = new SourceEntry(
+            from: ProviderId::DIR,
+            package: null,
+            url: null,
+            host: null,
+            ref: null,
+            skills: $options->skills,
+            path: $spelling,
+        );
+
+        try {
+            $this->writer->upsertSource($projectRoot, $entry);
+        } catch (\Throwable $e) {
+            $io->writeError('<error>[llm/skills] failed to update skills.json: ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
+
+        $io->write(\sprintf(
+            '<info>[llm/skills] registered %s:%s</info>',
+            $entry->from,
+            $entry->identifier(),
+        ));
+
+        // Scope the follow-up sync on the donor's true package name: for
+        // a composer-shaped directory the inspection returns its
+        // composer.json `name`; for a bare skill directory it returns the
+        // derived hint. Either way it matches the name the sync pipeline
+        // registers this directory under (§4.1), so the scoped sync finds
+        // the donor and copies its skills.
+        $onRegistered?->__invoke($entry, $donorPackageName);
+
+        return Command::SUCCESS;
     }
 
     /**
@@ -355,5 +512,39 @@ final readonly class AddRunner
                 $adapterId,
             ),
         };
+    }
+
+    /**
+     * Phrase a {@see DonorArchiveRejection} for a `dir` add. Mirrors
+     * {@see self::describeRejection()} but frames the reason against the
+     * inspected directory (`dir <spelling>: …`) rather than a fetched
+     * archive. `NoPackageName` is unreachable for a directory — the hint
+     * derived from the path is always present — but is phrased for
+     * completeness so the match stays exhaustive.
+     *
+     * @param non-empty-string $spelling
+     *
+     * @psalm-pure
+     */
+    private function describeDirRejection(
+        DonorArchiveRejection $rejection,
+        ?string $detail,
+        string $spelling,
+    ): string {
+        $reason = match ($rejection) {
+            DonorArchiveRejection::ComposerJsonUnreadable =>
+                'failed to read composer.json',
+            DonorArchiveRejection::ComposerJsonInvalidJson =>
+                'composer.json is not valid JSON: ' . ($detail ?? ''),
+            DonorArchiveRejection::ComposerJsonNotObject =>
+                'composer.json must be a JSON object',
+            DonorArchiveRejection::NoDonorShape =>
+                'directory ships neither a composer.json with extra.skills.source '
+                . 'nor any SKILL.md files — cannot register as a skill donor',
+            DonorArchiveRejection::NoPackageName =>
+                'directory ships SKILL.md files but no package name to register it under',
+        };
+
+        return \sprintf('dir %s: %s', $spelling, $reason);
     }
 }

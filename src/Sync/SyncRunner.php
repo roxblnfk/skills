@@ -231,6 +231,8 @@ final readonly class SyncRunner
         }
 
         $this->emitCopyReport($io, $report->copied, $options->dryRun);
+        $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
+        $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
@@ -384,6 +386,45 @@ final readonly class SyncRunner
     {
         foreach ($warnings as $warning) {
             $io->writeError('<comment>[warn] ' . $warning . '</comment>', verbosity: IOInterface::VERBOSE);
+        }
+    }
+
+    /**
+     * Surface the symlinks and junctions the copy step refused to follow.
+     * They are skipped for security — a link inside a donor could drag in a
+     * tree beyond the skill — but a silent skip is a debugging trap: the user
+     * must be able to see why a file did not land. Shown under `-v`, matching
+     * the other non-fatal diagnostics.
+     *
+     * @param list<string> $skippedLinks
+     */
+    private function emitSkippedLinkWarnings(IOInterface $io, array $skippedLinks): void
+    {
+        foreach ($skippedLinks as $link) {
+            $io->writeError(
+                '<comment>[warn] skipped symlink/junction (not followed for security): '
+                . $link . '</comment>',
+                verbosity: IOInterface::VERBOSE,
+            );
+        }
+    }
+
+    /**
+     * Surface the directories where the copy hit its depth backstop and left
+     * the nested contents uncopied. Like the skipped links, this is a
+     * non-fatal diagnostic shown under `-v`: a silently truncated tree would
+     * leave the user unable to see why deeply nested files did not land.
+     *
+     * @param list<string> $truncatedDirs
+     */
+    private function emitTruncatedDirWarnings(IOInterface $io, array $truncatedDirs): void
+    {
+        foreach ($truncatedDirs as $dir) {
+            $io->writeError(
+                '<comment>[warn] copy depth limit reached; contents below this directory '
+                . 'were not copied: ' . $dir . '</comment>',
+                verbosity: IOInterface::VERBOSE,
+            );
         }
     }
 

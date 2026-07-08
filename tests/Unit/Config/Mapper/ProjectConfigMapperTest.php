@@ -1000,6 +1000,191 @@ final class ProjectConfigMapperTest
         Assert::same($resolution->ignoredInlineKeys, ['sources', 'remote']);
     }
 
+    // ── dir (path-only) adapter ─────────────────────────────────────────
+
+    public function dirAdapterParses(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'dir', 'path' => './skills'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->sources, 1);
+        $entry = $cfg->sources[0];
+        Assert::same($entry->from, 'dir');
+        Assert::same($entry->path, './skills');
+        Assert::same($entry->package, null);
+        Assert::same($entry->url, null);
+        Assert::same($entry->identifier(), './skills');
+    }
+
+    public function dirPathIsRequired(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('path is required for adapter "dir"');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'dir']],
+            ],
+        ]);
+    }
+
+    public function dirRejectsUrl(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('url is not allowed for adapter "dir" (use path)');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'dir', 'path' => './skills', 'url' => 'https://example.com/x.zip']],
+            ],
+        ]);
+    }
+
+    public function dirRejectsHost(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('host is not allowed for adapter "dir"');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'dir', 'path' => './skills', 'host' => 'https://example.com']],
+            ],
+        ]);
+    }
+
+    public function dirRejectsRef(): void
+    {
+        // A local directory has no version concept, so `ref` is
+        // forbidden rather than silently ignored.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('ref is not allowed for adapter "dir"');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'dir', 'path' => './skills', 'ref' => 'v1.0.0']],
+            ],
+        ]);
+    }
+
+    public function dirAcceptsPackageOverride(): void
+    {
+        // Unlike name-based adapters, `package` on a dir entry is an
+        // optional donor-name override and is not the identifier.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'dir', 'path' => '../shared-skills', 'package' => 'myorg/shared'],
+                ],
+            ],
+        ]);
+
+        $entry = $cfg->sources[0];
+        Assert::same($entry->package, 'myorg/shared');
+        Assert::same($entry->path, '../shared-skills');
+        Assert::same($entry->identifier(), '../shared-skills');
+    }
+
+    public function dirAllowlistIsParsed(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'dir', 'path' => './skills', 'skills' => ['deploy']],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->sources[0]->skills, ['deploy']);
+    }
+
+    public function dirCompositeKeyUsesPath(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'dir', 'path' => './skills']],
+            ],
+        ]);
+
+        Assert::same($cfg->sources[0]->compositeKey(), 'dir||./skills');
+    }
+
+    public function dirDuplicatePathThrows(): void
+    {
+        // Two entries with the same `path` share a composite key
+        // (`dir||./skills`) and are fatal, exactly like duplicate
+        // name-based entries.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('duplicates an earlier entry');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'dir', 'path' => './skills'],
+                    ['from' => 'dir', 'path' => './skills', 'package' => 'myorg/shared'],
+                ],
+            ],
+        ]);
+    }
+
+    public function dirDifferentPathsCoexist(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'dir', 'path' => './skills'],
+                    ['from' => 'dir', 'path' => '../shared-skills'],
+                ],
+            ],
+        ]);
+
+        Assert::count($cfg->sources, 2);
+    }
+
+    public function dirPathKeyIsNotSweptIntoExtras(): void
+    {
+        // collectExtras must skip `path` — otherwise the identifier
+        // would be duplicated into SourceEntry::extras.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [
+                    ['from' => 'dir', 'path' => './skills', 'custom' => 'x'],
+                ],
+            ],
+        ]);
+
+        Assert::same($cfg->sources[0]->path, './skills');
+        Assert::same($cfg->sources[0]->extras, ['custom' => 'x']);
+    }
+
+    public function pathIsForbiddenOnNameBasedAdapter(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('path is not allowed for adapter "github" (dir only)');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'github', 'package' => 'acme/x', 'path' => './skills']],
+            ],
+        ]);
+    }
+
+    public function pathIsForbiddenOnUrlOnlyAdapter(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('path is not allowed for adapter "zip" (dir only)');
+
+        (new ProjectConfigMapper())->fromExtra([
+            'skills' => [
+                'sources' => [['from' => 'zip', 'url' => 'https://example.com/x.zip', 'path' => './skills']],
+            ],
+        ]);
+    }
+
     /**
      * @param array<string, mixed> $data
      */

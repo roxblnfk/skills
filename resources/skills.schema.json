@@ -84,7 +84,8 @@
             "items": {
                 "oneOf": [
                     { "$ref": "#/$defs/sourceByPackage" },
-                    { "$ref": "#/$defs/sourceByUrl" }
+                    { "$ref": "#/$defs/sourceByUrl" },
+                    { "$ref": "#/$defs/sourceByDir" }
                 ]
             }
         },
@@ -96,7 +97,8 @@
             "items": {
                 "oneOf": [
                     { "$ref": "#/$defs/sourceByPackage" },
-                    { "$ref": "#/$defs/sourceByUrl" }
+                    { "$ref": "#/$defs/sourceByUrl" },
+                    { "$ref": "#/$defs/sourceByDir" }
                 ]
             }
         }
@@ -173,6 +175,35 @@
                     "type": "string",
                     "minLength": 1,
                     "description": "Optional integrity hash (zip adapter)."
+                }
+            }
+        },
+        "sourceByDir": {
+            "type": "object",
+            "description": "Donor source entry for the path-based adapter (dir): a local directory declared as an explicit donor. url/host/ref are not applicable — the PHP mapper rejects them; the oneOf dispatch on the from enum keeps documents honest without an additionalProperties constraint here.",
+            "required": ["from", "path"],
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "enum": ["dir"]
+                },
+                "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Filesystem path to the donor directory. Relative paths resolve from the project root; absolute paths (including Windows drive letters) are honoured as-is. \"..\" segments and locations outside the project root are allowed — a sources entry is an explicit act of trust."
+                },
+                "package": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Optional donor package-name override. Absent → derived from the directory's own composer.json name, falling back to <parent>/<basename> of the resolved path (lowercased)."
+                },
+                "skills": {
+                    "type": "array",
+                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships; empty list → donor is registered but no skills are pulled (matches `sourceByPackage` semantics).",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1
+                    }
                 }
             }
         }

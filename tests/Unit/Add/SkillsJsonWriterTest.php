@@ -426,6 +426,81 @@ final class SkillsJsonWriterTest
         );
     }
 
+    public function dirEntryStoresPathAsIdentifier(): void
+    {
+        (new SkillsJsonWriter())->upsertSource(
+            Path::create($this->tmp),
+            self::dirEntry('./skills'),
+        );
+
+        $payload = $this->readSkillsJson();
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['from'] ?? null, 'dir');
+        Assert::same($sources[0]['path'] ?? null, './skills');
+        Assert::false(\array_key_exists('package', $sources[0]));
+        Assert::false(\array_key_exists('url', $sources[0]));
+    }
+
+    public function dirEntryUpsertsByPathCompositeKey(): void
+    {
+        // Same `path` ⇒ same composite key (`dir||./skills`) ⇒ overwrite
+        // in place, not append. Here the second add adds a package
+        // override to the same path.
+        $this->writeSkillsJson([
+            'sources' => [
+                ['from' => 'dir', 'path' => './skills'],
+            ],
+        ]);
+
+        (new SkillsJsonWriter())->upsertSource(
+            Path::create($this->tmp),
+            self::dirEntry('./skills', package: 'myorg/shared'),
+        );
+
+        $payload = $this->readSkillsJson();
+        /** @var list<array<string, mixed>> $sources */
+        $sources = (array) $payload['sources'];
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['path'] ?? null, './skills');
+        Assert::same($sources[0]['package'] ?? null, 'myorg/shared');
+    }
+
+    public function dirDifferentPathsAppend(): void
+    {
+        $this->writeSkillsJson([
+            'sources' => [
+                ['from' => 'dir', 'path' => './skills'],
+            ],
+        ]);
+
+        (new SkillsJsonWriter())->upsertSource(
+            Path::create($this->tmp),
+            self::dirEntry('../shared-skills'),
+        );
+
+        $payload = $this->readSkillsJson();
+        Assert::count((array) $payload['sources'], 2);
+    }
+
+    public function dirEntryEmitsPathInTheIdentifierSlot(): void
+    {
+        // Key order for a dir entry: from → path → package (override).
+        (new SkillsJsonWriter())->upsertSource(
+            Path::create($this->tmp),
+            self::dirEntry('./skills', package: 'myorg/shared'),
+        );
+
+        $raw = (string) \file_get_contents($this->tmp . '/skills.json');
+        $fromPos = \strpos($raw, '"from"');
+        $pathPos = \strpos($raw, '"path"');
+        $packagePos = \strpos($raw, '"package"');
+
+        Assert::true(\is_int($fromPos) && \is_int($pathPos) && $fromPos < $pathPos);
+        Assert::true(\is_int($pathPos) && \is_int($packagePos) && $pathPos < $packagePos);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -470,6 +545,27 @@ final class SkillsJsonWriterTest
             host: $host,
             ref: $ref,
             skills: $skills,
+        );
+    }
+
+    /**
+     * @param non-empty-string $path
+     * @param non-empty-string|null $package
+     * @param list<non-empty-string>|null $skills
+     */
+    private static function dirEntry(
+        string $path,
+        ?string $package = null,
+        ?array $skills = null,
+    ): SourceEntry {
+        return new SourceEntry(
+            from: ProviderId::DIR,
+            package: $package,
+            url: null,
+            host: null,
+            ref: null,
+            skills: $skills,
+            path: $path,
         );
     }
 }

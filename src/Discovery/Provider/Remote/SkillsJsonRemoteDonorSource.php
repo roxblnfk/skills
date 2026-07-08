@@ -6,6 +6,8 @@ namespace LLM\Skills\Discovery\Provider\Remote;
 
 use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
+use LLM\Skills\Config\SourceEntry;
+use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\RemoteResolveException;
 use LLM\Skills\Discovery\Provider\Remote\Adapter\UnknownAdapterException;
@@ -50,7 +52,7 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
     ) {}
 
     /**
-     * @return iterable<RemoteDonorRef>
+     * @return iterable<RemoteDonorRef|DirDonorRef>
      */
     #[\Override]
     public function refs(Path $projectRoot): iterable
@@ -64,6 +66,15 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
         }
 
         foreach ($config->sources as $entry) {
+            // Path-only adapters (dir) never hit the host-adapter
+            // registry: there is nothing to download or version-resolve,
+            // so the entry becomes a {@see DirDonorRef} pointing at a
+            // directory the provider reads in place.
+            if (ProviderId::isPathOnlySource($entry->from)) {
+                yield $this->resolveDirEntry($projectRoot, $entry);
+                continue;
+            }
+
             try {
                 $adapter = $this->registry->get($entry->from);
             } catch (UnknownAdapterException $e) {
@@ -129,5 +140,39 @@ final class SkillsJsonRemoteDonorSource implements RemoteDonorSource
             return false;
         }
         return $config->sources !== [];
+    }
+
+    /**
+     * Resolve a `dir` entry into a {@see DirDonorRef}.
+     *
+     * Path resolution: a relative `path` is anchored at the project
+     * root (the same anchor `target` uses); an absolute `path`
+     * (including a Windows drive letter) is honoured as-is. `..`
+     * segments and locations outside the project root are allowed — a
+     * `sources[]` entry is an explicit act of trust — so no containment
+     * check runs here. Existence is NOT checked at resolve time; the
+     * provider decides whether the resolved directory is present when
+     * it reads it (a per-entry warning if not).
+     *
+     * The donor's package name (the {@see DirDonorRef::$packageHint})
+     * is the entry's `package` override when present, else a name
+     * derived from the resolved absolute path.
+     */
+    private function resolveDirEntry(Path $projectRoot, SourceEntry $entry): DirDonorRef
+    {
+        // For a dir entry the identifier IS the path (the constructor
+        // guarantees `path` is set), so `identifier()` hands back the
+        // spelling as a non-empty string without a redundant null check.
+        $spelling = $entry->identifier();
+        $typed = Path::create($spelling);
+        $resolved = $typed->isAbsolute() ? $typed : $projectRoot->join($typed);
+
+        return new DirDonorRef(
+            directory: $resolved,
+            spelling: $spelling,
+            provenance: $entry->from,
+            skillFilter: $entry->skills,
+            packageHint: $entry->package ?? DirDonorRef::derivePackageName($resolved),
+        );
     }
 }

@@ -1,0 +1,9 @@
+{
+    "name": "acme/dir-composer",
+    "description": "A composer-shaped local directory donor fixture (not an installed package).",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}

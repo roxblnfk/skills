@@ -55,6 +55,48 @@ final class Filesystem
     }
 
     /**
+     * Create a directory link at `$link` pointing at `$target`, honestly — a
+     * native symlink where the platform allows it, otherwise an NTFS junction
+     * (`mklink /J`, which needs no elevation and is exactly the reparse point
+     * a vendor package can ship unprivileged). Returns `false` when neither
+     * works, so a link-dependent test can skip cleanly instead of faking the
+     * fixture.
+     */
+    public static function makeDirLink(string $target, string $link): bool
+    {
+        if (@\symlink($target, $link)) {
+            return true;
+        }
+
+        if (\DIRECTORY_SEPARATOR !== '\\' || !\function_exists('exec')) {
+            return false;
+        }
+
+        // Quote the paths by hand rather than via escapeshellarg(): on Windows
+        // that helper strips `%` (env-var neutralisation), which corrupts the
+        // percent-encoded package directories these fixtures build. cmd leaves
+        // a lone `%…` literal, so plain double quotes are both safe and exact.
+        $cmd = \sprintf(
+            'cmd /c mklink /J "%s" "%s"',
+            \str_replace('/', '\\', $link),
+            \str_replace('/', '\\', $target),
+        );
+        @\exec($cmd, $output, $code);
+
+        return $code === 0;
+    }
+
+    /**
+     * Create a file symlink at `$link` pointing at `$target`. Returns `false`
+     * when the platform refuses it (a Windows file symlink needs privilege),
+     * so the caller can skip cleanly rather than fake the fixture.
+     */
+    public static function makeFileLink(string $target, string $link): bool
+    {
+        return @\symlink($target, $link);
+    }
+
+    /**
      * Robust link detection for NTFS junctions.
      *
      * In this PHP build `is_link`, `is_dir` and `is_file` all return false for a
