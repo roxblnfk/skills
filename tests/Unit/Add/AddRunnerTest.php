@@ -411,8 +411,9 @@ final class AddRunnerTest
         // A `./sub` input selects the dir branch: no adapter parse, no
         // fetch (the ExplodingFetcher would throw if the remote path
         // ran). The entry lands with from=dir and the path stored as
-        // typed.
-        \mkdir($this->tmp . '/sub', 0o777, true);
+        // typed. The directory ships a bare skill so the add-time
+        // inspection accepts it.
+        $this->seedBareSkill($this->tmp . '/sub');
         $io = new BufferIO();
         $registered = null;
 
@@ -445,7 +446,7 @@ final class AddRunnerTest
     {
         // `--from=dir` forces the dir branch even for a plain name that
         // carries no path prefix, as long as it resolves to a directory.
-        \mkdir($this->tmp . '/plaindir', 0o777, true);
+        $this->seedBareSkill($this->tmp . '/plaindir');
         $io = new BufferIO();
 
         $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
@@ -462,7 +463,7 @@ final class AddRunnerTest
     {
         // A Windows-style `.\a\b` spelling is normalised to forward
         // slashes but otherwise kept verbatim (no `.` collapsing).
-        \mkdir($this->tmp . '/a/b', 0o777, true);
+        $this->seedBareSkill($this->tmp . '/a/b');
         $io = new BufferIO();
 
         $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
@@ -479,7 +480,7 @@ final class AddRunnerTest
     {
         // An absolute input is honoured as-is (slashes normalised); the
         // stored path stays absolute rather than being rebased.
-        \mkdir($this->tmp . '/abs-target', 0o777, true);
+        $this->seedBareSkill($this->tmp . '/abs-target');
         $absolute = $this->tmp . '/abs-target';
         $io = new BufferIO();
 
@@ -566,7 +567,7 @@ final class AddRunnerTest
     {
         // Two adds of the same path collapse into one entry (the path is
         // the composite key) with the allowlist merged additively.
-        \mkdir($this->tmp . '/sub', 0o777, true);
+        $this->seedBareSkill($this->tmp . '/sub');
         $runner = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher());
 
         $runner->run(
@@ -583,6 +584,61 @@ final class AddRunnerTest
         $sources = (array) $this->readSkillsJson()['sources'];
         Assert::count($sources, 1);
         Assert::same($sources[0]['skills'] ?? null, ['alpha', 'beta']);
+    }
+
+    public function composerShapedDirPassesItsComposerJsonNameToOnRegistered(): void
+    {
+        // A directory carrying its own composer.json donor declaration is
+        // registered downstream under that composer.json `name`, not the
+        // path-derived hint. The scoped-sync name handed to $onRegistered
+        // must therefore be the composer.json name so the follow-up sync
+        // filters on the donor the pipeline will actually produce — the
+        // regression that left a composer-shaped dir declared but empty.
+        $dir = $this->writeArchive('cshape', 'acme/dir-donor', 'skills');
+        $io = new BufferIO();
+        $registered = null;
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: $dir, from: ProviderId::DIR),
+            static function (SourceEntry $entry, string $name) use (&$registered): void {
+                $registered = [$entry, $name];
+            },
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\is_array($registered));
+        /** @var array{0: SourceEntry, 1: string} $registered */
+        Assert::same($registered[1], 'acme/dir-donor');
+    }
+
+    public function nonDonorDirIsRefusedWithoutWritingAnEntry(): void
+    {
+        // An empty directory ships nothing to register — no composer.json
+        // donor declaration, no SKILL.md files — so the add is refused
+        // before any entry is written, mirroring the remote path refusing
+        // an unusable archive. The scoped-sync callback never fires.
+        \mkdir($this->tmp . '/empty', 0o777, true);
+        $io = new BufferIO();
+        $registered = null;
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './empty'),
+            static function (SourceEntry $entry, string $name) use (&$registered): void {
+                $registered = [$entry, $name];
+            },
+        );
+
+        Assert::same($code, Command::FAILURE);
+        $out = $io->getOutput();
+        Assert::true(\str_contains($out, 'dir ./empty'));
+        Assert::true(\str_contains($out, 'neither a composer.json'));
+        Assert::true(\str_contains($out, 'SKILL.md'));
+        Assert::false(\is_file($this->tmp . '/skills.json'), 'no entry is written on refusal');
+        Assert::null($registered, 'the scoped-sync callback never fires on refusal');
     }
 
     // ── writer failure ─────────────────────────────────────────────
@@ -644,6 +700,17 @@ final class AddRunnerTest
         $dir = $this->tmp . '/' . $label;
         \mkdir($dir, 0o777, true);
         return $dir;
+    }
+
+    /**
+     * Seed a directory with a single bare skill (`<dir>/greeting/SKILL.md`)
+     * so the add-time {@see \LLM\Skills\Discovery\Provider\Remote\DonorArchiveInspector}
+     * accepts it as a bare skill donor.
+     */
+    private function seedBareSkill(string $dir): void
+    {
+        \mkdir($dir . '/greeting', 0o777, true);
+        \file_put_contents($dir . '/greeting/SKILL.md', "---\nname: greeting\n---\nbody");
     }
 
     /**

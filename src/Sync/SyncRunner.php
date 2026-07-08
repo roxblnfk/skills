@@ -232,6 +232,7 @@ final readonly class SyncRunner
 
         $this->emitCopyReport($io, $report->copied, $options->dryRun);
         $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
+        $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
@@ -403,6 +404,25 @@ final readonly class SyncRunner
             $io->writeError(
                 '<comment>[warn] skipped symlink/junction (not followed for security): '
                 . $link . '</comment>',
+                verbosity: IOInterface::VERBOSE,
+            );
+        }
+    }
+
+    /**
+     * Surface the directories where the copy hit its depth backstop and left
+     * the nested contents uncopied. Like the skipped links, this is a
+     * non-fatal diagnostic shown under `-v`: a silently truncated tree would
+     * leave the user unable to see why deeply nested files did not land.
+     *
+     * @param list<string> $truncatedDirs
+     */
+    private function emitTruncatedDirWarnings(IOInterface $io, array $truncatedDirs): void
+    {
+        foreach ($truncatedDirs as $dir) {
+            $io->writeError(
+                '<comment>[warn] copy depth limit reached; contents below this directory '
+                . 'were not copied: ' . $dir . '</comment>',
                 verbosity: IOInterface::VERBOSE,
             );
         }

@@ -55,9 +55,10 @@ use Symfony\Component\Console\Command\Command;
  *
  * A path-only `dir` input short-circuits this flow: it has no host,
  * ref, or archive to fetch, so {@see self::runDir()} handles it ahead
- * of adapter selection — normalise the path, check the directory
- * exists, upsert the entry, and hand the derived donor name to
- * `$onRegistered` for the scoped sync.
+ * of adapter selection — normalise the path, inspect the directory
+ * (refusing a missing or non-donor shape, just as the remote path
+ * refuses an unusable archive), upsert the entry, and hand the
+ * inspected donor name to `$onRegistered` for the scoped sync.
  */
 final readonly class AddRunner
 {
@@ -250,11 +251,19 @@ final readonly class AddRunner
     /**
      * Register a local directory donor. No adapter, no ref resolution,
      * no fetch: the input is normalised to forward slashes and kept as
-     * typed (relative stays relative, absolute stays absolute), the
+     * typed (relative stays relative, absolute stays absolute), and the
      * directory's existence is checked once — an explicit add of a
-     * missing directory is a typo worth refusing loudly — and the entry
-     * is upserted into `skills.json`. The follow-up sync reads the live
-     * directory through the same pipeline every other donor uses.
+     * missing directory is a typo worth refusing loudly.
+     *
+     * The directory is then inspected through the shared
+     * {@see DonorArchiveInspector} — a cheap local read, no network —
+     * with the same package hint the sync source derives. A non-donor
+     * shape (no composer.json donor declaration, no SKILL.md files) is
+     * refused before anything is written, mirroring the remote path's
+     * "refuse to register a donor we cannot actually use" contract.
+     * On success the inspection yields the donor's true package name,
+     * which scopes the follow-up sync so it filters on the same name
+     * the sync pipeline registers this directory under.
      *
      * @param \Closure(SourceEntry, non-empty-string):void|null $onRegistered
      */
@@ -290,6 +299,27 @@ final readonly class AddRunner
             return Command::FAILURE;
         }
 
+        // Inspect the live directory with the same shared inspector the
+        // sync path runs, using the package hint the sync source derives
+        // (§4.1). Refusing a non-donor shape here keeps `skills:add` from
+        // writing an entry the sync would then ignore — a skill declared
+        // but never copied.
+        $inspection = $this->inspector->inspect(
+            $resolved,
+            DirDonorRef::derivePackageName($resolved),
+        );
+
+        $rejection = $inspection->rejection;
+        if ($rejection !== null) {
+            $io->writeError('<error>[llm/skills] '
+                . $this->describeDirRejection($rejection, $inspection->detail, $spelling)
+                . '</error>');
+            return Command::FAILURE;
+        }
+
+        /** @var non-empty-string $donorPackageName the inspector always names an accepted donor */
+        $donorPackageName = $inspection->packageName;
+
         $entry = new SourceEntry(
             from: ProviderId::DIR,
             package: null,
@@ -313,15 +343,13 @@ final readonly class AddRunner
             $entry->identifier(),
         ));
 
-        // Scope the follow-up sync on the same package name the sync
-        // pipeline will derive for this directory (§4.1). A directory
-        // with its own composer.json name is registered under that name
-        // downstream, so this derived fallback only matches a bare skill
-        // directory; the add path skips the composer.json probe by
-        // design, so for a composer-shaped directory the scoped sync
-        // matches nothing and copies nothing — the entry is registered
-        // and a plain `skills:update` picks it up.
-        $onRegistered?->__invoke($entry, DirDonorRef::derivePackageName($resolved));
+        // Scope the follow-up sync on the donor's true package name: for
+        // a composer-shaped directory the inspection returns its
+        // composer.json `name`; for a bare skill directory it returns the
+        // derived hint. Either way it matches the name the sync pipeline
+        // registers this directory under (§4.1), so the scoped sync finds
+        // the donor and copies its skills.
+        $onRegistered?->__invoke($entry, $donorPackageName);
 
         return Command::SUCCESS;
     }
@@ -484,5 +512,39 @@ final readonly class AddRunner
                 $adapterId,
             ),
         };
+    }
+
+    /**
+     * Phrase a {@see DonorArchiveRejection} for a `dir` add. Mirrors
+     * {@see self::describeRejection()} but frames the reason against the
+     * inspected directory (`dir <spelling>: …`) rather than a fetched
+     * archive. `NoPackageName` is unreachable for a directory — the hint
+     * derived from the path is always present — but is phrased for
+     * completeness so the match stays exhaustive.
+     *
+     * @param non-empty-string $spelling
+     *
+     * @psalm-pure
+     */
+    private function describeDirRejection(
+        DonorArchiveRejection $rejection,
+        ?string $detail,
+        string $spelling,
+    ): string {
+        $reason = match ($rejection) {
+            DonorArchiveRejection::ComposerJsonUnreadable =>
+                'failed to read composer.json',
+            DonorArchiveRejection::ComposerJsonInvalidJson =>
+                'composer.json is not valid JSON: ' . ($detail ?? ''),
+            DonorArchiveRejection::ComposerJsonNotObject =>
+                'composer.json must be a JSON object',
+            DonorArchiveRejection::NoDonorShape =>
+                'directory ships neither a composer.json with extra.skills.source '
+                . 'nor any SKILL.md files — cannot register as a skill donor',
+            DonorArchiveRejection::NoPackageName =>
+                'directory ships SKILL.md files but no package name to register it under',
+        };
+
+        return \sprintf('dir %s: %s', $spelling, $reason);
     }
 }

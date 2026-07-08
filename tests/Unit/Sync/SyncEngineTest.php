@@ -297,6 +297,37 @@ final class SyncEngineTest
         Assert::same($report->skippedLinks, [$loop]);
     }
 
+    public function stopsAtTheDepthCapAndReportsTheTruncationPoint(): void
+    {
+        // A tree deeper than the copy backstop must still copy what it can
+        // and surface where it stopped, so a truncated sync is never silent.
+        $skill = $this->makeSkill('acme/deep', 'deep', ['SKILL.md' => '# Deep']);
+        $skillDir = (string) $skill->sourceDir;
+
+        // A chain of nested directories well past the cap, with a marker
+        // file at the very bottom the copy can never reach.
+        $depth = 40; // > SyncEngine::MAX_COPY_DEPTH (32)
+        $chain = $skillDir;
+        for ($i = 0; $i < $depth; $i++) {
+            $chain .= \DIRECTORY_SEPARATOR . 'd';
+        }
+        \mkdir($chain, 0o777, true);
+        \file_put_contents($chain . \DIRECTORY_SEPARATOR . 'bottom.txt', 'too deep');
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        // Shallow content still lands.
+        Assert::true(\is_file($this->targetPath('deep/SKILL.md')));
+        // The bottom marker never made it past the cap.
+        Assert::false(\is_file($this->targetPath('deep/' . \str_repeat('d/', $depth) . 'bottom.txt')));
+        // The truncation point is reported exactly once and names a source
+        // directory inside the deep chain.
+        Assert::same(\count($report->truncatedDirs), 1);
+        Assert::true(\str_contains($report->truncatedDirs[0], $skillDir));
+        Assert::same($report->skippedLinks, []);
+    }
+
     /**
      * Lay out a skill's files inside `<tmp>/skills/<package>/<skillName>/` and
      * return a Skill pointing at the directory. Different packages get

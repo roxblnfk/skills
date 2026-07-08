@@ -16,9 +16,11 @@ use Testo\Test;
 /**
  * Acceptance coverage for `skills:add` against a local directory — the
  * first fully offline `skills:add` path (no network, no archive, no
- * cache). The sandbox ships a committed fixture directory at
- * `tests/Sandbox/project/local-skills/` with two bare skills
- * (`dir-hello`, `dir-extra`).
+ * cache). The sandbox ships committed fixture directories:
+ * `local-skills/` with two bare skills (`dir-hello`, `dir-extra`);
+ * `local-composer-skill/` — a composer-shaped donor (its composer.json
+ * `name` is `acme/dir-composer`) shipping one skill; and `not-a-donor/`
+ * — a directory with neither a donor manifest nor SKILL.md files.
  *
  * Each test runs the real `composer skills:add ./local-skills` in the
  * sandbox, then asserts on the `sources[]` entry it wrote and on what
@@ -101,6 +103,51 @@ final class SkillsAddDirTest
         Assert::false(
             \is_dir(self::TARGET_DIR),
             '--no-sync must leave the target untouched. ' . $this->diagnostics($process),
+        );
+    }
+
+    public function addComposerShapedDirSyncsUnderItsComposerJsonName(): void
+    {
+        // The `local-composer-skill` fixture carries its own composer.json
+        // (`name: acme/dir-composer`), so the sync pipeline registers it
+        // under that name — not the path-derived hint. The add-time
+        // inspection must hand that same name to the scoped follow-up
+        // sync, otherwise the sync filters on the wrong donor and copies
+        // nothing (the exact regression this test pins down).
+        $process = $this->runAdd('./local-composer-skill');
+
+        Assert::same($process->getExitCode(), 0, $this->diagnostics($process));
+
+        $sources = $this->readSources();
+        Assert::count($sources, 1);
+        Assert::same($sources[0]['path'] ?? null, './local-composer-skill');
+
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/composer-hello/SKILL.md'),
+            'the composer-shaped dir donor must have its skill synced. ' . $this->diagnostics($process),
+        );
+    }
+
+    public function addNonDonorDirFailsCleanlyWithoutWritingSkillsJson(): void
+    {
+        // The `not-a-donor` fixture exists but ships no composer.json
+        // donor declaration and no SKILL.md files. The add-time inspection
+        // must refuse it with a clear error and leave no skills.json
+        // behind — a directory the sync would ignore never registers.
+        $process = $this->runAdd('./not-a-donor');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'dir ./not-a-donor'),
+            'the error must name the refused path. ' . $this->diagnostics($process),
+        );
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'neither a composer.json'),
+            'the error must explain the non-donor shape. ' . $this->diagnostics($process),
+        );
+        Assert::false(
+            \is_file(self::SKILLS_JSON),
+            'a refused add writes no skills.json. ' . $this->diagnostics($process),
         );
     }
 

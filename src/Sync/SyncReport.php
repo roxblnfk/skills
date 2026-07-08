@@ -20,6 +20,10 @@ use LLM\Skills\Discovery\Skill;
  *                    to follow (for security — a link could point outside the
  *                    skill). Surfaced by the caller so the skip is never
  *                    silent; empty on a clean, link-free copy.
+ * - `truncatedDirs` — source paths where the copy hit its depth backstop and
+ *                    left the contents below uncopied. Surfaced alongside the
+ *                    skipped links so a truncated tree is never silent; empty
+ *                    on a normal, shallow copy.
  *
  * Discovery-time warnings (missing source dir, malformed extra, etc.) are
  * **not** part of this report — they happen earlier in the pipeline and
@@ -33,6 +37,7 @@ final readonly class SyncReport
      * @param list<Skill> $copied
      * @param list<SkillConflict> $conflicts
      * @param list<string> $skippedLinks
+     * @param list<string> $truncatedDirs
      *
      * @psalm-mutation-free
      */
@@ -40,6 +45,7 @@ final readonly class SyncReport
         public array $copied,
         public array $conflicts,
         public array $skippedLinks = [],
+        public array $truncatedDirs = [],
     ) {}
 
     /**

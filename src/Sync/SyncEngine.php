@@ -49,6 +49,7 @@ final readonly class SyncEngine
         }
 
         $skippedLinks = [];
+        $truncatedDirs = [];
         if (!$dryRun) {
             foreach ($skills as $skill) {
                 $this->copyTree(
@@ -56,11 +57,17 @@ final readonly class SyncEngine
                     (string) $target->join($skill->name),
                     0,
                     $skippedLinks,
+                    $truncatedDirs,
                 );
             }
         }
 
-        return new SyncReport(copied: $skills, conflicts: [], skippedLinks: $skippedLinks);
+        return new SyncReport(
+            copied: $skills,
+            conflicts: [],
+            skippedLinks: $skippedLinks,
+            truncatedDirs: $truncatedDirs,
+        );
     }
 
     /**
@@ -100,15 +107,28 @@ final readonly class SyncEngine
      * `$skippedLinks` so the caller can explain why a file did not arrive; a
      * silent security skip is a debugging trap.
      *
+     * When the {@see self::MAX_COPY_DEPTH} backstop trips, the directory whose
+     * contents were left uncopied is appended to `$truncatedDirs` for the same
+     * reason: a truncated copy the user cannot see is a debugging trap too.
+     *
      * @param int $depth levels below the skill root for `$src`; the recursion
      *        stops at {@see self::MAX_COPY_DEPTH} as a cycle backstop
      * @param list<string> $skippedLinks source paths of skipped links, accumulated across the tree
+     * @param list<string> $truncatedDirs source paths where recursion stopped at the depth cap,
+     *        accumulated across the tree
      *
      * @param-out list<string> $skippedLinks
+     * @param-out list<string> $truncatedDirs
      */
-    private function copyTree(string $src, string $dst, int $depth, array &$skippedLinks): void
-    {
+    private function copyTree(
+        string $src,
+        string $dst,
+        int $depth,
+        array &$skippedLinks,
+        array &$truncatedDirs,
+    ): void {
         if ($depth >= self::MAX_COPY_DEPTH) {
+            $truncatedDirs[] = $src;
             return;
         }
 
@@ -132,7 +152,7 @@ final readonly class SyncEngine
             }
 
             if (\is_dir($s)) {
-                $this->copyTree($s, $d, $depth + 1, $skippedLinks);
+                $this->copyTree($s, $d, $depth + 1, $skippedLinks, $truncatedDirs);
             } else {
                 \copy($s, $d);
             }
