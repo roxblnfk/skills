@@ -91,8 +91,8 @@ final class SyncCliDefinition
                 null,
                 InputOption::VALUE_REQUIRED,
                 'Scope the sync to donors from a single provider. The id matches '
-                . 'skills.json local.{id} keys (e.g. "composer") and sources[].from values '
-                . '(e.g. "github"). Without this flag, all active providers contribute.',
+                . 'skills.json dependencies.{id} keys (e.g. "composer") and sources[].from '
+                . 'values (e.g. "github"). Without this flag, all active providers contribute.',
             );
     }
 

@@ -192,6 +192,117 @@ final class SkillsSchemaTest
         ]);
     }
 
+    public function dependenciesBoolFormIsAccepted(): void
+    {
+        // Short form: a plain enable/disable toggle per manager.
+        $this->assertAccepts([
+            'dependencies' => [
+                'composer' => true,
+                'npm' => false,
+            ],
+        ]);
+    }
+
+    public function dependenciesComposerObjectFormIsAccepted(): void
+    {
+        $this->assertAccepts([
+            'dependencies' => [
+                'composer' => [
+                    'enabled' => true,
+                    'trusted' => ['acme/*', 'myorg/skills'],
+                    'trusted-replace' => false,
+                ],
+            ],
+        ]);
+    }
+
+    public function dependenciesNpmAndGoBlocksAreAccepted(): void
+    {
+        // npm/go trust patterns validate structurally only — bare names,
+        // scoped names and module paths all pass without a pattern.
+        $this->assertAccepts([
+            'dependencies' => [
+                'npm' => [
+                    'enabled' => true,
+                    'trusted' => ['lodash', '@myorg/pkg', '@myorg/*'],
+                ],
+                'go' => [
+                    'trusted' => ['github.com/myorg/mod', 'github.com/myorg/*'],
+                    'trusted-replace' => true,
+                ],
+            ],
+        ]);
+    }
+
+    public function dependenciesComposerBadPatternIsRejected(): void
+    {
+        // Composer's `trusted` carries the vendor/pkg pattern; a bare name
+        // matches neither the boolean branch nor the object branch.
+        $this->assertRejects([
+            'dependencies' => [
+                'composer' => ['trusted' => ['acme']],
+            ],
+        ]);
+    }
+
+    public function deprecatedLocalDocumentIsAccepted(): void
+    {
+        // The legacy `local` toggle map is still a valid document (marked
+        // deprecated) so editors do not flag files awaiting migration.
+        $this->assertAccepts([
+            'local' => ['composer' => true, 'npm' => false],
+        ]);
+    }
+
+    public function deprecatedTrustedReplaceDocumentIsAccepted(): void
+    {
+        $this->assertAccepts([
+            'trusted-replace' => true,
+        ]);
+    }
+
+    public function dependenciesWithLegacyTrustedIsRejected(): void
+    {
+        // Mixing the canonical block with a legacy key is fatal; the
+        // root `not` clause mirrors the mapper's "keep dependencies only".
+        $this->assertRejects([
+            'dependencies' => ['composer' => true],
+            'trusted' => ['acme/*'],
+        ]);
+    }
+
+    public function dependenciesWithLegacyLocalIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => ['composer' => true],
+            'local' => ['composer' => false],
+        ]);
+    }
+
+    public function dependenciesWithLegacyTrustedReplaceIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => ['composer' => true],
+            'trusted-replace' => true,
+        ]);
+    }
+
+    public function dependenciesUnknownManagerIdIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => ['pip' => true],
+        ]);
+    }
+
+    public function dependenciesUnknownObjectFieldIsRejected(): void
+    {
+        $this->assertRejects([
+            'dependencies' => [
+                'composer' => ['enabled' => true, 'rogue-field' => 'x'],
+            ],
+        ]);
+    }
+
     /**
      * @param array<string, mixed> $document
      */

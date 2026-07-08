@@ -33,7 +33,7 @@ final readonly class SyncOptions
      *         must not rewrite the user's `composer.json` mid-install.
      * @param non-empty-string|null $fromFilter `--from=<id>` scope. When set,
      *         the runner keeps only donors whose {@see VendorConfig::$provenance} matches
-     *         this id. The vocabulary is shared with `skills.json` `local.{id}` and
+     *         this id. The vocabulary is shared with `skills.json` `dependencies.{id}` and
      *         `sources[].from`.
      *
      * @psalm-mutation-free
