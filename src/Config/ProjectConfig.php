@@ -53,9 +53,9 @@ final readonly class ProjectConfig
      *         Absent keys fall back to {@see ProviderId::defaultManagerEnabled()} — `composer`
      *         defaults to enabled (preserves the pre-`dependencies` behaviour), every other id
      *         defaults to off so a new manager stays opt-in until its implementation lands.
-     * @param list<SourceEntry> $sources donor sources declared by the project. The remote
+     * @param list<SourceEntry> $sources donor sources declared by the project. The source
      *         provider treats each entry as an explicit fetch target. Empty list means
-     *         the remote provider stays inactive — symmetric with `dependencies.composer == false`.
+     *         the source provider stays inactive — symmetric with `dependencies.composer == false`.
      * @param array<non-empty-string, DependencyConfig> $dependencies full per-manager
      *         `dependencies` block, keyed by package-manager id. Populated only from the
      *         `dependencies` config key; the `trusted`, `trustedReplace` and `managerEnabled`

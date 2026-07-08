@@ -70,9 +70,9 @@ final readonly class DonorProviderBuilder
         $composerEnabled = $this->resolveManagerEnabled($projectRoot, $extra, ProviderId::COMPOSER);
 
         $local = new ComposerProvider($composer, enabled: $composerEnabled);
-        $remote = $this->buildSourceProvider($composer);
+        $source = $this->buildSourceProvider($composer);
 
-        return new CompositeDonorProvider($local, $remote);
+        return new CompositeDonorProvider($local, $source);
     }
 
     /**

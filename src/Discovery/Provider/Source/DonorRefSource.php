@@ -7,16 +7,17 @@ namespace LLM\Skills\Discovery\Provider\Source;
 use Internal\Path;
 
 /**
- * Source of {@see RemoteDonorRef}s for {@see SourceProvider}.
+ * Source of donor refs ({@see RemoteDonorRef} / {@see DirDonorRef}) for
+ * {@see SourceProvider}.
  *
  * Deliberately tiny: the provider has no business knowing whether
- * refs come from `skills.json`, a vendor's declared remote donors,
+ * refs come from `skills.json`, a vendor's declared donors,
  * a future `skills:add`-managed lockfile, or somewhere else. Each
  * config surface becomes its own implementation.
  *
  * Implementations MUST be silent on inactive / missing input —
  * return an empty iterable rather than throw. The provider treats
- * an empty source as "no remote donors configured" and reports
+ * an empty source as "no sources configured" and reports
  * {@see SourceProvider::isActive()} = `false`.
  *
  * @psalm-suppress MissingInterfaceImmutableAnnotation
