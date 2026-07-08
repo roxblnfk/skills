@@ -13,19 +13,19 @@ use Testo\Test;
 #[Covers(ProviderId::class)]
 final class ProviderIdTest
 {
-    public function composerIsKnownLocal(): void
+    public function composerIsKnownManager(): void
     {
-        Assert::true(ProviderId::isKnownLocal(ProviderId::COMPOSER));
-        Assert::true(ProviderId::isKnownLocal(ProviderId::NPM));
-        Assert::true(ProviderId::isKnownLocal(ProviderId::GO));
+        Assert::true(ProviderId::isKnownManager(ProviderId::COMPOSER));
+        Assert::true(ProviderId::isKnownManager(ProviderId::NPM));
+        Assert::true(ProviderId::isKnownManager(ProviderId::GO));
     }
 
-    public function githubIsNotKnownLocal(): void
+    public function githubIsNotKnownManager(): void
     {
         // github / gitlab / bitbucket are remote-only adapters — they
-        // cannot appear as keys under `local`.
-        Assert::false(ProviderId::isKnownLocal(ProviderId::GITHUB));
-        Assert::false(ProviderId::isKnownLocal('whatever'));
+        // cannot appear as keys under `dependencies`.
+        Assert::false(ProviderId::isKnownManager(ProviderId::GITHUB));
+        Assert::false(ProviderId::isKnownManager('whatever'));
     }
 
     public function knownRemoteCoversAllSpecAdapters(): void
@@ -77,24 +77,25 @@ final class ProviderIdTest
         Assert::false(ProviderId::isUrlOnlySource(ProviderId::DIR));
     }
 
-    public function dirIsNotKnownLocal(): void
+    public function dirIsNotKnownManager(): void
     {
         // `dir` is an explicit declaration under sources[], not an
-        // ecosystem auto-discovery toggle under `local`.
-        Assert::false(ProviderId::isKnownLocal(ProviderId::DIR));
+        // ecosystem auto-discovery toggle under `dependencies`.
+        Assert::false(ProviderId::isKnownManager(ProviderId::DIR));
     }
 
     public function composerDefaultsToEnabled(): void
     {
-        // Preserves the pre-`local` behaviour: projects without an
-        // explicit `local.composer` keep getting the Composer provider.
-        Assert::true(ProviderId::defaultLocalEnabled(ProviderId::COMPOSER));
+        // Preserves the pre-`dependencies` behaviour: projects without
+        // an explicit `dependencies.composer` keep getting the Composer
+        // provider.
+        Assert::true(ProviderId::defaultManagerEnabled(ProviderId::COMPOSER));
     }
 
-    public function nonComposerLocalsDefaultToDisabled(): void
+    public function nonComposerManagersDefaultToDisabled(): void
     {
         // Opt-in until the provider implementation lands.
-        Assert::false(ProviderId::defaultLocalEnabled(ProviderId::NPM));
-        Assert::false(ProviderId::defaultLocalEnabled(ProviderId::GO));
+        Assert::false(ProviderId::defaultManagerEnabled(ProviderId::NPM));
+        Assert::false(ProviderId::defaultManagerEnabled(ProviderId::GO));
     }
 }

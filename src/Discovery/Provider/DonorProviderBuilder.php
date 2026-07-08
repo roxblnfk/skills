@@ -32,7 +32,7 @@ use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
  *
  * The composite that comes out:
  *
- *  1. **`ComposerProvider`** — local, honours the `local.composer`
+ *  1. **`ComposerProvider`** — local, honours the `dependencies.composer`
  *     toggle. Inactive when no Composer instance is supplied or when
  *     the toggle is `false`.
  *  2. **`SourceProvider`** — wired with a {@see SkillsJsonDonorRefSource}
@@ -45,7 +45,7 @@ use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
  * of the same package name.
  *
  * The builder does a **best-effort** read of `skills.json` to pick up
- * the `local` toggles. If that read throws (malformed config), the
+ * the `dependencies` toggles. If that read throws (malformed config), the
  * builder defaults every provider to its built-in default — the
  * {@see \LLM\Skills\Sync\SyncRunner} then re-reads the same file and
  * surfaces the proper {@see \LLM\Skills\Config\Exception\MalformedProjectConfig}
@@ -67,7 +67,7 @@ final readonly class DonorProviderBuilder
      */
     public function build(Path $projectRoot, ?Composer $composer, mixed $extra): DonorProvider
     {
-        $composerEnabled = $this->resolveLocalEnabled($projectRoot, $extra, ProviderId::COMPOSER);
+        $composerEnabled = $this->resolveManagerEnabled($projectRoot, $extra, ProviderId::COMPOSER);
 
         $local = new ComposerProvider($composer, enabled: $composerEnabled);
         $remote = $this->buildSourceProvider($composer);
@@ -131,21 +131,21 @@ final readonly class DonorProviderBuilder
     }
 
     /**
-     * Read the `local.<id>` toggle from `skills.json` (or inline
-     * `extra.skills.local`), falling back to
-     * {@see ProviderId::defaultLocalEnabled()} on any failure.
+     * Read the `dependencies.<id>` toggle from `skills.json` (or inline
+     * `extra.skills.dependencies`), falling back to
+     * {@see ProviderId::defaultManagerEnabled()} on any failure.
      *
      * Malformed config is not surfaced here — the runner does that on
      * its own read.
      */
-    private function resolveLocalEnabled(Path $projectRoot, mixed $extra, string $providerId): bool
+    private function resolveManagerEnabled(Path $projectRoot, mixed $extra, string $providerId): bool
     {
         try {
             $config = $this->mapper->forProject($projectRoot, $extra)->config;
         } catch (\Throwable) {
-            return ProviderId::defaultLocalEnabled($providerId);
+            return ProviderId::defaultManagerEnabled($providerId);
         }
 
-        return $config->isLocalEnabled($providerId);
+        return $config->isManagerEnabled($providerId);
     }
 }

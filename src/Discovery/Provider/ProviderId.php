@@ -9,8 +9,9 @@ namespace LLM\Skills\Discovery\Provider;
  *
  * Used in three places:
  *
- * - `skills.json` `local: { <id>: bool }` keys — which local providers
- *   are enabled in the current project.
+ * - `skills.json` `dependencies: { <id>: bool }` keys — which package
+ *   managers are enabled in the current project. Only `composer` has an
+ *   implementation today; `npm` and `go` lock the vocabulary.
  * - `skills.json` `sources[].from` values — which source adapter resolves
  *   a given remote entry.
  * - The `--from=<id>` CLI flag on `skills:update` (Phase 5).
@@ -35,13 +36,13 @@ final class ProviderId
     public const DIR = 'dir';
 
     /**
-     * Identifiers that may appear as keys under `local`. Today only
-     * `composer` has an implementation; the others lock the vocabulary
-     * so future providers ship without a migration.
+     * Identifiers that may appear as keys under `dependencies`. Today
+     * only `composer` has an implementation; the others lock the
+     * vocabulary so future providers ship without a migration.
      *
      * @var list<non-empty-string>
      */
-    public const LOCAL_IDS = [
+    public const MANAGER_IDS = [
         self::COMPOSER,
         self::NPM,
         self::GO,
@@ -49,7 +50,7 @@ final class ProviderId
 
     /**
      * Identifiers that may appear as `from` values inside `sources[]`.
-     * Larger than {@see LOCAL_IDS} because source adapters cover VCS
+     * Larger than {@see MANAGER_IDS} because source adapters cover VCS
      * hosts and package registries (no local manifest) as well as
      * local directories.
      *
@@ -94,9 +95,9 @@ final class ProviderId
     /**
      * @psalm-pure
      */
-    public static function isKnownLocal(string $id): bool
+    public static function isKnownManager(string $id): bool
     {
-        return \in_array($id, self::LOCAL_IDS, true);
+        return \in_array($id, self::MANAGER_IDS, true);
     }
 
     /**
@@ -133,15 +134,15 @@ final class ProviderId
     }
 
     /**
-     * Default activation state for a local provider when the user has
+     * Default activation state for a package manager when the user has
      * not pinned it explicitly. `composer` defaults to enabled
-     * (preserves the pre-`local` behaviour); every other provider
+     * (preserves the pre-`dependencies` behaviour); every other manager
      * defaults to disabled so it stays opt-in until its implementation
      * lands.
      *
      * @psalm-pure
      */
-    public static function defaultLocalEnabled(string $id): bool
+    public static function defaultManagerEnabled(string $id): bool
     {
         return $id === self::COMPOSER;
     }

@@ -29,12 +29,13 @@ use LLM\Skills\Discovery\DonorDiscoveryResult;
 final readonly class ComposerProvider implements DonorProvider
 {
     /**
-     * @param bool $enabled honours the `local.composer` toggle from
-     *         `skills.json`. When `false`, the provider
+     * @param bool $enabled honours the `dependencies.composer` toggle
+     *         from `skills.json`. When `false`, the provider
      *         reports {@see self::isActive()} `=== false` even with a
      *         live Composer instance — the user explicitly turned this
-     *         ecosystem off. Default `true` preserves the pre-`local`
-     *         behaviour for callers that have not yet been migrated.
+     *         ecosystem off. Default `true` preserves the
+     *         pre-`dependencies` behaviour for callers that have not yet
+     *         been migrated.
      *
      * @psalm-mutation-free
      */

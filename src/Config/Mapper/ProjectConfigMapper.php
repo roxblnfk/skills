@@ -390,12 +390,12 @@ final readonly class ProjectConfigMapper
             }
 
             $dependencies = $this->mapDependencies($skills[self::DEPENDENCIES_KEY], $prefix);
-            [$trusted, $replace, $local] = $this->foldDependencies($dependencies);
+            [$trusted, $replace, $managerEnabled] = $this->foldDependencies($dependencies);
             $usedDeprecatedDependencyKeys = [];
         } else {
             $trusted = $this->mapTrusted($skills['trusted'] ?? [], $prefix);
             $replace = $this->mapTrustedReplace($skills['trusted-replace'] ?? false, $prefix);
-            $local = $this->mapLocal($skills['local'] ?? [], $prefix);
+            $managerEnabled = $this->mapLocal($skills['local'] ?? [], $prefix);
             $dependencies = [];
         }
 
@@ -424,7 +424,7 @@ final readonly class ProjectConfigMapper
             aliases: $aliases,
             autoSync: $autoSync,
             pathFromRoot: $pathFromRoot,
-            local: $local,
+            managerEnabled: $managerEnabled,
             sources: $sources,
             dependencies: $dependencies,
         );
@@ -532,7 +532,7 @@ final readonly class ProjectConfigMapper
     /**
      * Parse the `dependencies` block: a map of package-manager id to a
      * bool toggle or a per-manager object. Each key must be a known
-     * package manager ({@see ProviderId::LOCAL_IDS}).
+     * package manager ({@see ProviderId::MANAGER_IDS}).
      *
      * @param non-empty-string $prefix
      *
@@ -562,12 +562,12 @@ final readonly class ProjectConfigMapper
                     self::field($prefix, self::DEPENDENCIES_KEY) . ' keys must be non-empty strings',
                 );
             }
-            if (!ProviderId::isKnownLocal($id)) {
+            if (!ProviderId::isKnownManager($id)) {
                 throw new MalformedProjectConfig(\sprintf(
                     '%s.%s is not a known package manager (known: %s)',
                     self::field($prefix, self::DEPENDENCIES_KEY),
                     $id,
-                    \implode(', ', ProviderId::LOCAL_IDS),
+                    \implode(', ', ProviderId::MANAGER_IDS),
                 ));
             }
             $out[$id] = $this->mapDependencyEntry($value, $id, $prefix);
@@ -696,9 +696,9 @@ final readonly class ProjectConfigMapper
     /**
      * Fold the parsed per-manager block into the flat runtime fields
      * {@see ProjectConfig} still exposes: every manager's resolved
-     * `enabled` populates the `local` toggle map, and the `composer`
-     * entry (the only manager with a live provider) drives `trusted` and
-     * `trustedReplace`.
+     * `enabled` populates the `managerEnabled` toggle map, and the
+     * `composer` entry (the only manager with a live provider) drives
+     * `trusted` and `trustedReplace`.
      *
      * @param array<non-empty-string, DependencyConfig> $dependencies
      *
@@ -708,23 +708,23 @@ final readonly class ProjectConfigMapper
      */
     private function foldDependencies(array $dependencies): array
     {
-        $local = [];
+        $managerEnabled = [];
         foreach ($dependencies as $id => $config) {
-            $local[$id] = $config->isEnabled($id);
+            $managerEnabled[$id] = $config->isEnabled($id);
         }
 
         $composer = $dependencies[ProviderId::COMPOSER] ?? null;
         $trusted = $composer?->trustedVendors() ?? TrustedVendors::empty();
         $replace = $composer?->trustedReplace ?? false;
 
-        return [$trusted, $replace, $local];
+        return [$trusted, $replace, $managerEnabled];
     }
 
     /**
      * Parse and validate the `local` block. Each key must be a known
-     * local-provider id ({@see ProviderId::LOCAL_IDS}); each value must
-     * be a boolean. The result is a sparse map — unspecified ids fall
-     * back to {@see ProjectConfig::isLocalEnabled()}'s per-provider
+     * package-manager id ({@see ProviderId::MANAGER_IDS}); each value
+     * must be a boolean. The result is a sparse map — unspecified ids
+     * fall back to {@see ProjectConfig::isManagerEnabled()}'s per-manager
      * default.
      *
      * @param non-empty-string $prefix
@@ -754,12 +754,12 @@ final readonly class ProjectConfigMapper
                     self::field($prefix, 'local') . ' keys must be non-empty strings',
                 );
             }
-            if (!ProviderId::isKnownLocal($id)) {
+            if (!ProviderId::isKnownManager($id)) {
                 throw new MalformedProjectConfig(\sprintf(
-                    '%s.%s is not a known local provider (known: %s)',
+                    '%s.%s is not a known package manager (known: %s)',
                     self::field($prefix, 'local'),
                     $id,
-                    \implode(', ', ProviderId::LOCAL_IDS),
+                    \implode(', ', ProviderId::MANAGER_IDS),
                 ));
             }
             if (!\is_bool($value)) {
