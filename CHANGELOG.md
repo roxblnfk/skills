@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.0](https://github.com/roxblnfk/skills/compare/1.8.1...1.9.0) (2026-07-08)
+
+
+### Features
+
+* `dir` source adapter — local directories as explicit donors ([#29](https://github.com/roxblnfk/skills/issues/29)) ([a22c496](https://github.com/roxblnfk/skills/commit/a22c496c34ced9c6830fee22f0ce50da1b9b3a53))
+* per-package-manager `dependencies` block with scoped trust ([#30](https://github.com/roxblnfk/skills/issues/30)) ([044fc6f](https://github.com/roxblnfk/skills/commit/044fc6f89399cbb11d2be10a376bf2730bee09b5))
+* rename the `remote` config key to `sources` with auto-migration ([#27](https://github.com/roxblnfk/skills/issues/27)) ([8689a10](https://github.com/roxblnfk/skills/commit/8689a10a8840a31b536406341e27275ec64ac6bd))
+
+
+### Code Refactoring
+
+* rename Remote→Source and local→manager internals; drop spec references ([#31](https://github.com/roxblnfk/skills/issues/31)) ([8826f23](https://github.com/roxblnfk/skills/commit/8826f2362e2e7eb26500730ccdcce6ed57dbbb69))
+
 ## [1.8.1](https://github.com/roxblnfk/skills/compare/1.8.0...1.8.1) (2026-07-07)
 
 
