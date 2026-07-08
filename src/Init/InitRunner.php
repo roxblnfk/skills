@@ -210,14 +210,18 @@ final readonly class InitRunner
         $defaults = [];
 
         // Existing skills.json (only under --force; the early refusal
-        // check would have failed otherwise).
+        // check would have failed otherwise). The file is read raw —
+        // deliberately without running the file migrators — so the
+        // wizard can present the current values as prompt defaults;
+        // {@see self::foldLegacyDefaults()} normalises the legacy trust
+        // keys the wizard no longer reads directly.
         if (\is_file($target)) {
             $existing = $this->readJsonObject($target, $io, 'skills.json');
             if ($existing === null) {
                 return Command::FAILURE;
             }
             unset($existing['$schema']);
-            $defaults = $existing;
+            $defaults = $this->foldLegacyDefaults($existing);
         }
 
         $inlineKeys = [];
@@ -283,6 +287,46 @@ final readonly class InitRunner
         $io->write('<info>[init]</info> done.');
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * Normalise a raw `skills.json` map into the shape the wizard reads
+     * its defaults from. The wizard reads trust only from
+     * `dependencies.composer`, so a legacy file carrying the flat
+     * `trusted` / `trusted-replace` / `local` trio would otherwise
+     * present empty trust defaults and silently drop the user's config
+     * when they accept the prompts. Folding here — through the same
+     * {@see ProjectConfigMigrator} helpers the file migrators use —
+     * keeps a single owner for the legacy-trust rule.
+     *
+     * A map already carrying `dependencies` is left untouched: mixing it
+     * with a legacy key is the mapper's to reject on write, not this
+     * normaliser's to silently merge. The deprecated `remote` → `sources`
+     * pair needs no analogue here — the wizard prompts for neither
+     * `sources` nor `remote`, so those keys never feed a wizard default.
+     *
+     * @param array<string, mixed> $defaults
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    private function foldLegacyDefaults(array $defaults): array
+    {
+        if (
+            \array_key_exists(ProjectConfigMapper::DEPENDENCIES_KEY, $defaults)
+            || !ProjectConfigMigrator::hasLegacyDependencyKeys($defaults)
+        ) {
+            return $defaults;
+        }
+
+        $folded = ProjectConfigMigrator::foldLegacyDependencies($defaults);
+        foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $key) {
+            unset($defaults[$key]);
+        }
+        $defaults[ProjectConfigMapper::DEPENDENCIES_KEY] = $folded;
+
+        return $defaults;
     }
 
     /**
