@@ -16,9 +16,10 @@ use Testo\Test;
  *
  * Per-ecosystem trust file, loaded by provider id. The registry must:
  *
- * - Return a populated list for the bundled `composer` file.
+ * - Return a populated list for each bundled file (`composer`, `npm`,
+ *   `go`), parsed through that ecosystem's grammar.
  * - Return {@see TrustedVendors::empty()} for an unregistered
- *   provider id (e.g. `npm` until its file ships).
+ *   provider id (e.g. `github`, which ships no trust file).
  *
  * We do not exercise the "file exists but read fails" branch —
  * triggering it requires platform-specific chmod tricks that don't
@@ -50,14 +51,73 @@ final class TrustedVendorRegistryTest
         Assert::same($vendors->patterns, []);
     }
 
-    public function npmProviderReturnsEmptyUntilFileShips(): void
+    public function npmProviderParsesBundledFileAndMatchesScopes(): void
     {
-        // npm is locked vocabulary in ProviderId but does NOT have a
-        // bundled trust file in v1. The registry maps it to "no
-        // built-in trust" — same effect as a typo. Pins the
-        // forward-compat contract: shipping trusted-npm.txt becomes
-        // a purely additive change.
+        // The shipped resources/trusted-npm.txt parses through the npm
+        // grammar (scope wildcards) and matches a package inside a
+        // trusted scope while rejecting one outside it.
         $vendors = (new TrustedVendorRegistry())->loadForProvider(ProviderId::NPM);
+
+        Assert::true($vendors->patterns !== [], 'npm trust file should ship at least one pattern');
+        Assert::true(
+            $vendors->trusts('@anthropic-ai/claude-code'),
+            '@anthropic-ai/* must trust a package in the scope',
+        );
+        Assert::false(
+            $vendors->trusts('@evil/x'),
+            'an untrusted scope must not be trusted',
+        );
+        Assert::false(
+            $vendors->trusts('lodash'),
+            'a bare name absent from the built-in list must not be trusted',
+        );
+    }
+
+    public function goProviderParsesBundledFileAndMatchesPrefixes(): void
+    {
+        // The shipped resources/trusted-go.txt parses through the go
+        // grammar (module-path prefixes) and matches module paths under
+        // trusted orgs while rejecting others.
+        $vendors = (new TrustedVendorRegistry())->loadForProvider(ProviderId::GO);
+
+        Assert::true($vendors->patterns !== [], 'go trust file should ship at least one pattern');
+        Assert::true(
+            $vendors->trusts('github.com/anthropics/anything'),
+            'github.com/anthropics/* must trust a module under the org',
+        );
+        Assert::true(
+            $vendors->trusts('github.com/golang/tools'),
+            'github.com/golang/* must trust a module under the org',
+        );
+        Assert::false(
+            $vendors->trusts('github.com/evil/x'),
+            'an untrusted org must not be trusted',
+        );
+    }
+
+    public function goWildcardMatchesArbitraryDepthUnderPrefix(): void
+    {
+        // Prefix (not single-segment) semantics: submodule paths and
+        // /vN major-version suffixes are deeper segments, so an
+        // org-level entry must reach them. Pins the depth decision.
+        $vendors = (new TrustedVendorRegistry())->loadForProvider(ProviderId::GO);
+
+        Assert::true(
+            $vendors->trusts('github.com/anthropics/repo/v2'),
+            'a /vN major-version path must stay trusted under the org prefix',
+        );
+        Assert::true(
+            $vendors->trusts('github.com/anthropics/repo/internal/tools'),
+            'a nested submodule path must stay trusted under the org prefix',
+        );
+    }
+
+    public function unregisteredProviderWithoutFileReturnsEmpty(): void
+    {
+        // A locked-vocabulary id that ships no built-in trust file
+        // (e.g. a remote-only provider) maps to "no built-in trust" —
+        // same effect as a typo.
+        $vendors = (new TrustedVendorRegistry())->loadForProvider(ProviderId::GITHUB);
 
         Assert::same($vendors->patterns, []);
     }
@@ -85,11 +145,11 @@ final class TrustedVendorRegistryTest
 
         foreach ($vendors->patterns as $pattern) {
             Assert::false(
-                \str_starts_with($pattern->raw, '#'),
-                'comment line leaked into trust list as pattern: ' . $pattern->raw,
+                \str_starts_with($pattern->raw(), '#'),
+                'comment line leaked into trust list as pattern: ' . $pattern->raw(),
             );
             Assert::notSame(
-                $pattern->raw,
+                $pattern->raw(),
                 '',
                 'blank line leaked into trust list',
             );

@@ -16,7 +16,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class VendorPattern
+final readonly class VendorPattern implements TrustPattern
 {
     /**
      * @param non-empty-string $raw      original textual pattern, kept for diagnostics
@@ -76,10 +76,20 @@ final readonly class VendorPattern
     }
 
     /**
+     * @psalm-mutation-free
+     */
+    #[\Override]
+    public function raw(): string
+    {
+        return $this->raw;
+    }
+
+    /**
      * @param non-empty-string $packageName  full Composer package name (`vendor/package`)
      *
      * @psalm-mutation-free
      */
+    #[\Override]
     public function matches(string $packageName): bool
     {
         $slash = \strpos($packageName, '/');

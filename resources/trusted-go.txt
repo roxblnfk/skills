@@ -1,0 +1,26 @@
+# Built-in trusted-vendors list for the go provider.
+#
+# Module-path prefix patterns; org-owned namespaces only. A module whose path
+# begins with any of these prefixes may ship AI skills into a consumer project
+# without an explicit opt-in.
+#
+# Format: one pattern per line. Blank lines and lines starting with `#` are
+# ignored. Surrounding whitespace is trimmed.
+
+# AI / agent ecosystem
+github.com/anthropics/*
+github.com/modelcontextprotocol/*
+
+# The Go project
+github.com/golang/*
+golang.org/x/*
+google.golang.org/*
+
+# Spiral / RoadRunner / Temporal ecosystem (mirrors the composer list)
+github.com/spiral/*
+github.com/roadrunner-server/*
+github.com/temporalio/*
+
+# Widely-trusted infrastructure orgs
+github.com/grpc/*
+github.com/uber-go/*

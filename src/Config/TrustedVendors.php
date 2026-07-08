@@ -21,7 +21,7 @@ namespace LLM\Skills\Config;
 final readonly class TrustedVendors
 {
     /**
-     * @param list<VendorPattern> $patterns
+     * @param list<TrustPattern> $patterns
      *
      * @psalm-mutation-free
      */
@@ -38,8 +38,11 @@ final readonly class TrustedVendors
     }
 
     /**
-     * Build from raw pattern strings. Useful for loading the built-in list and
-     * for short-hand construction in tests. Robust to named-argument calls —
+     * Build from raw Composer pattern strings, parsed through
+     * {@see VendorPattern}. Useful for the composer built-in list and for
+     * short-hand construction in tests. Other ecosystems (npm, go) build their
+     * sets from {@see NpmPattern} / {@see GoPattern} directly rather than
+     * through this composer-grammar helper. Robust to named-argument calls —
      * the foreach preserves order and rebuilds a list regardless of the input
      * array's keys.
      *
