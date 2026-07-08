@@ -9,10 +9,10 @@ namespace LLM\Skills\Discovery\Provider\Source\Adapter;
  *
  * Two consumers go through this:
  *
- * - `SkillsJsonDonorRefSource` (Phase 3) — given a `sources[]`
+ * - `SkillsJsonDonorRefSource` — given a `sources[]`
  *   entry, asks the registry for the adapter that knows how to
  *   `resolve()` it.
- * - `skills:add` CLI (Phase 4) — given `--from=<id>` (explicit) or
+ * - `skills:add` CLI — given `--from=<id>` (explicit) or
  *   an inferred-from-URL id (implicit), asks the registry for the
  *   adapter that knows how to `parseAddInput()` the user's argument.
  *

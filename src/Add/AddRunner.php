@@ -300,10 +300,12 @@ final readonly class AddRunner
         }
 
         // Inspect the live directory with the same shared inspector the
-        // sync path runs, using the package hint the sync source derives
-        // (§4.1). Refusing a non-donor shape here keeps `skills:add` from
-        // writing an entry the sync would then ignore — a skill declared
-        // but never copied.
+        // sync path runs, using the package hint the sync source derives.
+        // An entry's package override and the directory's own
+        // composer.json name both win over this derived hint, which is
+        // the last fallback. Refusing a non-donor shape here keeps
+        // `skills:add` from writing an entry the sync would then ignore
+        // — a skill declared but never copied.
         $inspection = $this->inspector->inspect(
             $resolved,
             DirDonorRef::derivePackageName($resolved),
@@ -347,8 +349,10 @@ final readonly class AddRunner
         // a composer-shaped directory the inspection returns its
         // composer.json `name`; for a bare skill directory it returns the
         // derived hint. Either way it matches the name the sync pipeline
-        // registers this directory under (§4.1), so the scoped sync finds
-        // the donor and copies its skills.
+        // registers this directory under, since both paths apply the same
+        // precedence — an entry's package override, then the directory's
+        // own composer.json name, then this derived hint — so the scoped
+        // sync finds the donor and copies its skills.
         $onRegistered?->__invoke($entry, $donorPackageName);
 
         return Command::SUCCESS;

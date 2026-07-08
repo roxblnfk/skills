@@ -14,7 +14,7 @@ namespace LLM\Skills\Discovery\Provider;
  *   implementation today; `npm` and `go` lock the vocabulary.
  * - `skills.json` `sources[].from` values — which source adapter resolves
  *   a given remote entry.
- * - The `--from=<id>` CLI flag on `skills:update` (Phase 5).
+ * - The `--from=<id>` CLI flag on `skills:update`.
  *
  * The vocabulary is locked up front so the format can accommodate future
  * adapters without a schema migration. The constants below are the

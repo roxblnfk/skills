@@ -18,8 +18,8 @@ use Testo\Test;
  * Acceptance coverage for the `--from=<id>` filter on `skills:update`.
  *
  * Sanity tests against the existing sandbox donor packages. We don't
- * have a remote provider hooked up here (Phase 7 ships the HTTP
- * fixture), so the coverage focuses on:
+ * have a remote provider hooked up here (no HTTP fixture is wired up
+ * yet), so the coverage focuses on:
  *
  * - `--from=composer` keeps Composer donors visible (no behaviour
  *   change vs. unfiltered sync).

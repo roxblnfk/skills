@@ -10,8 +10,8 @@ namespace LLM\Skills\Discovery\Provider\Source\Adapter;
  *
  * Two callers hit this:
  *
- * - The remote source ({@see \LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource},
- *   Phase 3) when an entry's `from` value passed schema validation
+ * - The remote source ({@see \LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource})
+ *   when an entry's `from` value passed schema validation
  *   but no adapter has been bound for it yet — v1 will only register
  *   `github`, so `gitlab` / `npm` / etc. entries will reach this path.
  * - The `skills:add` CLI when `--from` names an unimplemented adapter.

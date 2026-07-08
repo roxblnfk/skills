@@ -40,10 +40,10 @@ use Testo\Test;
  * collaborator participates), but no Composer subprocess or sandbox
  * is needed.
  *
- * A future Phase-7 follow-up will spin up a real `php -S` HTTP
- * fixture so Acceptance tests can exercise the same path through
- * the standalone `bin/skills` binary; this test pins the in-process
- * contract until that lands.
+ * A future follow-up will spin up a real `php -S` HTTP fixture so
+ * Acceptance tests can exercise the same path through the standalone
+ * `bin/skills` binary; this test pins the in-process contract until
+ * that lands.
  */
 #[Test]
 #[Covers(SourceProvider::class)]

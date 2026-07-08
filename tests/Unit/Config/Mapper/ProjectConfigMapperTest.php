@@ -613,9 +613,9 @@ final class ProjectConfigMapperTest
 
     public function remoteUnknownAdapterThrows(): void
     {
-        // `from` vocabulary is locked at the spec table; unknown values
-        // must fail at load so a typo never reaches the fetcher (which
-        // would otherwise give a less helpful error).
+        // the `from` vocabulary is a locked set; unknown values must fail
+        // at load so a typo never reaches the fetcher (which would
+        // otherwise give a less helpful error).
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('not a known source adapter');
 

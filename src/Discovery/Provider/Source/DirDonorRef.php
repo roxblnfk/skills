@@ -58,11 +58,11 @@ final readonly class DirDonorRef
      * path has no usable parent segment (a filesystem root), fall back
      * to `dir/<basename>`.
      *
-     * The precedence rule of spec §4.1 lives at the call sites: an
-     * entry `package` override and a directory's own `composer.json`
-     * name both win over this derivation, which is the last fallback.
-     * `skills:add` and the sync source both call this so the name they
-     * scope on stays identical.
+     * The precedence rule lives at the call sites: an entry `package`
+     * override and a directory's own `composer.json` name both win over
+     * this derivation, which is the last fallback. `skills:add` and the
+     * sync source both call this so the name they scope on stays
+     * identical.
      *
      * @return non-empty-string
      */

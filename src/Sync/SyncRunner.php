@@ -461,8 +461,8 @@ final readonly class SyncRunner
     /**
      * The winning config block declared its donor sources under the
      * deprecated `remote` key. Surface a notice at normal verbosity —
-     * deprecations should be seen. In write mode the §2.1 in-place
-     * rename runs first, so this fires only when migration was
+     * deprecations should be seen. In write mode the `remote`-to-`sources`
+     * in-place rename runs first, so this fires only when migration was
      * suppressed (the `post-install-cmd` auto-sync hook).
      */
     private function emitDeprecatedSourcesKeyNotice(IOInterface $io, bool $used): void

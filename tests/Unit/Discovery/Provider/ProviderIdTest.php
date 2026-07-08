@@ -28,7 +28,7 @@ final class ProviderIdTest
         Assert::false(ProviderId::isKnownManager('whatever'));
     }
 
-    public function knownRemoteCoversAllSpecAdapters(): void
+    public function knownSourceCoversAllAdapters(): void
     {
         Assert::true(ProviderId::isKnownSource(ProviderId::GITHUB));
         Assert::true(ProviderId::isKnownSource(ProviderId::GITLAB));
