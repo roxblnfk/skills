@@ -451,6 +451,104 @@ final class InitRunnerTest
         );
     }
 
+    public function forceInteractivePreservesUnpromptedConfig(): void
+    {
+        // A rich existing skills.json carrying keys the wizard never prompts
+        // for: `sources`, `path-from-root`, a sibling `npm` block, and an
+        // explicit `composer.enabled: false`. Running `skills:init --force`
+        // interactively and pressing Enter through every prompt must rewrite
+        // the file WITHOUT dropping any of them — the six prompted knobs are
+        // the only ones the wizard owns.
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            (string) \json_encode(
+                [
+                    '$schema' => InitRunner::SCHEMA_URL,
+                    'target' => 'custom/skills',
+                    'aliases' => ['.claude/skills'],
+                    'dependencies' => [
+                        'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+                        'npm' => ['trusted' => ['@scope/*']],
+                    ],
+                    'path-from-root' => 'packages/api',
+                    'sources' => [['from' => 'dir', 'path' => '../shared/skills']],
+                ],
+                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
+            ) . "\n",
+        );
+
+        $io = new BufferIO();
+        $io->setUserInputs(['', '', '', '', '', '', 'yes']);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+
+        $written = $this->readSkillsJson();
+        // Unprompted keys survive verbatim.
+        Assert::same($written['sources'] ?? null, [['from' => 'dir', 'path' => '../shared/skills']]);
+        Assert::same($written['path-from-root'] ?? null, 'packages/api');
+        // composer.enabled=false and the sibling npm block are preserved; the
+        // kept trusted list lands under dependencies.composer.
+        Assert::same($written['dependencies'] ?? null, [
+            'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+            'npm' => ['trusted' => ['@scope/*']],
+        ]);
+        // No legacy flat keys survive; keys come out in canonical order.
+        Assert::false(\array_key_exists('trusted', $written));
+        Assert::false(\array_key_exists('trusted-replace', $written));
+        Assert::false(\array_key_exists('local', $written));
+        Assert::false(\array_key_exists('remote', $written));
+        Assert::same(
+            \array_keys($written),
+            ['$schema', 'target', 'aliases', 'dependencies', 'path-from-root', 'sources'],
+        );
+    }
+
+    public function forceInteractiveMigratesLegacyRemoteAndFlatTrust(): void
+    {
+        // A legacy skills.json using the deprecated `remote` alias and the
+        // flat trust trio. The interactive `--force` path reads it raw, so
+        // the defaults normaliser must rename `remote` to `sources` and fold
+        // the flat trust into `dependencies` before the wizard preserves
+        // them. The rewritten file carries `sources` + `dependencies` and
+        // none of the legacy keys.
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            (string) \json_encode(
+                [
+                    '$schema' => InitRunner::SCHEMA_URL,
+                    'remote' => [['from' => 'dir', 'path' => '../shared/skills']],
+                    'trusted' => ['acme/*'],
+                ],
+                \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR,
+            ) . "\n",
+        );
+
+        $io = new BufferIO();
+        $io->setUserInputs(['', '', '', '', '', '', 'yes']);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+
+        $written = $this->readSkillsJson();
+        // `remote` renamed to the canonical `sources`, entries verbatim.
+        Assert::false(\array_key_exists('remote', $written), 'legacy remote must not survive');
+        Assert::same($written['sources'] ?? null, [['from' => 'dir', 'path' => '../shared/skills']]);
+        // Flat trust folded into dependencies.composer.
+        Assert::false(\array_key_exists('trusted', $written), 'flat trusted must not survive');
+        Assert::same($written['dependencies'] ?? null, ['composer' => ['trusted' => ['acme/*']]]);
+    }
+
     /**
      * @return array<string, mixed>
      */

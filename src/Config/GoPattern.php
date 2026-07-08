@@ -48,7 +48,9 @@ final readonly class GoPattern implements TrustPattern
      * @param non-empty-string $pattern
      *
      * @throws \InvalidArgumentException when the pattern is empty once the
-     *         optional `/*` suffix is removed.
+     *         optional `/*` suffix is removed, or when a `*` appears anywhere
+     *         other than that trailing `/*` wildcard — an embedded `*` yields
+     *         a module path that can never match.
      *
      * @psalm-pure
      */
@@ -62,6 +64,14 @@ final readonly class GoPattern implements TrustPattern
                     $pattern,
                 ));
             }
+            // The prefix is a literal module path; a `*` inside it (`own*er/*`)
+            // never matches a real module.
+            if (\str_contains($base, '*')) {
+                throw new \InvalidArgumentException(\sprintf(
+                    'Invalid go pattern "%s": "*" is only allowed as the trailing "/*" wildcard.',
+                    $pattern,
+                ));
+            }
 
             return new self(raw: $pattern, base: $base, wildcard: true);
         }
@@ -70,6 +80,14 @@ final readonly class GoPattern implements TrustPattern
             throw new \InvalidArgumentException(
                 'Invalid go pattern "*": a bare wildcard is not allowed; give it a prefix ("owner/*").',
             );
+        }
+        // An exact module path is literal; a `*` anywhere in it (`*/mod`,
+        // `owner/*/v2`) yields a path that can never match.
+        if (\str_contains($pattern, '*')) {
+            throw new \InvalidArgumentException(\sprintf(
+                'Invalid go pattern "%s": "*" is only allowed as the trailing "/*" wildcard.',
+                $pattern,
+            ));
         }
 
         return new self(raw: $pattern, base: $pattern, wildcard: false);

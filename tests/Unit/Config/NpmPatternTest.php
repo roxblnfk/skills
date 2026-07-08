@@ -74,6 +74,44 @@ final class NpmPatternTest
         NpmPattern::fromString('@scope/a/b');
     }
 
+    public function fromStringRejectsUnscopedNameWithWildcard(): void
+    {
+        // `lodash*` is not a real npm name — only a scope may carry the
+        // wildcard, so this can never match anything.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('cannot contain "*"');
+
+        NpmPattern::fromString('lodash*');
+    }
+
+    public function fromStringRejectsEmptyScopeName(): void
+    {
+        // `@/*` has a bare `@` with no scope name behind it.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('scope segment after "@" must not be empty');
+
+        NpmPattern::fromString('@/*');
+    }
+
+    public function fromStringRejectsWildcardInScopeSegment(): void
+    {
+        // A `*` in the scope segment (`@sc*ope/x`) never matches a real name.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('scope segment cannot contain "*"');
+
+        NpmPattern::fromString('@sc*ope/x');
+    }
+
+    public function fromStringRejectsWildcardInsidePackageSegment(): void
+    {
+        // The package segment is either the whole wildcard (`*`) or a
+        // literal name; `@scope/*foo` embeds a `*` and is rejected.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('package segment must be "*"');
+
+        NpmPattern::fromString('@scope/*foo');
+    }
+
     #[DataSet(['lodash', 'lodash', true], name: 'bare exact match')]
     #[DataSet(['lodash', 'lodash-es', false], name: 'bare rejects a different name')]
     #[DataSet(['lodash', '@scope/lodash', false], name: 'bare rejects a scoped name')]

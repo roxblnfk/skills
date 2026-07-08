@@ -291,19 +291,25 @@ final readonly class InitRunner
 
     /**
      * Normalise a raw `skills.json` map into the shape the wizard reads
-     * its defaults from. The wizard reads trust only from
-     * `dependencies.composer`, so a legacy file carrying the flat
-     * `trusted` / `trusted-replace` / `local` trio would otherwise
-     * present empty trust defaults and silently drop the user's config
-     * when they accept the prompts. Folding here — through the same
-     * {@see ProjectConfigMigrator} helpers the file migrators use —
-     * keeps a single owner for the legacy-trust rule.
+     * its defaults from — and, since the wizard now preserves the keys it
+     * does not prompt for, the shape those preserved keys should be
+     * written back under.
      *
-     * A map already carrying `dependencies` is left untouched: mixing it
-     * with a legacy key is the mapper's to reject on write, not this
-     * normaliser's to silently merge. The deprecated `remote` → `sources`
-     * pair needs no analogue here — the wizard prompts for neither
-     * `sources` nor `remote`, so those keys never feed a wizard default.
+     * Three legacy shapes are canonicalised here, all through the same
+     * {@see ProjectConfigMigrator} helpers the file migrators use so a
+     * single implementation owns each rule:
+     *
+     * - the flat trust trio (`trusted` / `trusted-replace` / `local`)
+     *   folds into `dependencies`, so the wizard reads trust from
+     *   `dependencies.composer` and a preserved block is never re-emitted
+     *   under a legacy key. A map already carrying `dependencies` is left
+     *   untouched: mixing it with a legacy key is the mapper's to reject
+     *   on write, not this normaliser's to silently merge;
+     * - the deprecated `remote` key is renamed to `sources`, so a
+     *   preserved donor list lands under its canonical name rather than
+     *   surviving verbatim;
+     * - `$schema` is dropped — the renderer re-adds it, and a preserved
+     *   copy would duplicate it.
      *
      * @param array<string, mixed> $defaults
      *
@@ -313,20 +319,22 @@ final readonly class InitRunner
      */
     private function foldLegacyDefaults(array $defaults): array
     {
+        // The renderer re-adds `$schema`; drop it so it never leaks into a
+        // preserved key.
+        unset($defaults['$schema']);
+
         if (
-            \array_key_exists(ProjectConfigMapper::DEPENDENCIES_KEY, $defaults)
-            || !ProjectConfigMigrator::hasLegacyDependencyKeys($defaults)
+            !\array_key_exists(ProjectConfigMapper::DEPENDENCIES_KEY, $defaults)
+            && ProjectConfigMigrator::hasLegacyDependencyKeys($defaults)
         ) {
-            return $defaults;
+            $folded = ProjectConfigMigrator::foldLegacyDependencies($defaults);
+            foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $key) {
+                unset($defaults[$key]);
+            }
+            $defaults[ProjectConfigMapper::DEPENDENCIES_KEY] = $folded;
         }
 
-        $folded = ProjectConfigMigrator::foldLegacyDependencies($defaults);
-        foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $key) {
-            unset($defaults[$key]);
-        }
-        $defaults[ProjectConfigMapper::DEPENDENCIES_KEY] = $folded;
-
-        return $defaults;
+        return ProjectConfigMigrator::renameSourcesInMap($defaults);
     }
 
     /**

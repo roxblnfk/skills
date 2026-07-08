@@ -320,6 +320,80 @@ final class InteractiveInitWizardTest
         Assert::same($result['dependencies'] ?? null, ['composer' => ['trusted' => ['acme/*']]]);
     }
 
+    public function preservesUnpromptedKeysAndMergesTrust(): void
+    {
+        // --force over a rich existing skills.json: the wizard prompts for
+        // only six knobs, but everything else in the file — `sources`,
+        // `path-from-root`, a sibling `npm` block, and composer's explicit
+        // `enabled: false` — must survive. Enter through every prompt: the
+        // surfaced trusted list is kept and lands under dependencies.composer.
+        $io = $this->ioWithAnswers([
+            '',    // target → keep custom/skills
+            '',    // aliases → keep .claude/skills
+            '',    // trusted → keep acme/*
+            '',    // trusted-replace → keep default (false)
+            '',    // discovery → keep default (false)
+            '',    // auto-sync → keep default (true)
+            'yes', // confirm write
+        ]);
+
+        $result = (new InteractiveInitWizard())->run($io, [
+            'target' => 'custom/skills',
+            'aliases' => ['.claude/skills'],
+            'dependencies' => [
+                'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+                'npm' => ['trusted' => ['@scope/*']],
+            ],
+            'path-from-root' => 'packages/api',
+            'sources' => [['from' => 'dir', 'path' => '../shared/skills']],
+        ]);
+
+        // Unprompted keys survive verbatim.
+        Assert::same($result['sources'] ?? null, [['from' => 'dir', 'path' => '../shared/skills']]);
+        Assert::same($result['path-from-root'] ?? null, 'packages/api');
+        // The sibling npm entry and composer.enabled=false are preserved;
+        // the kept trusted list lands under dependencies.composer.
+        Assert::same($result['dependencies'] ?? null, [
+            'composer' => ['enabled' => false, 'trusted' => ['acme/*']],
+            'npm' => ['trusted' => ['@scope/*']],
+        ]);
+        // No legacy flat keys leak in.
+        Assert::false(\array_key_exists('trusted', $result ?? []));
+        Assert::false(\array_key_exists('trusted-replace', $result ?? []));
+        Assert::false(\array_key_exists('local', $result ?? []));
+        Assert::false(\array_key_exists('remote', $result ?? []));
+        // Canonical PROJECT_KEYS order.
+        Assert::same(
+            \array_keys($result ?? []),
+            ['target', 'aliases', 'dependencies', 'path-from-root', 'sources'],
+        );
+    }
+
+    public function preservedDisabledComposerSurvivesAddedTrust(): void
+    {
+        // A file that switched composer OFF (`enabled: false`) must keep that
+        // opt-out even as the user adds a fresh trusted pattern — losing it
+        // would silently re-broaden the discovery surface.
+        $io = $this->ioWithAnswers([
+            '',              // target
+            '',              // aliases
+            'acme/*',        // trusted → add a pattern
+            '',              // trusted-replace
+            '',              // discovery
+            '',              // auto-sync
+            'yes',
+        ]);
+
+        $result = (new InteractiveInitWizard())->run($io, [
+            'dependencies' => ['composer' => ['enabled' => false]],
+        ]);
+
+        Assert::same(
+            $result['dependencies'] ?? null,
+            ['composer' => ['enabled' => false, 'trusted' => ['acme/*']]],
+        );
+    }
+
     /**
      * @param list<string> $answers
      */

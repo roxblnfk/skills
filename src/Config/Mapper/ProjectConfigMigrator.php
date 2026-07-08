@@ -233,6 +233,43 @@ final readonly class ProjectConfigMigrator
     }
 
     /**
+     * Rename the deprecated `remote` key to `sources` in an in-memory
+     * config map, preserving the renamed key's slot and every sibling
+     * verbatim. When the map already carries `sources` (or carries both
+     * keys, or neither), it is returned untouched — the "both present"
+     * case is the mapper's to reject, not this helper's to silently
+     * merge. This is the pure core the file-level {@see
+     * self::renameSourcesKey()} and the wizard's defaults normaliser both
+     * lean on, so one implementation owns the rename rule.
+     *
+     * @param array<string, mixed> $map
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    public static function renameSourcesInMap(array $map): array
+    {
+        $hasDeprecated = \array_key_exists(ProjectConfigMapper::DEPRECATED_SOURCES_KEY, $map);
+        $hasCanonical = \array_key_exists(ProjectConfigMapper::SOURCES_KEY, $map);
+        if (!$hasDeprecated || $hasCanonical) {
+            return $map;
+        }
+
+        $rebuilt = [];
+        /** @var mixed $value */
+        foreach ($map as $key => $value) {
+            $target = $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
+                ? ProjectConfigMapper::SOURCES_KEY
+                : $key;
+            /** @psalm-suppress MixedAssignment value type is validated later by the mapper */
+            $rebuilt[$target] = $value;
+        }
+
+        return $rebuilt;
+    }
+
+    /**
      * Detect-and-migrate. Returns:
      *
      * - {@see MigrationStatus::Skipped} when `skills.json` already
@@ -412,15 +449,8 @@ final readonly class ProjectConfigMigrator
 
         // Rebuild the map so the renamed key keeps its original slot and
         // every sibling key stays verbatim.
-        $rebuilt = [];
-        /** @var mixed $value */
-        foreach ($decoded as $key => $value) {
-            $target = $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
-                ? ProjectConfigMapper::SOURCES_KEY
-                : $key;
-            /** @psalm-suppress MixedAssignment value type is validated later by the mapper */
-            $rebuilt[$target] = $value;
-        }
+        /** @var array<string, mixed> $decoded */
+        $rebuilt = self::renameSourcesInMap($decoded);
 
         $json = \json_encode(
             $rebuilt,

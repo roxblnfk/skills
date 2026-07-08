@@ -48,6 +48,35 @@ final class GoPatternTest
         GoPattern::fromString('/*');
     }
 
+    public function fromStringRejectsWildcardInMiddleSegment(): void
+    {
+        // `github.com/*/mod` puts the wildcard mid-path; it is not the
+        // trailing `/*`, so the "exact" path it produces can never match.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('only allowed as the trailing');
+
+        GoPattern::fromString('github.com/*/mod');
+    }
+
+    public function fromStringRejectsWildcardBeforeTrailingSegment(): void
+    {
+        // `github.com/owner/*/v2` has a `*` that is not the final segment.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('only allowed as the trailing');
+
+        GoPattern::fromString('github.com/owner/*/v2');
+    }
+
+    public function fromStringRejectsWildcardInsideWildcardPrefix(): void
+    {
+        // The prefix before a trailing `/*` is literal; `github.com/own*er/*`
+        // embeds a stray `*` in it.
+        Expect::exception(\InvalidArgumentException::class)
+            ->withMessageContaining('only allowed as the trailing');
+
+        GoPattern::fromString('github.com/own*er/*');
+    }
+
     #[DataSet(['github.com/owner/mod', 'github.com/owner/mod', true], name: 'exact match')]
     #[DataSet(['github.com/owner/mod', 'github.com/owner/other', false], name: 'exact rejects a sibling')]
     #[DataSet(['github.com/owner/mod', 'github.com/owner/mod/v2', false], name: 'exact does not swallow deeper paths')]

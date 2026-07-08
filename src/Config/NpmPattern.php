@@ -46,7 +46,11 @@ final readonly class NpmPattern implements TrustPattern
      * @param non-empty-string $pattern
      *
      * @throws \InvalidArgumentException when the pattern is not a bare name,
-     *         a `@scope/pkg`, or a `@scope/*` wildcard.
+     *         a `@scope/pkg`, or a `@scope/*` wildcard. The `*` wildcard is
+     *         only ever valid as the whole package segment of a scoped
+     *         pattern; a `*` anywhere else — in an unscoped name, in the
+     *         scope segment, or embedded in a package segment — is rejected,
+     *         since a real npm name never contains one.
      *
      * @psalm-pure
      */
@@ -67,11 +71,37 @@ final readonly class NpmPattern implements TrustPattern
                 ));
             }
 
-            /** @var non-empty-string $scope the `@` guarantees a non-empty segment */
             $scope = \substr($pattern, 0, $slash);
-            /** @var non-empty-string $package */
             $package = \substr($pattern, $slash + 1);
 
+            // `@/pkg` carries a bare `@` with no scope name behind it.
+            if ($scope === '@') {
+                throw new \InvalidArgumentException(\sprintf(
+                    'Invalid npm pattern "%s": the scope segment after "@" must not be empty.',
+                    $pattern,
+                ));
+            }
+            // Only the package segment may be a wildcard; a `*` in the scope
+            // segment never matches a real npm name.
+            if (\str_contains($scope, '*')) {
+                throw new \InvalidArgumentException(\sprintf(
+                    'Invalid npm pattern "%s": the scope segment cannot contain "*".',
+                    $pattern,
+                ));
+            }
+            // The package segment is either the whole wildcard (`*`) or a
+            // literal name; a `*` embedded in a name (`*foo`) matches nothing.
+            if ($package !== '*' && \str_contains($package, '*')) {
+                throw new \InvalidArgumentException(\sprintf(
+                    'Invalid npm pattern "%s": the package segment must be "*" or contain no "*".',
+                    $pattern,
+                ));
+            }
+
+            /**
+             * @var non-empty-string $scope the `@` plus a non-empty name
+             * @var non-empty-string $package
+             */
             return new self(
                 raw: $pattern,
                 scope: $scope,
@@ -79,8 +109,9 @@ final readonly class NpmPattern implements TrustPattern
             );
         }
 
-        // Unscoped names are bare identifiers: no slash, no wildcard. A bare
-        // `*` would trust the whole registry and is never a valid npm name.
+        // Unscoped names are bare identifiers: no slash, no wildcard. Only a
+        // scope may carry a wildcard, and an unscoped npm name never contains
+        // a slash.
         if (\str_contains($pattern, '/')) {
             throw new \InvalidArgumentException(\sprintf(
                 'Invalid npm pattern "%s": an unscoped package name cannot contain "/".',
@@ -91,6 +122,14 @@ final readonly class NpmPattern implements TrustPattern
             throw new \InvalidArgumentException(
                 'Invalid npm pattern "*": a bare wildcard is not allowed; scope it as "@scope/*".',
             );
+        }
+        // Any other `*` in an unscoped name matches nothing — the wildcard
+        // belongs to a scope (`@scope/*`), never to a bare name.
+        if (\str_contains($pattern, '*')) {
+            throw new \InvalidArgumentException(\sprintf(
+                'Invalid npm pattern "%s": an unscoped package name cannot contain "*"; scope it as "@scope/*".',
+                $pattern,
+            ));
         }
 
         return new self(raw: $pattern, scope: null, package: $pattern);
