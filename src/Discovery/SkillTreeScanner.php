@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Discovery;
 
 use Internal\Path;
+use LLM\Skills\Filesystem\LinkGuard;
 
 /**
  * Locates skill directories inside a package that does **not** declare
@@ -27,10 +28,12 @@ use Internal\Path;
  *    {@see self::SKIP_DIRS}) to find `SKILL.md` files in non-conventional
  *    locations.
  *
- * Junction safety: every accepted skill directory must resolve (via
- * {@see \realpath()}) to a path still contained within the package root. A
- * symlink/junction escaping the package boundary is silently rejected — we
- * never follow such pointers, even read-only.
+ * Junction safety: the scan never traverses a symlinked or junctioned
+ * subdirectory ({@see self::immediateSubdirs()}), so a linked subtree cannot
+ * be discovered as skills and a link cycle cannot outlast the depth ceiling.
+ * As a second line, every accepted skill directory must still resolve (via
+ * {@see \realpath()}) to a path contained within the package root; anything
+ * escaping the boundary is silently rejected.
  */
 final readonly class SkillTreeScanner
 {
@@ -204,7 +207,14 @@ final readonly class SkillTreeScanner
             if ($entry === '.' || $entry === '..') {
                 continue;
             }
-            if (\is_dir($dir . \DIRECTORY_SEPARATOR . $entry)) {
+            $child = $dir . \DIRECTORY_SEPARATOR . $entry;
+            // A symlink or junction is not first-party package content and
+            // could point anywhere; never descend through one, and never let
+            // a link cycle defeat the recursion's depth ceiling.
+            if (LinkGuard::isLink($child)) {
+                continue;
+            }
+            if (\is_dir($child)) {
                 /** @var non-empty-string $entry */
                 $out[] = $entry;
             }

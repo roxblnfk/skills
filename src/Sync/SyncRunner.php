@@ -231,6 +231,7 @@ final readonly class SyncRunner
         }
 
         $this->emitCopyReport($io, $report->copied, $options->dryRun);
+        $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
@@ -384,6 +385,26 @@ final readonly class SyncRunner
     {
         foreach ($warnings as $warning) {
             $io->writeError('<comment>[warn] ' . $warning . '</comment>', verbosity: IOInterface::VERBOSE);
+        }
+    }
+
+    /**
+     * Surface the symlinks and junctions the copy step refused to follow.
+     * They are skipped for security — a link inside a donor could drag in a
+     * tree beyond the skill — but a silent skip is a debugging trap: the user
+     * must be able to see why a file did not land. Shown under `-v`, matching
+     * the other non-fatal diagnostics.
+     *
+     * @param list<string> $skippedLinks
+     */
+    private function emitSkippedLinkWarnings(IOInterface $io, array $skippedLinks): void
+    {
+        foreach ($skippedLinks as $link) {
+            $io->writeError(
+                '<comment>[warn] skipped symlink/junction (not followed for security): '
+                . $link . '</comment>',
+                verbosity: IOInterface::VERBOSE,
+            );
         }
     }
 

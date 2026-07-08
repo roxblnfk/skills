@@ -6,6 +6,7 @@ namespace LLM\Skills\Sync;
 
 use Internal\Path;
 use LLM\Skills\Discovery\Skill;
+use LLM\Skills\Filesystem\LinkGuard;
 
 /**
  * Writes a curated list of skills into a target directory.
@@ -26,6 +27,15 @@ use LLM\Skills\Discovery\Skill;
 final readonly class SyncEngine
 {
     /**
+     * Directory depth {@see self::copyTree()} descends into a single skill
+     * tree before giving up. Real skills are shallow, so this generous cap
+     * never bites legitimate content; it is a defence-in-depth backstop so
+     * an undetected reparse-point cycle terminates deterministically rather
+     * than recursing until the stack or the path length gives out.
+     */
+    private const MAX_COPY_DEPTH = 32;
+
+    /**
      * @param list<Skill> $skills the skills to write (post-trust, post-enumeration)
      * @param Path $target absolute destination directory; created if missing
      * @param bool $dryRun when `true`, do everything except writing files — conflict detection still runs,
@@ -38,16 +48,19 @@ final readonly class SyncEngine
             return new SyncReport(copied: [], conflicts: $conflicts);
         }
 
+        $skippedLinks = [];
         if (!$dryRun) {
             foreach ($skills as $skill) {
                 $this->copyTree(
                     (string) $skill->sourceDir,
                     (string) $target->join($skill->name),
+                    0,
+                    $skippedLinks,
                 );
             }
         }
 
-        return new SyncReport(copied: $skills, conflicts: []);
+        return new SyncReport(copied: $skills, conflicts: [], skippedLinks: $skippedLinks);
     }
 
     /**
@@ -79,9 +92,26 @@ final readonly class SyncEngine
      * Recursively copy `$src` into `$dst`. Existing files in `$dst` that are
      * also in `$src` are overwritten (vendor is source of truth). Files in
      * `$dst` not present in `$src` are left untouched (non-destructive merge).
+     *
+     * Symlinks and NTFS junctions are never followed or copied. A link inside
+     * a donor could point at a large or sensitive tree beyond the skill —
+     * dragging unrelated content into the target — and a link cycle would
+     * recurse forever. Each skipped link's source path is appended to
+     * `$skippedLinks` so the caller can explain why a file did not arrive; a
+     * silent security skip is a debugging trap.
+     *
+     * @param int $depth levels below the skill root for `$src`; the recursion
+     *        stops at {@see self::MAX_COPY_DEPTH} as a cycle backstop
+     * @param list<string> $skippedLinks source paths of skipped links, accumulated across the tree
+     *
+     * @param-out list<string> $skippedLinks
      */
-    private function copyTree(string $src, string $dst): void
+    private function copyTree(string $src, string $dst, int $depth, array &$skippedLinks): void
     {
+        if ($depth >= self::MAX_COPY_DEPTH) {
+            return;
+        }
+
         $this->ensureDirectory($dst);
 
         $entries = \scandir($src);
@@ -96,8 +126,13 @@ final readonly class SyncEngine
             $s = $src . \DIRECTORY_SEPARATOR . $entry;
             $d = $dst . \DIRECTORY_SEPARATOR . $entry;
 
+            if (LinkGuard::isLink($s)) {
+                $skippedLinks[] = $s;
+                continue;
+            }
+
             if (\is_dir($s)) {
-                $this->copyTree($s, $d);
+                $this->copyTree($s, $d, $depth + 1, $skippedLinks);
             } else {
                 \copy($s, $d);
             }

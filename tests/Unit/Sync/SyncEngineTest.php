@@ -9,6 +9,7 @@ use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Sync\SyncEngine;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -223,6 +224,77 @@ final class SyncEngineTest
         (new SyncEngine())->sync([$skill], $this->target(), dryRun: true);
 
         Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'pre-existing content');
+    }
+
+    public function skipsSymlinkedDirectoriesAndFilesAndReportsThem(): void
+    {
+        // Security: a link inside a donor could point at a large or sensitive
+        // tree beyond the skill. The copy must land the regular files, skip
+        // both link kinds, and report each skip so it is never silent.
+        $skill = $this->makeSkill('acme/pro', 'refactor', ['SKILL.md' => '# Refactor']);
+        $skillDir = (string) $skill->sourceDir;
+
+        // A tree outside the skill that the links try to drag in.
+        $outside = $this->tmp . '/outside';
+        \mkdir($outside, 0o777, true);
+        \file_put_contents($outside . '/secret.txt', 'secret');
+
+        $dirLink = $skillDir . \DIRECTORY_SEPARATOR . 'leak';
+        $fileLink = $skillDir . \DIRECTORY_SEPARATOR . 'link.txt';
+        $dirLinkMade = Filesystem::makeDirLink($outside, $dirLink);
+        $fileLinkMade = Filesystem::makeFileLink($outside . '/secret.txt', $fileLink);
+
+        if (!$dirLinkMade && !$fileLinkMade) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        Assert::true(\is_file($this->targetPath('refactor/SKILL.md')), 'regular files are still copied');
+
+        if ($dirLinkMade) {
+            Assert::false(
+                \is_dir($this->targetPath('refactor/leak')),
+                'a linked subdirectory must not be traversed into the target',
+            );
+            Assert::false(\is_file($this->targetPath('refactor/leak/secret.txt')));
+            Assert::true(
+                \in_array($dirLink, $report->skippedLinks, true),
+                'the skipped directory link must be reported',
+            );
+        }
+
+        if ($fileLinkMade) {
+            Assert::false(
+                \is_file($this->targetPath('refactor/link.txt')),
+                'a symlinked file must not be copied',
+            );
+            Assert::true(
+                \in_array($fileLink, $report->skippedLinks, true),
+                'the skipped file link must be reported',
+            );
+        }
+    }
+
+    public function terminatesOnASymlinkCycleAndReportsTheSkip(): void
+    {
+        // A link that loops back to the skill root: following it would recurse
+        // forever. The copy must break the loop, skip the link, and finish.
+        $skill = $this->makeSkill('acme/pro', 'refactor', ['SKILL.md' => '# Refactor']);
+        $skillDir = (string) $skill->sourceDir;
+        $loop = $skillDir . \DIRECTORY_SEPARATOR . 'loop';
+
+        if (!Filesystem::makeDirLink($skillDir, $loop)) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        Assert::true(\is_file($this->targetPath('refactor/SKILL.md')));
+        Assert::false(\is_dir($this->targetPath('refactor/loop')));
+        Assert::same($report->skippedLinks, [$loop]);
     }
 
     /**
