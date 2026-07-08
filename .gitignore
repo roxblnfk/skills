@@ -7,3 +7,10 @@
 /.env
 *.log
 *.exe
+
+# Root-level Markdown holds local-only planning notes; whitelist tracked docs.
+/*.md
+!/README.md
+!/CHANGELOG.md
+!/CLAUDE.md
+!/LICENSE.md
