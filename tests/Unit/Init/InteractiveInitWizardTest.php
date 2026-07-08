@@ -192,7 +192,13 @@ final class InteractiveInitWizardTest
 
         $result = (new InteractiveInitWizard())->run($io, []);
 
-        Assert::same($result['trusted'] ?? null, ['acme/*', 'vendor/pkg']);
+        // Trust lands under `dependencies.composer.trusted`, not the
+        // deprecated flat `trusted` key.
+        Assert::false(\array_key_exists('trusted', $result ?? []));
+        Assert::same(
+            $result['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/*', 'vendor/pkg']]],
+        );
     }
 
     public function trustedNoneTokenClearsExistingList(): void
@@ -213,11 +219,11 @@ final class InteractiveInitWizardTest
         ]);
 
         $result = (new InteractiveInitWizard())->run($io, [
-            'trusted' => ['acme/*', 'vendor/pkg'],
+            'dependencies' => ['composer' => ['trusted' => ['acme/*', 'vendor/pkg']]],
         ]);
 
         Assert::false(
-            \array_key_exists('trusted', $result ?? []),
+            \array_key_exists('dependencies', $result ?? []),
             'cleared trusted must not land in the result (empty list is the default)',
         );
     }
@@ -241,7 +247,9 @@ final class InteractiveInitWizardTest
 
         $result = (new InteractiveInitWizard())->run($io, []);
 
-        Assert::same($result['trusted-replace'] ?? null, true);
+        // trusted-replace lands under `dependencies.composer`; with no
+        // trusted patterns the composer object carries it alone.
+        Assert::same($result['dependencies'] ?? null, ['composer' => ['trusted-replace' => true]]);
         Assert::same($result['discovery'] ?? null, true);
         Assert::same($result['auto-sync'] ?? null, false);
     }
@@ -303,12 +311,13 @@ final class InteractiveInitWizardTest
         $result = (new InteractiveInitWizard())->run($io, [
             'target' => 'custom/skills',
             'aliases' => ['.claude/skills', '.cursor/skills'],
-            'trusted' => ['acme/*'],
+            'dependencies' => ['composer' => ['trusted' => ['acme/*']]],
         ]);
 
         Assert::same($result['target'] ?? null, 'custom/skills');
         Assert::same($result['aliases'] ?? null, ['.claude/skills', '.cursor/skills']);
-        Assert::same($result['trusted'] ?? null, ['acme/*']);
+        // Accepting the surfaced default re-emits it under the canonical key.
+        Assert::same($result['dependencies'] ?? null, ['composer' => ['trusted' => ['acme/*']]]);
     }
 
     /**

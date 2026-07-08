@@ -41,9 +41,9 @@ final class InitRunnerTest
 
     public function standaloneModeCreatesStubWithSchemaAndProviderDefaults(): void
     {
-        // The stub advertises the `local` and `sources` knobs explicitly,
-        // even when their values match the defaults, so users discover
-        // them without reading docs.
+        // The stub advertises the `dependencies` and `sources` knobs
+        // explicitly, even when their values match the defaults, so users
+        // discover them without reading docs.
         $io = new BufferIO();
         $code = (new InitRunner())->run(
             Path::create($this->tmp),
@@ -54,13 +54,13 @@ final class InitRunnerTest
         Assert::same($code, Command::SUCCESS);
 
         $written = $this->readSkillsJson();
-        Assert::same(\array_keys($written), ['$schema', 'local', 'sources']);
+        Assert::same(\array_keys($written), ['$schema', 'dependencies', 'sources']);
         Assert::same(
             $written['$schema'],
             InitRunner::SCHEMA_URL,
             '$schema pointer must use the published GitHub raw URL',
         );
-        Assert::same($written['local'], ['composer' => true]);
+        Assert::same($written['dependencies'], ['composer' => true]);
         Assert::same($written['sources'], []);
 
         // Output advertises the mode so the user understands no composer.json
@@ -183,7 +183,10 @@ final class InitRunnerTest
 
         $skills = $this->readSkillsJson();
         Assert::same($skills['target'], 'custom/skills');
-        Assert::same($skills['trusted'], ['acme/*']);
+        // Flat `trusted` folds into the `dependencies.composer` block;
+        // the migrated file never carries the legacy key.
+        Assert::false(\array_key_exists('trusted', $skills));
+        Assert::same($skills['dependencies'], ['composer' => ['trusted' => ['acme/*']]]);
         Assert::same($skills['auto-sync'], true);
 
         // The migrated keys must be gone from composer.json.
@@ -279,7 +282,7 @@ final class InitRunnerTest
         );
 
         Assert::same($code, Command::SUCCESS);
-        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'local', 'sources']);
+        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'dependencies', 'sources']);
         Assert::true(\str_contains($io->getOutput(), 'no project keys to migrate'));
     }
 

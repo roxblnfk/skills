@@ -120,12 +120,15 @@ final class ProjectConfigMigratorTest
         );
 
         Assert::same($result->status, MigrationStatus::Migrated);
-        Assert::same($result->migratedKeys, ['target', 'trusted', 'auto-sync']);
+        // Flat `trusted` folds into `dependencies`; the migrated key set
+        // and the written file both name the canonical key.
+        Assert::same($result->migratedKeys, ['target', 'dependencies', 'auto-sync']);
 
         // The new skills.json carries the migrated keys plus `$schema`.
         $skills = $this->readSkillsJson();
         Assert::same($skills['target'] ?? null, 'custom/skills');
-        Assert::same($skills['trusted'] ?? null, ['acme/*']);
+        Assert::false(\array_key_exists('trusted', $skills), 'written file must not carry the legacy key');
+        Assert::same($skills['dependencies'] ?? null, ['composer' => ['trusted' => ['acme/*']]]);
         Assert::same($skills['auto-sync'] ?? null, true);
         Assert::true(\array_key_exists('$schema', $skills));
 
@@ -425,6 +428,242 @@ final class ProjectConfigMigratorTest
             $before,
             'a both-keys file must be left byte-for-byte untouched',
         );
+    }
+
+    public function restructuresLegacyTrustTrioIntoDependenciesBlock(): void
+    {
+        // Spec §3.1 worked example, verbatim. `dependencies` takes the
+        // slot of the first legacy key (`trusted`), the composer entry is
+        // upgraded to object form carrying the explicit `local.composer`
+        // enable flag and both flat trust fields, `npm` stays a bare
+        // bool, and every non-legacy key keeps its position.
+        $this->writeSkillsJson([
+            'target' => '.claude/skills',
+            'trusted' => ['acme/*'],
+            'trusted-replace' => false,
+            'local' => ['composer' => true, 'npm' => false],
+            'sources' => [],
+        ]);
+
+        $io = new BufferIO();
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            $io,
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+        Assert::same($result->migratedKeys, ['dependencies']);
+
+        $skills = $this->readSkillsJson();
+        Assert::same(
+            \array_keys($skills),
+            ['target', 'dependencies', 'sources'],
+            'dependencies must take the slot of the first legacy key and siblings keep order',
+        );
+        Assert::same($skills['dependencies'] ?? null, [
+            'composer' => ['enabled' => true, 'trusted' => ['acme/*'], 'trusted-replace' => false],
+            'npm' => false,
+        ]);
+        Assert::same($skills['target'] ?? null, '.claude/skills');
+        Assert::same($skills['sources'] ?? null, []);
+
+        Assert::true(
+            \str_contains(
+                $io->getOutput(),
+                'restructured "trusted", "trusted-replace", "local" into "dependencies" in skills.json',
+            ),
+            'a [migrate] notice listing the found keys must be emitted; got: ' . $io->getOutput(),
+        );
+    }
+
+    public function restructuresFlatTrustedOnlyIntoComposerObject(): void
+    {
+        // Only a flat `trusted` list, no `local` and no `trusted-replace`:
+        // the composer entry is an object with just `trusted`; `enabled`
+        // stays absent (no explicit `local.composer`) and `trusted-replace`
+        // is not materialised as its `false` default.
+        $this->writeSkillsJson([
+            'trusted' => ['acme/*', 'myorg/skills'],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+        $skills = $this->readSkillsJson();
+        Assert::same(
+            $skills['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/*', 'myorg/skills']]],
+        );
+    }
+
+    public function restructuresLocalOnlyVerbatim(): void
+    {
+        // Only a `local` map, no flat trust keys: the block is the local
+        // map verbatim — bare bools, no composer object upgrade.
+        $this->writeSkillsJson([
+            'local' => ['composer' => false],
+            'sources' => [],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+        $skills = $this->readSkillsJson();
+        Assert::same($skills['dependencies'] ?? null, ['composer' => false]);
+    }
+
+    public function restructuresTrustedReplaceWithoutTrusted(): void
+    {
+        // `trusted-replace` present without a `trusted` list: the composer
+        // object carries only `trusted-replace`; no empty `trusted` list
+        // is invented.
+        $this->writeSkillsJson([
+            'trusted-replace' => true,
+        ]);
+
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+        $skills = $this->readSkillsJson();
+        Assert::same(
+            $skills['dependencies'] ?? null,
+            ['composer' => ['trusted-replace' => true]],
+        );
+    }
+
+    public function restructureIsNoOpWhenDependenciesAlreadyPresent(): void
+    {
+        // A file already on `dependencies` is left byte-for-byte alone,
+        // even if it also (illegally) carries a legacy key — the mapper's
+        // fatal "both present" check must stand.
+        $this->writeSkillsJson([
+            'dependencies' => ['composer' => ['trusted' => ['acme/*']]],
+            'trusted' => ['other/*'],
+        ]);
+        $before = (string) \file_get_contents($this->tmp . '/skills.json');
+
+        $io = new BufferIO();
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            $io,
+        );
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::same(
+            (string) \file_get_contents($this->tmp . '/skills.json'),
+            $before,
+            'a file already carrying dependencies must not be rewritten',
+        );
+        Assert::false(\str_contains($io->getOutput(), 'restructured'));
+    }
+
+    public function restructureIsNoOpWhenNoLegacyKeys(): void
+    {
+        $this->writeSkillsJson([
+            'target' => 'custom/skills',
+            'sources' => [],
+        ]);
+        $before = (string) \file_get_contents($this->tmp . '/skills.json');
+
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::same((string) \file_get_contents($this->tmp . '/skills.json'), $before);
+    }
+
+    public function restructureIsIdempotentAcrossRuns(): void
+    {
+        // A second pass over the already-restructured file is a no-op:
+        // the first run leaves `dependencies` in place, so the second
+        // short-circuits without touching the bytes.
+        $this->writeSkillsJson([
+            'trusted' => ['acme/*'],
+            'local' => ['composer' => true],
+        ]);
+        $migrator = new ProjectConfigMigrator();
+
+        $migrator->restructureDependencies(Path::create($this->tmp), new BufferIO());
+        $afterFirst = (string) \file_get_contents($this->tmp . '/skills.json');
+
+        $second = $migrator->restructureDependencies(Path::create($this->tmp), new BufferIO());
+
+        Assert::same($second->status, MigrationStatus::Skipped);
+        Assert::same(
+            (string) \file_get_contents($this->tmp . '/skills.json'),
+            $afterFirst,
+            'a second restructure run must not rewrite the file',
+        );
+    }
+
+    public function restructureIsNoOpWhenLocalIsNotAnObject(): void
+    {
+        // A malformed non-object `local` cannot fold into a per-manager
+        // map without dropping data, so the file is left untouched and
+        // the mapper reports the shape error on the original.
+        $this->writeSkillsJson([
+            'local' => 'nonsense',
+        ]);
+        $before = (string) \file_get_contents($this->tmp . '/skills.json');
+
+        $result = (new ProjectConfigMigrator())->restructureDependencies(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::same((string) \file_get_contents($this->tmp . '/skills.json'), $before);
+    }
+
+    public function inlineMigrationFoldsLegacyTrioIntoDependencies(): void
+    {
+        // The inline extra.skills → skills.json move folds the legacy
+        // trio the same way; the generated file never carries the legacy
+        // keys, and composer.json is stripped of the keys the user wrote.
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => [
+                'skills' => [
+                    'target' => 'custom/skills',
+                    'trusted' => ['acme/*'],
+                    'trusted-replace' => true,
+                    'local' => ['composer' => false],
+                ],
+            ],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->migrate(
+            Path::create($this->tmp),
+            new BufferIO(),
+        );
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+
+        $skills = $this->readSkillsJson();
+        Assert::false(\array_key_exists('trusted', $skills));
+        Assert::false(\array_key_exists('trusted-replace', $skills));
+        Assert::false(\array_key_exists('local', $skills));
+        Assert::same($skills['dependencies'] ?? null, [
+            'composer' => ['enabled' => false, 'trusted' => ['acme/*'], 'trusted-replace' => true],
+        ]);
+
+        // composer.json stripped of the legacy keys the user wrote.
+        $composer = $this->readComposerJson();
+        $remaining = $composer['extra']['skills'] ?? [];
+        Assert::false(\array_key_exists('trusted', $remaining));
+        Assert::false(\array_key_exists('trusted-replace', $remaining));
+        Assert::false(\array_key_exists('local', $remaining));
     }
 
     /**

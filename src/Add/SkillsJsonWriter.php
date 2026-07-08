@@ -32,7 +32,9 @@ use LLM\Skills\Filesystem\AtomicFileWriter;
  * {@see ProjectConfigMigrator} emits). Existing files keep all their
  * other keys verbatim — only `sources[]` is touched. A file still on
  * the deprecated `remote` key has its entries folded into `sources`
- * and the old key dropped, since the writer rewrites the whole file.
+ * and the old key dropped, and a file still on the legacy trust trio
+ * (`local` / `trusted` / `trusted-replace`) has it folded into a
+ * `dependencies` block, since the writer rewrites the whole file.
  */
 final readonly class SkillsJsonWriter
 {
@@ -63,8 +65,21 @@ final readonly class SkillsJsonWriter
         $updated = self::upsertByCompositeKey($entries, $entry);
         $sorted = self::stableSort($updated);
 
-        // The whole file is rewritten under the canonical key; a
-        // lingering deprecated alias is dropped from the output.
+        // The whole file is rewritten under the canonical keys; lingering
+        // deprecated aliases are dropped from the output. The legacy trust
+        // trio folds into `dependencies` (unless the file already carries
+        // one — a hand-edited mix keeps the canonical block and just drops
+        // the legacy keys), mirroring the `remote` → `sources` fold below.
+        if (ProjectConfigMigrator::hasLegacyDependencyKeys($payload)) {
+            $folded = ProjectConfigMigrator::foldLegacyDependencies($payload);
+            foreach (ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS as $legacyKey) {
+                unset($payload[$legacyKey]);
+            }
+            if (!\array_key_exists(ProjectConfigMapper::DEPENDENCIES_KEY, $payload)) {
+                $payload[ProjectConfigMapper::DEPENDENCIES_KEY] = $folded;
+            }
+        }
+
         unset($payload[ProjectConfigMapper::DEPRECATED_SOURCES_KEY]);
         $payload[ProjectConfigMapper::SOURCES_KEY] = \array_map(self::serialise(...), $sorted);
 

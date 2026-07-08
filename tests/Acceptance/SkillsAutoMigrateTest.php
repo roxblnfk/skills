@@ -66,7 +66,12 @@ final class SkillsAutoMigrateTest
         Assert::true(\is_file(self::SKILLS_JSON), 'skills.json must be created');
         $skills = $this->readSkillsJson();
         Assert::same($skills['target'] ?? null, 'auto-migrate-target/skills');
-        Assert::same($skills['trusted'] ?? null, ['acme/skills-basic', 'acme/skills-pro']);
+        // Flat `trusted` folds into the `dependencies.composer` block.
+        Assert::false(\array_key_exists('trusted', $skills));
+        Assert::same(
+            $skills['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/skills-basic', 'acme/skills-pro']]],
+        );
         Assert::true(\array_key_exists('$schema', $skills));
 
         // composer.json no longer carries the migrated keys.
@@ -93,11 +98,13 @@ final class SkillsAutoMigrateTest
 
     public function updateIsNoOpForComposerJsonWhenSkillsJsonAlreadyExists(): void
     {
-        // Pre-create skills.json so the precedence path picks it. The
-        // sandbox composer.json still has its inline `trusted` block;
-        // we should NOT touch it.
+        // Pre-create skills.json in the modern `dependencies` form so the
+        // precedence path picks it and neither the inline relocation nor
+        // the in-place restructure has anything to do. The sandbox
+        // composer.json still has its inline `trusted` block; we should
+        // NOT touch it.
         \file_put_contents(self::SKILLS_JSON, \json_encode([
-            'trusted' => ['acme/skills-basic'],
+            'dependencies' => ['composer' => ['trusted' => ['acme/skills-basic']]],
         ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
 
         $composerBefore = (string) \file_get_contents(self::COMPOSER_JSON);

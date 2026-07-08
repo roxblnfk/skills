@@ -89,11 +89,20 @@ final readonly class InteractiveInitWizard
         if ($aliases !== []) {
             $result['aliases'] = $aliases;
         }
+        // Trust answers land under `dependencies.composer` — the flat
+        // `trusted` / `trusted-replace` keys are deprecated aliases the
+        // wizard no longer emits. Only non-default fields are written:
+        // `enabled` (composer defaults to on) and an unchecked
+        // `trusted-replace` are omitted.
+        $composer = [];
         if ($trusted !== []) {
-            $result['trusted'] = $trusted;
+            $composer['trusted'] = $trusted;
         }
         if ($trustedReplace) {
-            $result['trusted-replace'] = true;
+            $composer['trusted-replace'] = true;
+        }
+        if ($composer !== []) {
+            $result['dependencies'] = ['composer' => $composer];
         }
         if ($discovery) {
             $result['discovery'] = true;
@@ -112,6 +121,34 @@ final readonly class InteractiveInitWizard
         }
 
         return $result;
+    }
+
+    /**
+     * The `composer` entry of a `dependencies` defaults block, as an
+     * object. Defaults reach the wizard from a migrated `skills.json`
+     * (or a folded inline block), both of which carry trust under
+     * `dependencies.composer` rather than the flat legacy keys. A short
+     * `"composer": true` toggle carries no trust fields, so it maps to
+     * an empty object here.
+     *
+     * @param array<string, mixed> $defaults
+     *
+     * @return array<string, mixed>
+     *
+     * @psalm-pure
+     */
+    private static function composerDependencyDefault(array $defaults): array
+    {
+        /** @var mixed $dependencies */
+        $dependencies = $defaults['dependencies'] ?? null;
+        if (!\is_array($dependencies)) {
+            return [];
+        }
+        /** @var mixed $composer */
+        $composer = $dependencies['composer'] ?? null;
+
+        /** @var array<string, mixed> */
+        return \is_array($composer) ? $composer : [];
     }
 
     /**
@@ -305,7 +342,7 @@ final readonly class InteractiveInitWizard
     {
         $current = [];
         /** @var mixed $rawTrusted */
-        $rawTrusted = $defaults['trusted'] ?? null;
+        $rawTrusted = self::composerDependencyDefault($defaults)['trusted'] ?? null;
         if (\is_array($rawTrusted)) {
             /** @var mixed $value */
             foreach ($rawTrusted as $value) {
@@ -364,7 +401,7 @@ final readonly class InteractiveInitWizard
      */
     private function askTrustedReplace(IOInterface $io, array $defaults): bool
     {
-        $default = (bool) ($defaults['trusted-replace'] ?? false);
+        $default = (bool) (self::composerDependencyDefault($defaults)['trusted-replace'] ?? false);
 
         $io->write('<info>4/6  trusted-replace</info> — when <comment>true</comment>, the project trust');
         $io->write('     list <comment>replaces</comment> both the built-in trusted vendors and the');
