@@ -121,6 +121,67 @@ final class SourceProviderEndToEndTest
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
     }
 
+    public function donorShippingASymlinkStillProducesItsSkills(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // Real-world shape: a skills repo whose AGENTS.md is a symlink
+        // to CLAUDE.md. The whole donor used to be lost over that one
+        // entry — 7-Zip cannot recreate a link on Windows without
+        // SeCreateSymbolicLinkPrivilege and exits non-zero. The link is
+        // now excluded at extraction, and since LinkGuard refuses to
+        // copy symlinks anyway, nothing downstream misses it.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'sources' => [
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'v1.0.0'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'acme-skills-v1.0.0',
+            files: [
+                'composer.json' => \json_encode([
+                    'name' => 'acme/skills',
+                    'extra' => ['skills' => ['source' => 'skills']],
+                ], \JSON_THROW_ON_ERROR),
+                'CLAUDE.md' => 'real content',
+                'AGENTS.md' => 'CLAUDE.md',
+                'skills/hello/SKILL.md' => "---\nname: hello\n---\nhi",
+            ],
+            symlinks: ['AGENTS.md'],
+        );
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/acme/skills/zipball/v1.0.0' => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new SourceProvider(
+            new SkillsJsonDonorRefSource(new HostAdapterRegistry(new GithubAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        Assert::same($result->failures, []);
+        Assert::count($result->donors, 1);
+
+        $root = $result->donors[0]->packageRoot;
+        Assert::true(
+            \is_file((string) $root->join('skills/hello/SKILL.md')),
+            'the symlink must not cost the donor its skills',
+        );
+        Assert::true(\is_file((string) $root->join('CLAUDE.md')));
+        Assert::false(
+            \file_exists((string) $root->join('AGENTS.md')),
+            'the symlink entry itself must be skipped',
+        );
+    }
+
     public function tildeConstraintResolvesThroughTagListingToTheHighestMatch(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
@@ -723,7 +784,14 @@ final class SourceProviderEndToEndTest
      * @param non-empty-string $topDir
      * @param array<string, string> $files relative paths inside the top dir → file contents
      */
-    private function buildGithubStyleZip(string $topDir, array $files): string
+    /**
+     * @param array<string, string> $files
+     * @param list<string> $symlinks keys of `$files` to store as symlink entries —
+     *        flagged with the Unix mode (`S_IFLNK | 0777`) in the high half of
+     *        `external_attr`, exactly as a GitHub zipball of a repo containing
+     *        symlinks does
+     */
+    private function buildGithubStyleZip(string $topDir, array $files, array $symlinks = []): string
     {
         $tmpZip = \tempnam(\sys_get_temp_dir(), 'feature-zip-');
         if ($tmpZip === false) {
@@ -738,7 +806,11 @@ final class SourceProviderEndToEndTest
         // entry so the extracted tree has a clear root. Mimic that.
         $zip->addEmptyDir($topDir);
         foreach ($files as $relPath => $content) {
-            $zip->addFromString($topDir . '/' . $relPath, $content);
+            $entry = $topDir . '/' . $relPath;
+            $zip->addFromString($entry, $content);
+            if (\in_array($relPath, $symlinks, true)) {
+                $zip->setExternalAttributesName($entry, \ZipArchive::OPSYS_UNIX, 0xA1FF << 16);
+            }
         }
         $zip->close();
 

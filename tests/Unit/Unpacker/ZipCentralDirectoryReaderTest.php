@@ -62,6 +62,78 @@ final class ZipCentralDirectoryReaderTest
         Assert::same($names, ['first.txt', 'sub/second.txt', 'sub/third.txt']);
     }
 
+    public function flagsUnixSymlinkEntriesAndLeavesRegularFilesAlone(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // The shape that broke extraction in the wild: a repo shipping
+        // AGENTS.md as a symlink to CLAUDE.md. 7-Zip on Windows cannot
+        // recreate the link without SeCreateSymbolicLinkPrivilege and
+        // aborts the whole archive, so the entry has to be identifiable
+        // before extraction starts.
+        $zipPath = $this->buildZipWithSymlinks(
+            [
+                'CLAUDE.md' => 'real content',
+                'AGENTS.md' => 'CLAUDE.md',
+                'skills/hello/SKILL.md' => 'hi',
+            ],
+            symlinks: ['AGENTS.md'],
+        );
+
+        $entries = (new ZipCentralDirectoryReader())->readEntries($zipPath);
+
+        $flags = [];
+        foreach ($entries as $entry) {
+            $flags[$entry->name] = $entry->isSymlink;
+        }
+
+        Assert::same($flags, [
+            'CLAUDE.md' => false,
+            'AGENTS.md' => true,
+            'skills/hello/SKILL.md' => false,
+        ]);
+    }
+
+    public function doesNotReadASymlinkModeOutOfADosHostArchive(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // `buildZip()` leaves the default MS-DOS host, so the high half
+        // of external_attr carries no Unix mode. Reading one anyway
+        // would classify arbitrary entries as links and silently drop
+        // them from every extraction.
+        $entries = (new ZipCentralDirectoryReader())->readEntries(
+            $this->buildZip(['plain.txt' => 'x']),
+        );
+
+        Assert::count($entries, 1);
+        Assert::false($entries[0]->isSymlink);
+    }
+
+    public function readNamesKeepsSymlinkEntriesInTheZipSlipListing(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // Excluding symlinks from extraction must not exclude them from
+        // validation: a link named `../escape` still has to reach the
+        // fetcher's lexical zip-slip check.
+        $zipPath = $this->buildZipWithSymlinks(
+            ['keep.txt' => 'x', 'link' => 'keep.txt'],
+            symlinks: ['link'],
+        );
+
+        Assert::same(
+            (new ZipCentralDirectoryReader())->readNames($zipPath),
+            ['keep.txt', 'link'],
+        );
+    }
+
     public function survivesAnArchiveCommentThatLooksLikeAnEocdSignature(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
@@ -163,6 +235,32 @@ final class ZipCentralDirectoryReaderTest
     /**
      * @param array<string, string> $files
      */
+    /**
+     * Build a fixture archive, marking `$symlinks` with the Unix mode a
+     * real symlink entry carries (`S_IFLNK | 0777`) in the high half of
+     * `external_attr` — the same shape `git archive` and GitHub zipballs
+     * produce.
+     *
+     * @param array<string, string> $files
+     * @param list<string> $symlinks names from `$files` to flag as links
+     */
+    private function buildZipWithSymlinks(array $files, array $symlinks): string
+    {
+        $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        foreach ($files as $name => $content) {
+            $zip->addFromString($name, $content);
+            $zip->setExternalAttributesName(
+                $name,
+                \ZipArchive::OPSYS_UNIX,
+                (\in_array($name, $symlinks, true) ? 0xA1FF : 0x81A4) << 16,
+            );
+        }
+        $zip->close();
+        return $zipPath;
+    }
+
     private function buildZip(array $files): string
     {
         $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';

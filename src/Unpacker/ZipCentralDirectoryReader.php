@@ -5,21 +5,22 @@ declare(strict_types=1);
 namespace LLM\Skills\Unpacker;
 
 /**
- * Minimal zip Central Directory parser — enumerates entry names from
- * a `.zip` file **without** depending on `ext-zip`.
+ * Minimal zip Central Directory parser — enumerates entries from a
+ * `.zip` file **without** depending on `ext-zip`.
  *
- * Used by the CLI unpacker to validate every entry name lexically
- * (zip-slip guard) before invoking `unzip` / `7z`. The CLI tools do
- * not expose a pre-extraction validation hook and apply `-y`-style
- * overwrite semantics by default, so the only safe place to reject a
- * traversal entry is *here*, before any byte hits disk.
+ * Used by the CLI unpacker for two things: validating every entry name
+ * lexically (zip-slip guard) before invoking `unzip` / `7z`, and
+ * spotting symlink entries so they can be excluded from the extraction.
+ * The CLI tools expose no pre-extraction validation hook and apply
+ * `-y`-style overwrite semantics by default, so the only safe place to
+ * decide what gets written is *here*, before any byte hits disk.
  *
  * Scope:
  *
  * - reads the End-of-Central-Directory record by scanning back from
  *   EOF (signature `PK\x05\x06`, comment up to 65 535 bytes);
  * - walks the Central Directory file headers (signature `PK\x01\x02`),
- *   reading only the file-name field;
+ *   reading the file name plus `version_made_by` / `external_attr`;
  * - fails loud on zip64 sentinels — supported archives must fit in
  *   plain-zip metadata (entries < 65 535, sizes < 4 GiB). GitHub
  *   zipballs and Composer-shaped donor archives are comfortably under
@@ -43,6 +44,19 @@ final class ZipCentralDirectoryReader
     private const CD_HEADER_FIXED_SIZE = 46;
 
     /**
+     * `version_made_by` high byte for the Unix host (APPNOTE.TXT
+     * §4.4.2.2). Only archives written by a Unix-family host put a
+     * Unix mode in the high half of `external_attr`; on an MS-DOS-host
+     * archive those bits mean nothing and must not be read as one.
+     */
+    private const HOST_UNIX = 3;
+
+    /** Mask and value selecting `S_IFLNK` out of a Unix `st_mode`. */
+    private const S_IFMT = 0xF000;
+
+    private const S_IFLNK = 0xA000;
+
+    /**
      * @param non-empty-string $zipPath
      *
      * @return list<string> entry names in central-directory order
@@ -50,6 +64,24 @@ final class ZipCentralDirectoryReader
      * @throws UnpackerException on missing / truncated / zip64 archives
      */
     public function readNames(string $zipPath): array
+    {
+        return \array_map(
+            static fn(ZipEntry $entry): string => $entry->name,
+            $this->readEntries($zipPath),
+        );
+    }
+
+    /**
+     * Same walk as {@see self::readNames()}, keeping the symlink flag
+     * each entry carries.
+     *
+     * @param non-empty-string $zipPath
+     *
+     * @return list<ZipEntry> entries in central-directory order
+     *
+     * @throws UnpackerException on missing / truncated / zip64 archives
+     */
+    public function readEntries(string $zipPath): array
     {
         $size = @\filesize($zipPath);
         if ($size === false || $size < self::EOCD_MIN_SIZE) {
@@ -125,13 +157,13 @@ final class ZipCentralDirectoryReader
     }
 
     /**
-     * @return list<string>
+     * @return list<ZipEntry>
      *
      * @psalm-pure
      */
     private static function parseCentralDirectory(string $cd, int $entries): array
     {
-        $names = [];
+        $out = [];
         $pos = 0;
         $len = \strlen($cd);
 
@@ -149,6 +181,12 @@ final class ZipCentralDirectoryReader
                 ));
             }
 
+            /** @var array{made_by: int}|false $madeBy */
+            $madeBy = @\unpack('vmade_by', \substr($cd, $pos + 4, 2));
+            if ($madeBy === false) {
+                throw new UnpackerException('failed to parse central-directory version_made_by');
+            }
+
             /** @var array{name_len: int, extra_len: int, comment_len: int}|false $lengths */
             $lengths = @\unpack(
                 'vname_len/vextra_len/vcomment_len',
@@ -156,6 +194,12 @@ final class ZipCentralDirectoryReader
             );
             if ($lengths === false) {
                 throw new UnpackerException('failed to parse central-directory header lengths');
+            }
+
+            /** @var array{external_attr: int}|false $attrs */
+            $attrs = @\unpack('Vexternal_attr', \substr($cd, $pos + 38, 4));
+            if ($attrs === false) {
+                throw new UnpackerException('failed to parse central-directory external_attr');
             }
 
             $nameLen = $lengths['name_len'];
@@ -167,11 +211,35 @@ final class ZipCentralDirectoryReader
                 throw new UnpackerException('central directory truncated mid-name');
             }
 
-            $names[] = \substr($cd, $nameStart, $nameLen);
+            $out[] = new ZipEntry(
+                name: \substr($cd, $nameStart, $nameLen),
+                isSymlink: self::isSymlink($madeBy['made_by'], $attrs['external_attr']),
+            );
             $pos = $nameStart + $nameLen + $extraLen + $commentLen;
         }
 
-        return $names;
+        return $out;
+    }
+
+    /**
+     * Decide whether a Central Directory header describes a symlink.
+     *
+     * The Unix mode lives in the high 16 bits of `external_attr`, but
+     * only when `version_made_by`'s high byte says the archive was
+     * written by a Unix-family host. On an MS-DOS-host archive the low
+     * bits are DOS attribute flags and the high half is unspecified, so
+     * reading a mode out of it would classify arbitrary entries as
+     * links.
+     *
+     * @psalm-pure
+     */
+    private static function isSymlink(int $versionMadeBy, int $externalAttr): bool
+    {
+        if (($versionMadeBy >> 8) !== self::HOST_UNIX) {
+            return false;
+        }
+
+        return ((($externalAttr >> 16) & 0xFFFF) & self::S_IFMT) === self::S_IFLNK;
     }
 
     /**

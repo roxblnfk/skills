@@ -82,6 +82,43 @@ final class CliUnpackerTest
         Assert::same($unpacker->listEntries($zipPath), ['one.txt', 'dir/two.txt']);
     }
 
+    public function liveCliExtractorSkipsSymlinkEntriesInsteadOfFailing(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+        $unpacker = $this->pickCliUnpackerOrSkip();
+
+        // Reproduces the reported break: a donor shipping AGENTS.md as
+        // a symlink to CLAUDE.md. 7-Zip on Windows cannot create the
+        // link without SeCreateSymbolicLinkPrivilege and used to exit 2,
+        // taking the entire donor down with it.
+        $zipPath = $this->buildZipWithSymlinks(
+            [
+                'CLAUDE.md' => 'real content',
+                'AGENTS.md' => 'CLAUDE.md',
+                'skills/hello/SKILL.md' => 'hi',
+            ],
+            symlinks: ['AGENTS.md'],
+        );
+
+        $target = $this->tmpDir . '/out-symlink';
+        \mkdir($target, 0o777, true);
+
+        $unpacker->extractTo($zipPath, $target);
+
+        Assert::true(
+            \is_file($target . '/CLAUDE.md'),
+            'a symlink entry must not stop the rest of the archive from extracting',
+        );
+        Assert::same(\file_get_contents($target . '/CLAUDE.md'), 'real content');
+        Assert::true(\is_file($target . '/skills/hello/SKILL.md'));
+        Assert::false(
+            \file_exists($target . '/AGENTS.md') || \is_link($target . '/AGENTS.md'),
+            'the symlink entry must be excluded from the extraction',
+        );
+    }
+
     public function failedExtractionSurfacesAsUnpackerException(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
@@ -118,6 +155,32 @@ final class CliUnpackerTest
             throw new SkipTest('no CLI extractor (unzip / 7z / 7zz / 7za) on PATH');
         }
         return $unpacker;
+    }
+
+    /**
+     * Fixture archive whose `$symlinks` entries carry the Unix mode a
+     * real symlink has (`S_IFLNK | 0777`) in the high half of
+     * `external_attr` — the shape `git archive` and GitHub zipballs
+     * produce, and the one the CLI tools act on.
+     *
+     * @param array<string, string> $files
+     * @param list<string> $symlinks names from `$files` to flag as links
+     */
+    private function buildZipWithSymlinks(array $files, array $symlinks): string
+    {
+        $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        foreach ($files as $name => $content) {
+            $zip->addFromString($name, $content);
+            $zip->setExternalAttributesName(
+                $name,
+                \ZipArchive::OPSYS_UNIX,
+                (\in_array($name, $symlinks, true) ? 0xA1FF : 0x81A4) << 16,
+            );
+        }
+        $zip->close();
+        return $zipPath;
     }
 
     /**
