@@ -28,4 +28,19 @@ enum SkipReason: string
     case SourceMissing = 'source-missing';
     case FilteredOut = 'filtered-out';
     case NotDeclared = 'not-declared';
+
+    /**
+     * A `sources[]` entry that never became a donor at all — the
+     * adapter could not resolve it, the archive would not download, or
+     * what came back was not a donor. Distinct from
+     * {@see self::Malformed}, which needs a donor to exist before its
+     * `extra.skills` can be rejected, and from
+     * {@see self::SourceMissing}, which is a donor whose declared
+     * source directory is absent.
+     *
+     * Rows carry the entry's `<from>:<identifier>` spelling rather than
+     * a Composer name: the failure happened before any `composer.json`
+     * could be read.
+     */
+    case SourceFailed = 'source-failed';
 }

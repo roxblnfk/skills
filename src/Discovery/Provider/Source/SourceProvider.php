@@ -11,6 +11,7 @@ use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\DonorDiscoveryResult;
 use LLM\Skills\Discovery\MalformedDonor;
 use LLM\Skills\Discovery\Provider\DonorProvider;
+use LLM\Skills\Discovery\SourceFailure;
 
 /**
  * {@see DonorProvider} for donors fetched from arbitrary repository
@@ -35,18 +36,22 @@ use LLM\Skills\Discovery\Provider\DonorProvider;
  * and emits the same {@see DonorDiscoveryResult} shape as
  * {@see \LLM\Skills\Discovery\Provider\ComposerProvider}.
  *
- * Each failure mode degrades gracefully:
+ * Each failure mode degrades gracefully, and every one of them lands in
+ * {@see DonorDiscoveryResult::$failures} as a {@see SourceFailure} so the
+ * runners can name the dropped donor at default verbosity instead of
+ * hiding it behind `-v`:
  *
  * - Source empty                       → provider reports `isActive() = false`,
- *                                        discover returns empty (no warnings).
- * - Fetcher missing but source non-empty → one warning, no donors.
- * - Per-ref fetch error                 → warning naming the ref, skip ref.
+ *                                        discover returns empty (no failures).
+ * - Fetcher missing but source non-empty → one failure, no donors.
+ * - Per-ref fetch error                 → failure naming the ref, skip ref.
  * - Per-ref composer.json missing /
  *   unreadable / invalid JSON /
  *   non-object / `name` missing /
- *   `extra.skills.source` missing       → warning naming the ref, skip ref.
- * - Per-ref `extra.skills` malformed    → warning + structured
- *                                        {@see MalformedDonor} entry, skip ref.
+ *   `extra.skills.source` missing       → failure naming the ref, skip ref.
+ * - Per-ref `extra.skills` malformed    → {@see MalformedDonor} entry
+ *                                        (the donor exists and is named),
+ *                                        skip ref.
  *
  * One bad ref never blocks the rest — same contract as the Composer
  * provider, expressed against a different ecosystem.
@@ -77,8 +82,8 @@ final readonly class SourceProvider implements DonorProvider
     public function discover(Path $projectRoot): DonorDiscoveryResult
     {
         $donors = [];
-        /** @var list<string> $warnings */
-        $warnings = [];
+        /** @var list<SourceFailure> $failures */
+        $failures = [];
         $malformed = [];
 
         // Active source but no fetcher wired — one warning is more
@@ -89,7 +94,7 @@ final readonly class SourceProvider implements DonorProvider
 
         foreach ($this->source->refs($projectRoot) as $ref) {
             if ($ref instanceof DirDonorRef) {
-                $donor = $this->resolveDirRef($ref, $warnings, $malformed);
+                $donor = $this->resolveDirRef($ref, $failures, $malformed);
                 if ($donor !== null) {
                     $donors[] = $donor;
                 }
@@ -98,7 +103,10 @@ final readonly class SourceProvider implements DonorProvider
 
             if ($this->fetcher === null) {
                 if (!$fetcherWarned) {
-                    $warnings[] = 'remote donor source declared refs but no fetcher is configured';
+                    $failures[] = new SourceFailure(
+                        label: $ref->label(),
+                        summary: 'no fetcher is configured for remote sources',
+                    );
                     $fetcherWarned = true;
                 }
                 continue;
@@ -107,28 +115,42 @@ final readonly class SourceProvider implements DonorProvider
             try {
                 $path = $this->fetcher->fetch($ref);
             } catch (RemoteFetchException $e) {
-                $warnings[] = \sprintf('source %s: %s', $ref->describe(), $e->getMessage());
+                $failures[] = new SourceFailure(
+                    label: $ref->label(),
+                    // The ref matters more than the URL here: a fetch
+                    // that 404s on a ref the user pinned by hand is the
+                    // common case, and naming it points straight at the
+                    // `ref` field in skills.json.
+                    summary: 'archive fetch failed for ref ' . $ref->ref,
+                    detail: $e->getMessage(),
+                );
                 continue;
             }
 
-            $donor = $this->buildDonor($ref, $path, $warnings, $malformed);
+            $donor = $this->buildDonor($ref, $path, $failures, $malformed);
             if ($donor !== null) {
                 $donors[] = $donor;
             }
         }
 
-        // Pre-fetch warnings from the source: unknown-adapter and
+        // Pre-fetch failures from the source: unknown-adapter and
         // resolve errors accumulate here while {@see DonorRefSource::refs()}
         // is iterated; the source's contract is to expose them after
         // iteration finishes.
-        foreach ($this->source->warnings() as $w) {
-            $warnings[] = $w;
+        foreach ($this->source->failures() as $failure) {
+            $failures[] = $failure;
         }
 
+        // Nothing this provider reports belongs in the `-v`-only
+        // warnings channel: a `sources[]` entry is something the user
+        // typed by hand, so every way it can fail is worth a line at
+        // default verbosity. Duplicating the failures into `warnings`
+        // would just print each one twice under `-v`.
         return new DonorDiscoveryResult(
             donors: $donors,
-            warnings: $warnings,
+            warnings: [],
             malformed: $malformed,
+            failures: $failures,
         );
     }
 
@@ -163,23 +185,27 @@ final readonly class SourceProvider implements DonorProvider
      * a failed remote fetch: a per-entry warning, and the entry is
      * skipped without touching its siblings.
      *
-     * @param list<string>             $warnings  appended to in place
+     * @param list<SourceFailure>      $failures  appended to in place
      * @param list<MalformedDonor>     $malformed appended to in place
      *
-     * @param-out list<string>         $warnings
+     * @param-out list<SourceFailure>  $failures
      * @param-out list<MalformedDonor> $malformed
      */
     private function resolveDirRef(
         DirDonorRef $ref,
-        array &$warnings,
+        array &$failures,
         array &$malformed,
     ): ?VendorConfig {
         if (!$ref->directory->isDir()) {
-            $warnings[] = \sprintf('source %s: directory does not exist', $ref->describe());
+            $failures[] = new SourceFailure(
+                label: $ref->label(),
+                summary: 'directory does not exist',
+                detail: (string) $ref->directory,
+            );
             return null;
         }
 
-        return $this->buildDonor($ref, $ref->directory, $warnings, $malformed);
+        return $this->buildDonor($ref, $ref->directory, $failures, $malformed);
     }
 
     /**
@@ -194,31 +220,30 @@ final readonly class SourceProvider implements DonorProvider
      * a {@see VendorConfig} (or a warning):
      *
      * - **Composer-shaped** → hand the name + raw `extra` to the mapper;
-     *   a mapper rejection lifts to a warning AND a {@see MalformedDonor}.
+     *   a mapper rejection lifts to a {@see MalformedDonor}.
      * - **Bare skill repo** → synthesise a `VendorConfig` from the
      *   auto-discovered skill directories.
-     * - **Rejected** → a per-ref warning, no donor.
+     * - **Rejected** → a per-ref failure, no donor.
      *
-     * @param list<string>             $warnings  appended to in place
+     * @param list<SourceFailure>      $failures  appended to in place
      * @param list<MalformedDonor>     $malformed appended to in place
      *
-     * @param-out list<string>         $warnings
+     * @param-out list<SourceFailure>  $failures
      * @param-out list<MalformedDonor> $malformed
      */
     private function buildDonor(
         RemoteDonorRef|DirDonorRef $ref,
         Path $path,
-        array &$warnings,
+        array &$failures,
         array &$malformed,
     ): ?VendorConfig {
         $inspection = $this->inspector->inspect($path, $ref->packageHint);
 
         $rejection = $inspection->rejection;
         if ($rejection !== null) {
-            $warnings[] = \sprintf(
-                'source %s: %s',
-                $ref->describe(),
-                $this->describeRejection($rejection, $inspection->detail),
+            $failures[] = new SourceFailure(
+                label: $ref->label(),
+                summary: $this->describeRejection($rejection, $inspection->detail),
             );
             return null;
         }
@@ -229,10 +254,13 @@ final readonly class SourceProvider implements DonorProvider
             try {
                 $donor = $this->vendorMapper->fromExtra($packageName, $path, $inspection->extra);
             } catch (MalformedVendorConfig $e) {
-                $warnings[] = $e->getMessage();
                 /** @var non-empty-string $reason */
                 $reason = \preg_replace('/^Package "[^"]+": /', '', $e->getMessage())
                     ?? $e->getMessage();
+                // Reported through `malformed` only, not `failures`: the
+                // archive WAS a donor, we know its Composer name, and the
+                // consumers already render that channel. Adding a
+                // `SourceFailure` for the same event would list it twice.
                 $malformed[] = new MalformedDonor(
                     packageName: $e->packageName,
                     reason: $reason,
@@ -267,9 +295,11 @@ final readonly class SourceProvider implements DonorProvider
     }
 
     /**
-     * Phrase a {@see DonorArchiveRejection} for a per-ref sync warning.
+     * Phrase a {@see DonorArchiveRejection} for a per-ref failure row.
      * The inspector owns the *classification*; the `source <ref>:`
      * framing is added by the caller.
+     *
+     * @return non-empty-string
      *
      * @psalm-pure
      */

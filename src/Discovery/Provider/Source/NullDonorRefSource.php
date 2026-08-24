@@ -30,12 +30,12 @@ final readonly class NullDonorRefSource implements DonorRefSource
     }
 
     /**
-     * @return list<string>
+     * @return list<\LLM\Skills\Discovery\SourceFailure>
      *
      * @psalm-pure
      */
     #[\Override]
-    public function warnings(): array
+    public function failures(): array
     {
         return [];
     }

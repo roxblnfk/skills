@@ -191,8 +191,8 @@ final readonly class GithubAdapter implements HostAdapter
         if ($entry->ref === null) {
             return $this->resolveCascade($entry, $apiBase, $package);
         }
-        if ($this->refResolver->isCaretConstraint($entry->ref)) {
-            return $this->resolveCaret($entry, $apiBase, $package, $entry->ref);
+        if ($this->refResolver->isConstraint($entry->ref)) {
+            return $this->resolveVersionConstraint($entry, $apiBase, $package, $entry->ref);
         }
         // Verbatim ref — tag, branch, or SHA. GitHub's zipball
         // endpoint accepts any of them, so we don't need to know
@@ -280,14 +280,14 @@ final readonly class GithubAdapter implements HostAdapter
      * @param non-empty-string $package
      * @param non-empty-string $constraint
      */
-    private function resolveCaret(
+    private function resolveVersionConstraint(
         SourceEntry $entry,
         string $apiBase,
         string $package,
         string $constraint,
     ): RemoteDonorRef {
         $tags = $this->listTags($entry, $apiBase, $package);
-        $match = $this->refResolver->resolveCaret($constraint, $tags);
+        $match = $this->refResolver->resolveConstraint($constraint, $tags);
         if ($match === null) {
             throw new RemoteResolveException(
                 $entry,

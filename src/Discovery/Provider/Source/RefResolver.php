@@ -7,7 +7,7 @@ namespace LLM\Skills\Discovery\Provider\Source;
 /**
  * Pure helpers for the ref-resolution rules used by remote adapters.
  *
- * Three responsibilities:
+ * Four responsibilities:
  *
  * - **Classify tags.** Detect semver-shaped tags (`X.Y.Z` /
  *   `vX.Y.Z`) and stable-vs-prerelease (presence of a `-suffix`
@@ -15,20 +15,24 @@ namespace LLM\Skills\Discovery\Provider\Source;
  * - **Pick the best tag** from a list — highest stable, falling
  *   back to highest semver overall, falling back to the default
  *   branch HEAD (the cascade).
- * - **Apply caret constraints** — match `^X.Y.Z` (the only
- *   constraint flavour supported) against a tag list.
+ * - **Apply range constraints** — match a caret (`^X.Y.Z`) or tilde
+ *   (`~X.Y.Z`) constraint against a tag list.
+ * - **Reject what it cannot do** — {@see self::looksLikeConstraint()}
+ *   flags constraint syntax outside that pair, so the config layer can
+ *   answer "unsupported constraint" instead of letting the string reach
+ *   the wire as a literal tag name and come back a 404.
  *
- * Composer ships a full semver implementation in
- * `composer/semver`, but the resolver here intentionally rolls a
- * narrow subset: only the pieces this plugin actually requires, no
- * `*` / `~` / `>=` / `<` / `||` parsing. Caret support does follow
- * Composer's pre-1.0 rule (`^0.y.z` locks the minor), so a version
- * `skills:add` pins on a 0.x donor resolves the same way Composer
- * would — otherwise `formatCaret()` would emit a `^0.y.z` constraint
- * that `resolveCaret()` could never satisfy. Keeping the rest minimal
- * means the resolver stays pure, testable from a fixture list of tag
- * strings, and impossible to misuse by passing weird Composer
- * constraints we do not promise to support.
+ * Composer ships a full semver implementation in `composer/semver`,
+ * but the resolver here intentionally rolls a narrow subset: caret and
+ * tilde, no `*` / `>=` / `<` / `||` / hyphen-range / stability-flag
+ * parsing. Both supported operators follow Composer's own rules —
+ * caret honours the pre-1.0 special case (`^0.y.z` locks the minor),
+ * so a version `skills:add` pins on a 0.x donor resolves the way
+ * Composer would; tilde has no such special case, so `~0.2` allows the
+ * whole `0.x` line. Keeping the rest out means the resolver stays pure
+ * and testable from a fixture list of tag strings, and the gap is
+ * visible rather than silent: anything unimplemented is reported as an
+ * unsupported constraint rather than mistaken for a tag.
  *
  * @psalm-immutable
  */
@@ -47,8 +51,28 @@ final readonly class RefResolver
     /** Any semver-shape, including prereleases. Used by the cascade's fallback step. */
     private const ANY_SEMVER_TAG_REGEX = '/^v?(\d+)\.(\d+)\.(\d+)(?:-[\w.+-]+)?$/';
 
-    /** Caret constraint: `^A`, `^A.B`, or `^A.B.C`. */
-    private const CARET_CONSTRAINT_REGEX = '/^\^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/';
+    /**
+     * Range constraint: a `^` or `~` operator followed by one to
+     * three numeric components. The operator is captured so
+     * {@see self::resolveConstraint()} can pick the matching ceiling
+     * rule without re-parsing the string.
+     */
+    private const CONSTRAINT_REGEX = '/^([\^~])v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/';
+
+    /**
+     * Syntax that is unmistakably a version constraint rather than a
+     * tag or branch name. Used by {@see self::looksLikeConstraint()}
+     * to separate "the user meant a constraint we don't support" from
+     * "the user meant a literal ref".
+     *
+     * Deliberately narrow — a ref like `release-1.2` or `feature/x`
+     * must not trip it. Only wildcards, comparison operators, and the
+     * multi-constraint separators qualify; a leading `^`/`~` counts
+     * too, since a caret or tilde that failed
+     * {@see self::CONSTRAINT_REGEX} is a malformed constraint, never a
+     * plausible git ref.
+     */
+    private const CONSTRAINT_SYNTAX_REGEX = '/^[\^~><=!]|[*|,]|\s-\s|\s/';
 
     /**
      * Whether `$tag` is a "stable semver" tag (three-component,
@@ -133,21 +157,34 @@ final readonly class RefResolver
     }
 
     /**
-     * Resolve a caret constraint against a tag list. Returns the
-     * highest stable tag that satisfies the constraint, or null
-     * when none does.
+     * Resolve a caret or tilde constraint against a tag list. Returns
+     * the highest stable tag that satisfies the constraint, or null
+     * when none does (including when `$constraint` is not a
+     * constraint at all).
      *
-     * Constraint shapes (the ceiling follows Composer's rule — bump
-     * the left-most non-zero component the constraint specified):
+     * Caret — bump the left-most non-zero component the constraint
+     * specified:
      *
      * - `^1.2.3` → `>= 1.2.3, < 2.0.0`
      * - `^1.2`   → `>= 1.2.0, < 2.0.0`
      * - `^1`     → `>= 1.0.0, < 2.0.0`
      * - `^0.2.3` → `>= 0.2.3, < 0.3.0`  (0.x locks the minor)
      * - `^0.0.3` → `>= 0.0.3, < 0.0.4`  (0.0.x locks the patch)
-     * - `^v1.2.3` is treated identically to `^1.2.3`
      *
-     * See {@see self::caretCeiling()} for the exact upper-bound rule.
+     * Tilde — bump the *last component the constraint spelled out*,
+     * with no pre-1.0 special case:
+     *
+     * - `~1.2.3` → `>= 1.2.3, < 1.3.0`  (patch is free)
+     * - `~1.2`   → `>= 1.2.0, < 2.0.0`  (minor is free)
+     * - `~1`     → `>= 1.0.0, < 2.0.0`
+     * - `~0.2.3` → `>= 0.2.3, < 0.3.0`
+     * - `~0.2`   → `>= 0.2.0, < 1.0.0`  (the whole 0.x line)
+     *
+     * A `v` prefix on the constraint is accepted and ignored, so
+     * `^v1.2.3` behaves identically to `^1.2.3`.
+     *
+     * See {@see self::caretCeiling()} and {@see self::tildeCeiling()}
+     * for the exact upper-bound rules.
      *
      * @param list<non-empty-string> $tags
      *
@@ -155,20 +192,23 @@ final readonly class RefResolver
      *
      * @psalm-pure
      */
-    public function resolveCaret(string $constraint, array $tags): ?string
+    public function resolveConstraint(string $constraint, array $tags): ?string
     {
-        $match = \preg_match(self::CARET_CONSTRAINT_REGEX, $constraint, $m);
+        $match = \preg_match(self::CONSTRAINT_REGEX, $constraint, $m);
         if ($match !== 1) {
             return null;
         }
-        $minorGiven = isset($m[2]) && $m[2] !== '';
-        $patchGiven = isset($m[3]) && $m[3] !== '';
-        $major = (int) $m[1];
-        $minor = $minorGiven ? (int) $m[2] : 0;
-        $patch = $patchGiven ? (int) $m[3] : 0;
+        $operator = $m[1];
+        $minorGiven = isset($m[3]) && $m[3] !== '';
+        $patchGiven = isset($m[4]) && $m[4] !== '';
+        $major = (int) $m[2];
+        $minor = $minorGiven ? (int) $m[3] : 0;
+        $patch = $patchGiven ? (int) $m[4] : 0;
 
         $floor = [$major, $minor, $patch];
-        $ceiling = self::caretCeiling($major, $minor, $patch, $minorGiven, $patchGiven);
+        $ceiling = $operator === '~'
+            ? self::tildeCeiling($major, $minor, $patchGiven)
+            : self::caretCeiling($major, $minor, $patch, $minorGiven, $patchGiven);
 
         $best = null;
         /** @var array{int, int, int}|null $bestParts */
@@ -217,16 +257,38 @@ final readonly class RefResolver
     }
 
     /**
-     * Whether `$ref` looks like a caret constraint
-     * (`^1.2.3` / `^1` / `^v1.2.3`). Used by the adapter to
-     * decide between "treat as literal tag/branch" and "resolve
-     * via tag listing".
+     * Whether `$ref` is a constraint this resolver can satisfy
+     * (`^1.2.3` / `~1.2` / `^v1`). Used by the adapters to decide
+     * between "treat as literal tag/branch" and "resolve via tag
+     * listing".
      *
      * @psalm-pure
      */
-    public function isCaretConstraint(string $ref): bool
+    public function isConstraint(string $ref): bool
     {
-        return \preg_match(self::CARET_CONSTRAINT_REGEX, $ref) === 1;
+        return \preg_match(self::CONSTRAINT_REGEX, $ref) === 1;
+    }
+
+    /**
+     * Whether `$ref` carries version-constraint syntax — regardless of
+     * whether this resolver can satisfy it.
+     *
+     * The pair with {@see self::isConstraint()} is what lets the config
+     * layer tell the two failure modes apart:
+     *
+     * - `looksLikeConstraint() && isConstraint()` → resolvable.
+     * - `looksLikeConstraint() && !isConstraint()` → the user wrote a
+     *   constraint flavour we do not implement (`1.*`, `>=1.0`,
+     *   `^1 || ^2`, `~1.2.3.4`). Reject it at config-load time; passing
+     *   it through would send the raw string to the host as a tag name
+     *   and surface as an unexplained 404 later.
+     * - `!looksLikeConstraint()` → a literal tag, branch, or SHA.
+     *
+     * @psalm-pure
+     */
+    public function looksLikeConstraint(string $ref): bool
+    {
+        return \preg_match(self::CONSTRAINT_SYNTAX_REGEX, $ref) === 1;
     }
 
     /**
@@ -270,6 +332,30 @@ final readonly class RefResolver
         // All specified components are zero: `^0.0.0` locks the patch,
         // `^0.0` locks the minor.
         return $patchGiven ? [0, 0, 1] : [0, 1, 0];
+    }
+
+    /**
+     * Exclusive upper bound for a tilde constraint: bump the last
+     * component the constraint actually spelled out and zero
+     * everything to its right. Unlike the caret, the tilde has no
+     * pre-1.0 special case — the operator's meaning is positional,
+     * so `~0.2` is as permissive within `0.x` as `~1.2` is within
+     * `1.x`.
+     *
+     * - `~1.2.3` → `[1, 3, 0]`  (patch was last → minor bumps)
+     * - `~1.2`   → `[2, 0, 0]`  (minor was last → major bumps)
+     * - `~1`     → `[2, 0, 0]`
+     * - `~0.2.3` → `[0, 3, 0]`
+     * - `~0.2`   → `[1, 0, 0]`
+     * - `~0`     → `[1, 0, 0]`
+     *
+     * @return array{int, int, int}
+     *
+     * @psalm-pure
+     */
+    private static function tildeCeiling(int $major, int $minor, bool $patchGiven): array
+    {
+        return $patchGiven ? [$major, $minor + 1, 0] : [$major + 1, 0, 0];
     }
 
     /**

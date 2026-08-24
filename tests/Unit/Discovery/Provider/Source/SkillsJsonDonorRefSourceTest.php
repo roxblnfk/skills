@@ -44,7 +44,7 @@ final class SkillsJsonDonorRefSourceTest
         $source = new SkillsJsonDonorRefSource(new HostAdapterRegistry());
 
         Assert::same($this->collect($source->refs(Path::create($this->tmp))), []);
-        Assert::same($source->warnings(), []);
+        Assert::same($source->failures(), []);
     }
 
     public function emptyWhenSkillsJsonHasNoRemote(): void
@@ -54,7 +54,7 @@ final class SkillsJsonDonorRefSourceTest
         $source = new SkillsJsonDonorRefSource(new HostAdapterRegistry());
 
         Assert::same($this->collect($source->refs(Path::create($this->tmp))), []);
-        Assert::same($source->warnings(), []);
+        Assert::same($source->failures(), []);
     }
 
     public function yieldsResolvedRefsFromConfig(): void
@@ -77,13 +77,13 @@ final class SkillsJsonDonorRefSourceTest
         Assert::count($refs, 1);
         Assert::same($refs[0]->ref, 'v1.0.0');
         Assert::true(\str_contains($refs[0]->url, 'acme/skills/zipball/v1.0.0'));
-        Assert::same($source->warnings(), []);
+        Assert::same($source->failures(), []);
     }
 
-    public function unknownAdapterProducesWarning(): void
+    public function unknownAdapterProducesFailure(): void
     {
         // schema accepts `gitlab` but the registry only knows about
-        // `github` in v1; runtime surfaces the gap as a warning and
+        // `github` in v1; runtime surfaces the gap as a failure and
         // skips the entry.
         $this->writeSkillsJson([
             'remote' => [
@@ -95,11 +95,11 @@ final class SkillsJsonDonorRefSourceTest
         $refs = $this->collect($source->refs(Path::create($this->tmp)));
 
         Assert::same($refs, []);
-        Assert::count($source->warnings(), 1);
-        Assert::true(\str_contains($source->warnings()[0], 'gitlab'));
+        Assert::count($source->failures(), 1);
+        Assert::true(\str_contains($source->failures()[0]->describe(), 'gitlab'));
     }
 
-    public function resolveExceptionProducesWarning(): void
+    public function resolveExceptionProducesFailure(): void
     {
         $this->writeSkillsJson([
             'remote' => [
@@ -114,15 +114,15 @@ final class SkillsJsonDonorRefSourceTest
         $refs = $this->collect($source->refs(Path::create($this->tmp)));
 
         Assert::same($refs, []);
-        Assert::count($source->warnings(), 1);
-        Assert::true(\str_contains($source->warnings()[0], 'no matching tag'));
+        Assert::count($source->failures(), 1);
+        Assert::true(\str_contains($source->failures()[0]->describe(), 'no matching tag'));
     }
 
     public function oneFailureDoesNotBlockOtherEntries(): void
     {
         // First entry resolves cleanly; second throws; third is from
         // an unknown adapter. The source must yield the first ref and
-        // accumulate two warnings for the rest.
+        // accumulate two failures for the rest.
         $this->writeSkillsJson([
             'remote' => [
                 ['from' => 'github', 'package' => 'acme/good', 'ref' => 'v1.0.0'],
@@ -141,7 +141,7 @@ final class SkillsJsonDonorRefSourceTest
         $refs = $this->collect($source->refs(Path::create($this->tmp)));
 
         Assert::count($refs, 1);
-        Assert::count($source->warnings(), 2);
+        Assert::count($source->failures(), 2);
     }
 
     public function yieldedRefIsTaggedWithAdapterProvenance(): void
@@ -169,9 +169,9 @@ final class SkillsJsonDonorRefSourceTest
         Assert::same($refs[0]->provenance, 'github');
     }
 
-    public function warningsResetBetweenIterations(): void
+    public function failuresResetBetweenIterations(): void
     {
-        // Calling refs() twice must not concatenate warnings from
+        // Calling refs() twice must not concatenate failures from
         // the first call into the second.
         $this->writeSkillsJson([
             'remote' => [['from' => 'gitlab', 'package' => 'a/b']],
@@ -179,10 +179,10 @@ final class SkillsJsonDonorRefSourceTest
         $source = new SkillsJsonDonorRefSource(new HostAdapterRegistry());
 
         $this->collect($source->refs(Path::create($this->tmp)));
-        Assert::count($source->warnings(), 1);
+        Assert::count($source->failures(), 1);
 
         $this->collect($source->refs(Path::create($this->tmp)));
-        Assert::count($source->warnings(), 1);
+        Assert::count($source->failures(), 1);
     }
 
     public function dirEntryResolvesRelativeToProjectRoot(): void
@@ -204,7 +204,7 @@ final class SkillsJsonDonorRefSourceTest
         Assert::same($ref->spelling, './skills');
         Assert::same($ref->describe(), 'dir ./skills');
         Assert::same($ref->provenance, 'dir');
-        Assert::same($source->warnings(), []);
+        Assert::same($source->failures(), []);
     }
 
     public function dirEntryHonoursAbsolutePathAsIs(): void

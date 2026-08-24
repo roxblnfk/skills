@@ -108,14 +108,14 @@ final class RefResolverTest
         $r = new RefResolver();
         $tags = ['1.2.3', '1.2.4', '1.3.0', '1.9.9', '2.0.0', '0.9.0'];
 
-        Assert::same($r->resolveCaret('^1.2.3', $tags), '1.9.9');
+        Assert::same($r->resolveConstraint('^1.2.3', $tags), '1.9.9');
     }
 
     public function caretBelowFloorIsRejected(): void
     {
         $r = new RefResolver();
         // 1.2.2 is below floor 1.2.3 → not a match.
-        Assert::same($r->resolveCaret('^1.2.3', ['1.2.2', '0.9.0']), null);
+        Assert::same($r->resolveConstraint('^1.2.3', ['1.2.2', '0.9.0']), null);
     }
 
     public function caretIgnoresPrereleases(): void
@@ -125,7 +125,7 @@ final class RefResolverTest
         $r = new RefResolver();
 
         Assert::same(
-            $r->resolveCaret('^1.2.3', ['1.2.3-rc.1', '1.5.0-beta']),
+            $r->resolveConstraint('^1.2.3', ['1.2.3-rc.1', '1.5.0-beta']),
             null,
         );
     }
@@ -135,7 +135,7 @@ final class RefResolverTest
         $r = new RefResolver();
 
         Assert::same(
-            $r->resolveCaret('^1.0.0', ['1.5.0', '2.0.0']),
+            $r->resolveConstraint('^1.0.0', ['1.5.0', '2.0.0']),
             '1.5.0',
         );
     }
@@ -144,8 +144,8 @@ final class RefResolverTest
     {
         $r = new RefResolver();
 
-        Assert::same($r->resolveCaret('^1', ['1.0.0', '1.5.0', '2.0.0']), '1.5.0');
-        Assert::same($r->resolveCaret('^1.2', ['1.1.0', '1.2.0', '1.5.0']), '1.5.0');
+        Assert::same($r->resolveConstraint('^1', ['1.0.0', '1.5.0', '2.0.0']), '1.5.0');
+        Assert::same($r->resolveConstraint('^1.2', ['1.1.0', '1.2.0', '1.5.0']), '1.5.0');
     }
 
     public function caretTolerantToVPrefix(): void
@@ -153,7 +153,7 @@ final class RefResolverTest
         $r = new RefResolver();
 
         // The `v` prefix in the constraint is normalised away.
-        Assert::same($r->resolveCaret('^v1.2.0', ['v1.2.0', 'v1.5.0']), 'v1.5.0');
+        Assert::same($r->resolveConstraint('^v1.2.0', ['v1.2.0', 'v1.5.0']), 'v1.5.0');
     }
 
     public function caretPre1LocksTheMinor(): void
@@ -162,14 +162,14 @@ final class RefResolverTest
         // so `0.3.0` is out of range and the highest in-range wins.
         $r = new RefResolver();
 
-        Assert::same($r->resolveCaret('^0.2.3', ['0.2.3', '0.2.5', '0.3.0']), '0.2.5');
+        Assert::same($r->resolveConstraint('^0.2.3', ['0.2.3', '0.2.5', '0.3.0']), '0.2.5');
     }
 
     public function caretPre1BelowFloorIsRejected(): void
     {
         $r = new RefResolver();
 
-        Assert::same($r->resolveCaret('^0.2.3', ['0.2.2', '0.3.0']), null);
+        Assert::same($r->resolveConstraint('^0.2.3', ['0.2.2', '0.3.0']), null);
     }
 
     public function caretPre1WithZeroMinorLocksThePatch(): void
@@ -177,21 +177,21 @@ final class RefResolverTest
         // `^0.0.3` means `>=0.0.3 <0.0.4` — only the exact patch matches.
         $r = new RefResolver();
 
-        Assert::same($r->resolveCaret('^0.0.3', ['0.0.3', '0.0.4', '0.1.0']), '0.0.3');
+        Assert::same($r->resolveConstraint('^0.0.3', ['0.0.3', '0.0.4', '0.1.0']), '0.0.3');
     }
 
-    public function formatCaretAndResolveCaretRoundTripForPre1Tag(): void
+    public function formatCaretAndResolveConstraintRoundTripForPre1Tag(): void
     {
         // Regression: `skills:add` on a 0.x donor stores whatever
         // `formatCaret()` returns, then the sync feeds it straight back
-        // into `resolveCaret()`. The two must agree, or the just-added
+        // into `resolveConstraint()`. The two must agree, or the just-added
         // skill never loads.
         $r = new RefResolver();
         $constraint = $r->formatCaret('0.10.38');
 
         Assert::same($constraint, '^0.10.38');
         Assert::same(
-            $r->resolveCaret((string) $constraint, ['0.10.37', '0.10.38', '0.11.0']),
+            $r->resolveConstraint((string) $constraint, ['0.10.37', '0.10.38', '0.11.0']),
             '0.10.38',
         );
     }
@@ -200,8 +200,8 @@ final class RefResolverTest
     {
         $r = new RefResolver();
 
-        Assert::same($r->resolveCaret('not-a-constraint', ['1.0.0']), null);
-        Assert::same($r->resolveCaret('1.0.0', ['1.0.0']), null);
+        Assert::same($r->resolveConstraint('not-a-constraint', ['1.0.0']), null);
+        Assert::same($r->resolveConstraint('1.0.0', ['1.0.0']), null);
     }
 
     public function formatCaretFromStableTag(): void
@@ -223,16 +223,91 @@ final class RefResolverTest
         Assert::same($r->formatCaret('main'), null);
     }
 
-    public function isCaretConstraintMatchesStorageShapes(): void
+    public function isConstraintMatchesStorageShapes(): void
     {
         $r = new RefResolver();
 
-        Assert::true($r->isCaretConstraint('^1.2.3'));
-        Assert::true($r->isCaretConstraint('^1'));
-        Assert::true($r->isCaretConstraint('^v1.2.3'));
+        Assert::true($r->isConstraint('^1.2.3'));
+        Assert::true($r->isConstraint('^1'));
+        Assert::true($r->isConstraint('^v1.2.3'));
+        Assert::true($r->isConstraint('~1.2.3'));
+        Assert::true($r->isConstraint('~1.2'));
+        Assert::true($r->isConstraint('~v1'));
 
-        Assert::false($r->isCaretConstraint('1.2.3'));
-        Assert::false($r->isCaretConstraint('main'));
-        Assert::false($r->isCaretConstraint('>=1.2.3'));
+        Assert::false($r->isConstraint('1.2.3'));
+        Assert::false($r->isConstraint('main'));
+        Assert::false($r->isConstraint('>=1.2.3'));
+    }
+
+    public function tildeWithPatchLocksTheMinor(): void
+    {
+        // `~1.2.3` means `>=1.2.3 <1.3.0` — the patch is free, the
+        // minor is not.
+        $r = new RefResolver();
+        $tags = ['1.2.2', '1.2.3', '1.2.9', '1.3.0', '2.0.0'];
+
+        Assert::same($r->resolveConstraint('~1.2.3', $tags), '1.2.9');
+    }
+
+    public function tildeWithoutPatchLocksTheMajor(): void
+    {
+        // `~1.2` means `>=1.2.0 <2.0.0`, so unlike `~1.2.3` it lets the
+        // minor move. `~1` behaves the same way.
+        $r = new RefResolver();
+        $tags = ['1.1.0', '1.2.0', '1.9.9', '2.0.0'];
+
+        Assert::same($r->resolveConstraint('~1.2', $tags), '1.9.9');
+        Assert::same($r->resolveConstraint('~1', $tags), '1.9.9');
+    }
+
+    public function tildeHasNoPre1SpecialCase(): void
+    {
+        // Where `^0.2` would lock the minor, `~0.2` allows the whole
+        // 0.x line — the tilde's meaning is purely positional.
+        $r = new RefResolver();
+        $tags = ['0.2.0', '0.9.0', '1.0.0'];
+
+        Assert::same($r->resolveConstraint('~0.2', $tags), '0.9.0');
+        Assert::same($r->resolveConstraint('^0.2', $tags), '0.2.0');
+    }
+
+    public function tildeBelowFloorIsRejected(): void
+    {
+        $r = new RefResolver();
+
+        Assert::same($r->resolveConstraint('~1.2.3', ['1.2.2', '1.1.0']), null);
+    }
+
+    public function tildeIgnoresPrereleasesAndToleratesVPrefix(): void
+    {
+        $r = new RefResolver();
+
+        Assert::same($r->resolveConstraint('~1.2.3', ['1.2.4-rc.1']), null);
+        Assert::same($r->resolveConstraint('~v1.2.0', ['v1.2.5']), 'v1.2.5');
+    }
+
+    public function looksLikeConstraintSeparatesTyposFromLiteralRefs(): void
+    {
+        // The pair `looksLikeConstraint() && !isConstraint()` is what
+        // the config mapper rejects. Everything a user could plausibly
+        // mean as a tag or branch name must stay out of it, or a valid
+        // ref would be refused at load time.
+        $r = new RefResolver();
+
+        Assert::true($r->looksLikeConstraint('>=1.0'));
+        Assert::true($r->looksLikeConstraint('1.*'));
+        Assert::true($r->looksLikeConstraint('*'));
+        Assert::true($r->looksLikeConstraint('^1 || ^2'));
+        Assert::true($r->looksLikeConstraint('1.0.0 - 2.0.0'));
+        // A caret/tilde that fails to parse is a malformed constraint,
+        // never a plausible git ref.
+        Assert::true($r->looksLikeConstraint('~1.2.3.4'));
+        Assert::true($r->looksLikeConstraint('^abc'));
+
+        Assert::false($r->looksLikeConstraint('main'));
+        Assert::false($r->looksLikeConstraint('v1.2.3'));
+        Assert::false($r->looksLikeConstraint('release-1.2'));
+        Assert::false($r->looksLikeConstraint('feature/some-thing'));
+        Assert::false($r->looksLikeConstraint('9f8e7d6c5b4a3928170615243342516079889900'));
     }
 }

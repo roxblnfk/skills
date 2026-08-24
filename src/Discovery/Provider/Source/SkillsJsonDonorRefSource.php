@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
+use LLM\Skills\Discovery\SourceFailure;
 use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Source\Adapter\RemoteResolveException;
 use LLM\Skills\Discovery\Provider\Source\Adapter\UnknownAdapterException;
@@ -27,21 +28,22 @@ use LLM\Skills\Discovery\Provider\Source\Adapter\UnknownAdapterException;
  *    the entry into a fetchable {@see RemoteDonorRef} — concrete
  *    archive URL plus concrete tag / branch / SHA.
  * 4. Yield the ref. Resolution errors (unknown adapter, no matching
- *    tag, transport failure during tag listing) become warnings via
- *    {@see self::warnings()} and the offending entry is skipped.
+ *    tag, transport failure during tag listing) become
+ *    {@see SourceFailure} entries via {@see self::failures()} and the
+ *    offending entry is skipped.
  *
- * The source carries mutable state — the warnings list is populated
+ * The source carries mutable state — the failure list is populated
  * as the iterator runs — so the class is intentionally NOT `readonly`
  * and NOT `@psalm-immutable`. The {@see SourceProvider} consumes the
- * iterable to exhaustion before reading the warnings, so there is no
+ * iterable to exhaustion before reading the failures, so there is no
  * concurrency hazard.
  *
  * Per-entry isolation: one failing entry never blocks the rest.
  */
 final class SkillsJsonDonorRefSource implements DonorRefSource
 {
-    /** @var list<string> */
-    private array $lastWarnings = [];
+    /** @var list<SourceFailure> */
+    private array $lastFailures = [];
 
     /**
      * @psalm-mutation-free
@@ -57,7 +59,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
     #[\Override]
     public function refs(Path $projectRoot): iterable
     {
-        $this->lastWarnings = [];
+        $this->lastFailures = [];
 
         try {
             $config = $this->mapper->forProject($projectRoot, null)->config;
@@ -78,11 +80,10 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
             try {
                 $adapter = $this->registry->get($entry->from);
             } catch (UnknownAdapterException $e) {
-                $this->lastWarnings[] = \sprintf(
-                    'source %s:%s skipped — %s',
-                    $entry->from,
-                    $entry->identifier(),
-                    $e->getMessage(),
+                $this->lastFailures[] = new SourceFailure(
+                    label: $entry->from . ':' . $entry->identifier(),
+                    summary: 'unknown source adapter',
+                    detail: $e->getMessage(),
                 );
                 continue;
             }
@@ -105,23 +106,29 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
                     packageHint: $entry->package,
                 );
             } catch (RemoteResolveException $e) {
-                $this->lastWarnings[] = $e->getMessage();
+                $this->lastFailures[] = new SourceFailure(
+                    label: $entry->from . ':' . $entry->identifier(),
+                    // The exception's own message repeats the entry
+                    // identity that the row header already carries, so
+                    // the bare reason is what belongs in the summary.
+                    summary: $e->reason,
+                );
                 continue;
             }
         }
     }
 
     /**
-     * Warnings accumulated during the most recent {@see self::refs()}
+     * Failures accumulated during the most recent {@see self::refs()}
      * iteration. Cleared at the start of each iteration so the provider
      * never sees stale entries.
      *
-     * @return list<string>
+     * @return list<SourceFailure>
      */
     #[\Override]
-    public function warnings(): array
+    public function failures(): array
     {
-        return $this->lastWarnings;
+        return $this->lastFailures;
     }
 
     /**

@@ -121,6 +121,65 @@ final class SourceProviderEndToEndTest
         Assert::true(\str_contains((string) \file_get_contents($skillFile), 'name: hello'));
     }
 
+    public function tildeConstraintResolvesThroughTagListingToTheHighestMatch(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // A `~1.2` ref must go through the tag-listing path and come
+        // back with `v1.9.0` — the highest tag under the `<2.0.0`
+        // ceiling. The regression this pins: an unrecognised operator
+        // used to fall through to the verbatim-ref branch, so the raw
+        // string `~1.2` was interpolated into the zipball URL and the
+        // donor vanished behind a 404 on a URL nobody asked for.
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'sources' => [
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => '~1.2'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'acme-skills-v1.9.0',
+            files: [
+                'composer.json' => \json_encode([
+                    'name' => 'acme/skills',
+                    'extra' => ['skills' => ['source' => 'skills']],
+                ], \JSON_THROW_ON_ERROR),
+                'skills/hello/SKILL.md' => "---\nname: hello\n---\nhi",
+            ],
+        );
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/acme/skills/tags?per_page=100' => new HttpResponse(
+                statusCode: 200,
+                body: \json_encode([
+                    ['name' => 'v1.1.0'],
+                    ['name' => 'v1.9.0'],
+                    // Above the `~1.2` ceiling — must not be chosen.
+                    ['name' => 'v2.0.0'],
+                ], \JSON_THROW_ON_ERROR),
+            ),
+            'https://api.github.com/repos/acme/skills/zipball/v1.9.0' => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new SourceProvider(
+            new SkillsJsonDonorRefSource(new HostAdapterRegistry(new GithubAdapter($http))),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        // The stub only answers the two URLs above, so reaching a donor
+        // at all proves `v1.9.0` was the resolved ref.
+        Assert::same($result->failures, []);
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
+    }
+
     public function gitlabSourceEntryResolvesFetchesAndProducesDonor(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
@@ -372,8 +431,8 @@ final class SourceProviderEndToEndTest
         $result = $provider->discover(Path::create($this->tmp));
 
         Assert::same($result->donors, []);
-        Assert::true($result->warnings !== []);
-        Assert::string($result->warnings[0])
+        Assert::true($result->failures !== []);
+        Assert::string($result->failures[0]->describe())
             ->contains('neither a composer.json')
             ->contains('SKILL.md');
     }
@@ -466,9 +525,9 @@ final class SourceProviderEndToEndTest
         $result = $provider->discover(Path::create($this->tmp));
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::string($result->warnings[0])
-            ->contains('dir ./nope')
+        Assert::count($result->failures, 1);
+        Assert::string($result->failures[0]->describe())
+            ->contains('dir:./nope')
             ->contains('directory does not exist');
     }
 
@@ -603,8 +662,11 @@ final class SourceProviderEndToEndTest
         $result = $provider->discover(Path::create($this->tmp));
 
         Assert::same($result->donors, []);
-        Assert::true($result->warnings !== []);
-        $combined = \implode("\n", $result->warnings);
+        Assert::true($result->failures !== []);
+        $combined = \implode("\n", \array_map(
+            static fn($f): string => $f->describe(),
+            $result->failures,
+        ));
         Assert::true(
             \str_contains($combined, 'unsafe entry path'),
             'fetcher must explicitly reject the traversal entry — got: ' . $combined,

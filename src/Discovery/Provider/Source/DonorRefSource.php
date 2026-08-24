@@ -53,19 +53,19 @@ interface DonorRefSource
     public function hasRefs(Path $projectRoot): bool;
 
     /**
-     * Warnings accumulated during the most recent {@see self::refs()}
-     * iteration. Typical contents: "unknown adapter id" for entries the
-     * registry rejected, "no matching tag" for caret constraints with
-     * no resolvable tag. Empty for sources that never fail mid-stream
-     * (e.g. {@see NullDonorRefSource}).
+     * Entries that could not be turned into a ref during the most
+     * recent {@see self::refs()} iteration. Typical contents: "unknown
+     * adapter id" for entries the registry rejected, "no matching tag"
+     * for a constraint with no resolvable tag. Empty for sources that
+     * never fail mid-stream (e.g. {@see NullDonorRefSource}).
      *
      * Implementations populate this during iteration; the provider
      * reads it AFTER consuming the iterable and merges the contents
-     * into the same warnings channel that carries fetcher failures.
+     * into the same failure channel that carries fetcher failures.
      *
-     * @return list<string>
+     * @return list<\LLM\Skills\Discovery\SourceFailure>
      *
      * @psalm-suppress MissingAbstractPureAnnotation
      */
-    public function warnings(): array;
+    public function failures(): array;
 }

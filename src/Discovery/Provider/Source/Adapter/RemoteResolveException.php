@@ -12,7 +12,7 @@ use LLM\Skills\Config\SourceEntry;
  *
  * Examples:
  *
- * - Caret constraint with no matching tag in the repository.
+ * - Caret / tilde constraint with no matching tag in the repository.
  * - Repo has no tags AND no default branch (extremely rare; usually
  *   a misconfiguration).
  * - API returned a non-success status the adapter cannot recover
@@ -27,13 +27,16 @@ use LLM\Skills\Config\SourceEntry;
 final class RemoteResolveException extends \RuntimeException
 {
     /**
-     * @param non-empty-string $reason
+     * @param non-empty-string $reason cause on its own, with no entry context. Kept as a
+     *        property because {@see self::getMessage()} prefixes it with `remote <from>:<id> — `
+     *        for the log stream, while the summary listing already prints the entry as a
+     *        row header and needs the bare clause.
      *
      * @psalm-mutation-free
      */
     public function __construct(
         public readonly SourceEntry $entry,
-        string $reason,
+        public readonly string $reason,
         ?\Throwable $previous = null,
     ) {
         parent::__construct(

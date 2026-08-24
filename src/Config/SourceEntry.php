@@ -44,9 +44,13 @@ final readonly class SourceEntry
      *         with `$package`; forbidden for path-only adapters.
      * @param non-empty-string|null $host explicit registry / API host override; absent means
      *         "use the adapter's default" (e.g. `https://api.github.com` for github).
-     * @param non-empty-string|null $ref adapter-specific version pin (`^1.2.3`, `v1.2.3`,
-     *         `main`, full SHA, …). Absent means the adapter picks the latest stable
-     *         tag, falling back to the default branch HEAD.
+     * @param non-empty-string|null $ref version pin — either a constraint the
+     *         {@see \LLM\Skills\Discovery\Provider\Source\RefResolver} resolves against the
+     *         donor's tag list (`^1.2.3`, `~1.2`) or a literal ref the host accepts verbatim
+     *         (`v1.2.3`, `main`, a full SHA). Absent means the adapter picks the latest
+     *         stable tag, falling back to the default branch HEAD. Constraint flavours the
+     *         resolver does not implement (`1.*`, `>=1.0`, `^1 || ^2`) are rejected by the
+     *         config mapper rather than passed through as a literal ref.
      * @param array<string, mixed> $extras adapter-specific extra keys preserved verbatim
      *         (e.g. `{"sha256": "…"}` on `zip`). Empty map when the entry has no extras.
      * @param list<non-empty-string>|null $skills explicit skill-name allowlist scoped to this

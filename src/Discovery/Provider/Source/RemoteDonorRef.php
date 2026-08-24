@@ -67,4 +67,20 @@ final readonly class RemoteDonorRef
     {
         return $this->url . '@' . $this->ref;
     }
+
+    /**
+     * Short `<from>:<identifier>` identity for the summary listing —
+     * `github:acme/skills` rather than {@see describe()}'s full URL.
+     * Falls back to the URL when the adapter could not reduce the entry
+     * to a `vendor/repo` pair, which is the only identifier a URL-only
+     * entry has.
+     *
+     * @return non-empty-string
+     *
+     * @psalm-mutation-free
+     */
+    public function label(): string
+    {
+        return ($this->provenance ?? 'source') . ':' . ($this->packageHint ?? $this->url);
+    }
 }
