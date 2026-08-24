@@ -15,10 +15,12 @@ use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\DiscoveryResolver;
+use LLM\Skills\Discovery\MalformedDonor;
 use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
+use LLM\Skills\Discovery\SourceFailure;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -48,7 +50,8 @@ use Symfony\Component\Console\Command\Command;
  *   4. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
  *   5. {@see SkillEnumerator}: enumerate skill subdirs for approved donors.
  *   6. {@see SyncEngine}: detect conflicts, write files.
- *   7. Format the {@see SyncReport} grouped by package and emit the trailing
+ *   7. Format the {@see SyncReport} grouped by package, add a `[failed]` row
+ *      for every donor that contributed nothing, and emit the trailing
  *      `[skip]` / `[hint]` diagnostics.
  *
  * Returns {@see Command::SUCCESS} / {@see Command::FAILURE} /
@@ -235,20 +238,27 @@ final readonly class SyncRunner
                 ));
             }
             $io->writeError('<error>Sync aborted due to skill-name conflicts; nothing was written.</error>');
+            // A failed source is reported even on the abort path: the
+            // conflict and the unreachable donor are independent
+            // problems, and hiding the second until the first is fixed
+            // would cost the user an extra round trip.
+            $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
             $this->emitTrailingDiagnostics($io, $plan, $discoveryResolution->excluded);
             return Command::FAILURE;
         }
 
         $this->emitCopyReport($io, $report->copied, $options->dryRun);
+        $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
         $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
         $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
-            '<info>[llm/skills] %s %d skill(s) into %s</info>',
+            '<info>[llm/skills] %s %d skill(s) into %s</info>%s',
             $verb,
             \count($report->copied),
             (string) $plan->target,
+            $this->formatFailureTally($discovery->failures, $discovery->malformed),
         ));
 
         $aliasFailed = $this->processAliases($io, $plan, $options->dryRun);
@@ -346,6 +356,73 @@ final readonly class SyncRunner
                 $io->write($row);
             }
         }
+    }
+
+    /**
+     * Render the donors that contributed nothing as rows in the same
+     * vendor-grouped shape as the copy report above them — `sources[]`
+     * entries that never resolved, plus donors whose `extra.skills`
+     * block was rejected.
+     *
+     * These sit inside the listing, not in the `-v` stream, because a
+     * donor going missing is exactly what the reader cannot infer from
+     * the output: a shorter list of packages looks the same as a
+     * correct one. The label takes the place of a package header and the
+     * reason the place of the skill rows, so a broken donor occupies the
+     * same visual slot as a working one:
+     *
+     *     acme/skills
+     *       [copy] hello
+     *     github:acme/other
+     *       [failed] no tag matches ^9.0
+     *
+     * The underlying transport / parser text stays behind `-v` — the
+     * summary row names the cause, the detail line explains it.
+     *
+     * @param list<SourceFailure> $failures
+     * @param list<MalformedDonor> $malformed
+     */
+    private function emitSourceFailures(IOInterface $io, array $failures, array $malformed): void
+    {
+        foreach ($failures as $failure) {
+            $this->emitFailureRow($io, $failure->label, $failure->summary, $failure->detail);
+        }
+        foreach ($malformed as $donor) {
+            $this->emitFailureRow($io, $donor->packageName, $donor->reason, null);
+        }
+    }
+
+    private function emitFailureRow(
+        IOInterface $io,
+        string $label,
+        string $summary,
+        ?string $detail,
+    ): void {
+        $io->write('<fg=cyan>' . $label . '</>');
+        $io->write('  <fg=red;options=bold>[failed]</> ' . $summary);
+        if ($detail !== null && $detail !== '') {
+            $io->write('    <fg=gray>' . $detail . '</>', verbosity: IOInterface::VERBOSE);
+        }
+    }
+
+    /**
+     * Suffix for the summary line when donors failed, so the count is
+     * visible even to a reader who only ever looks at the last line of
+     * the output (CI logs, a `| tail -1`).
+     *
+     * @param list<SourceFailure> $failures
+     * @param list<MalformedDonor> $malformed
+     *
+     * @psalm-pure
+     */
+    private function formatFailureTally(array $failures, array $malformed): string
+    {
+        $count = \count($failures) + \count($malformed);
+        if ($count === 0) {
+            return '';
+        }
+
+        return \sprintf(' <fg=red>(%d donor(s) failed)</>', $count);
     }
 
     /**

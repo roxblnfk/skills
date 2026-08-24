@@ -28,8 +28,9 @@ use LLM\Skills\Unpacker\UnpackerFactory;
  * 2. If the path already exists, return it — the cache is content-
  *    addressed-by-ref, so a hit means we have the right files.
  * 3. Otherwise, GET the URL via {@see HttpClient}, write the bytes to
- *    a temp zip file, list every entry name via the selected
- *    {@see ArchiveUnpacker} (zip-slip lexical check on each), extract,
+ *    a temp zip file, list every entry via the selected
+ *    {@see ArchiveUnpacker} (zip-slip lexical check on each name,
+ *    symlink entries collected for exclusion), extract,
  *    locate the single top-level directory inside the archive
  *    (GitHub's zipball wraps everything in `<owner>-<repo>-<sha>/`),
  *    and rename that directory into the cache location.
@@ -254,7 +255,7 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
         // anywhere on disk. Reject anything that does not lexically
         // resolve to a path inside `$scratch`.
         try {
-            $names = $unpacker->listEntries($tmpZip);
+            $entries = $unpacker->listEntries($tmpZip);
         } catch (UnpackerException $e) {
             throw new RemoteFetchException(
                 $ref,
@@ -263,12 +264,29 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
             );
         }
 
-        foreach ($names as $name) {
-            if (!self::isSafeZipEntryName($name)) {
+        foreach ($entries as $entry) {
+            if (!self::isSafeZipEntryName($entry->name)) {
                 throw new RemoteFetchException(
                     $ref,
-                    'archive contains an unsafe entry path "' . $name . '" — refusing to extract',
+                    'archive contains an unsafe entry path "' . $entry->name . '" — refusing to extract',
                 );
+            }
+        }
+
+        // Symlink entries are excluded from the extraction. Recreating
+        // a link on Windows needs `SeCreateSymbolicLinkPrivilege`,
+        // which an unelevated process outside Developer Mode does not
+        // hold; 7-Zip treats the refusal as a fatal error and exits
+        // non-zero, losing the whole archive over a single link.
+        // Excluding up front sidesteps that, and the plugin has no use
+        // for the links anyway: {@see \LLM\Skills\Filesystem\LinkGuard}
+        // refuses to copy symlinks into the target, so a donor whose
+        // *content* rides on symlinks (even a symlinked composer.json)
+        // is unsupported by design.
+        $exclude = [];
+        foreach ($entries as $entry) {
+            if ($entry->isSymlink) {
+                $exclude[] = $entry->name;
             }
         }
 
@@ -277,7 +295,7 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
         }
 
         try {
-            $unpacker->extractTo($tmpZip, $scratch);
+            $unpacker->extractTo($tmpZip, $scratch, $exclude);
         } catch (UnpackerException $e) {
             throw new RemoteFetchException(
                 $ref,

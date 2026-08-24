@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use LLM\Skills\Tests\Acceptance\Info;
 use LLM\Skills\Tests\Testo\Composer\ComposerInstallPlugin;
+use LLM\Skills\Tests\Testo\SandboxIsolation;
 use Testo\Application\Config\ApplicationConfig;
 use Testo\Application\Config\FinderConfig;
 use Testo\Application\Config\SuiteConfig;
@@ -42,6 +43,9 @@ return new ApplicationConfig(
             ),
             plugins: [
                 new ComposerInstallPlugin(projectDir: Info::PROJECT_DIR, cleanup: false),
+                // Every test in this suite shares one consumer project,
+                // and the commands under test rewrite its config files.
+                new SandboxIsolation(),
             ],
         ),
     ],

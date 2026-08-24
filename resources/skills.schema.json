@@ -155,7 +155,7 @@
                 "ref": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Adapter-specific version pin (^1.2.3, v1.2.3, main, full SHA). Absent → adapter resolves the latest stable tag, falling back to the default branch HEAD."
+                    "description": "Version pin — either a constraint resolved against the donor's tag list (caret: ^1.2.3, ^1.2, ^1; tilde: ~1.2.3, ~1.2) or a literal ref the host accepts verbatim (v1.2.3, main, full SHA). Other constraint flavours (1.*, >=1.0, ^1 || ^2) are rejected at config load rather than treated as a tag name. Absent → adapter resolves the latest stable tag, falling back to the default branch HEAD."
                 },
                 "skills": {
                     "type": "array",

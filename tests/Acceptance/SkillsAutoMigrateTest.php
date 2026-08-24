@@ -8,10 +8,8 @@ use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
-use LLM\Skills\Tests\Testo\SandboxStateGuard;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
-use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
@@ -35,16 +33,9 @@ final class SkillsAutoMigrateTest
     private const COMPOSER_JSON = Info::PROJECT_DIR . '/composer.json';
 
     #[BeforeTest]
-    public function snapshotAndClear(): void
+    public function clearTargetDir(): void
     {
         Filesystem::removeRecursive(self::TARGET_DIR);
-        SandboxStateGuard::snapshot();
-    }
-
-    #[AfterTest]
-    public function restore(): void
-    {
-        SandboxStateGuard::restore();
     }
 
     // ── update migrates ─────────────────────────────────────────────────
@@ -92,7 +83,8 @@ final class SkillsAutoMigrateTest
             'skills must land at the migrated target',
         );
 
-        // Cleanup of the new target dir before AfterTest restores composer.json.
+        // The target this test migrated to is its own; no other test
+        // clears it.
         Filesystem::removeRecursive(Info::PROJECT_DIR . '/auto-migrate-target');
     }
 

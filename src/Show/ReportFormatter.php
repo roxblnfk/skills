@@ -33,10 +33,10 @@ namespace LLM\Skills\Show;
  * In the `Skipped:` section the chip carries the *reason* itself rather
  * than a generic SKIP — the section header already says "skipped", so a
  * dedicated chip would be redundant. Reason chips are coloured by
- * severity: red for vendor breakage (malformed / source-missing),
- * yellow for trust-required cases (untrusted / untrusted-named), white
- * for self-imposed exclusions (filtered-out), cyan for informational
- * cases (not-declared).
+ * severity: red for breakage (malformed / source-missing /
+ * source-failed), yellow for trust-required cases (untrusted /
+ * untrusted-named), white for self-imposed exclusions (filtered-out),
+ * cyan for informational cases (not-declared).
  *
  * The `[via built-in trust]` and `[via direct dependency]` annotations
  * are shown only when the donor was approved by that implicit source
@@ -265,7 +265,8 @@ final readonly class ReportFormatter
         return match ($reason) {
             // Vendor's broken — loud red.
             SkipReason::Malformed,
-            SkipReason::SourceMissing => '<bg=red;fg=white;options=bold>',
+            SkipReason::SourceMissing,
+            SkipReason::SourceFailed => '<bg=red;fg=white;options=bold>',
             // Trust decision required — yellow warning.
             SkipReason::Untrusted => '<bg=yellow;fg=black;options=bold>',
             // User self-excluded — muted neutral.

@@ -49,6 +49,13 @@ final class ComposerRunner
             ? $process->mustRun()
             : $process->run();
 
+        // The subprocess just created, rewrote and deleted files behind
+        // PHP's back. PHP only invalidates its stat cache for paths it
+        // touched itself, so without this every `is_file()` in the
+        // caller answers from a view of the filesystem taken before
+        // Composer ran.
+        \clearstatcache();
+
         return $process;
     }
 }

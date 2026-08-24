@@ -5,21 +5,22 @@ declare(strict_types=1);
 namespace LLM\Skills\Unpacker;
 
 /**
- * Minimal zip Central Directory parser — enumerates entry names from
- * a `.zip` file **without** depending on `ext-zip`.
+ * Minimal zip Central Directory parser — enumerates entries from a
+ * `.zip` file **without** depending on `ext-zip`.
  *
- * Used by the CLI unpacker to validate every entry name lexically
- * (zip-slip guard) before invoking `unzip` / `7z`. The CLI tools do
- * not expose a pre-extraction validation hook and apply `-y`-style
- * overwrite semantics by default, so the only safe place to reject a
- * traversal entry is *here*, before any byte hits disk.
+ * Backs {@see CliUnpacker::listEntries()}: the fetcher uses the listing
+ * to validate every entry name lexically (zip-slip guard) and to spot
+ * symlink entries it wants excluded, all before invoking `unzip` / `7z`.
+ * The CLI tools expose no pre-extraction validation hook and apply
+ * `-y`-style overwrite semantics by default, so the only safe place to
+ * decide what gets written is *here*, before any byte hits disk.
  *
  * Scope:
  *
  * - reads the End-of-Central-Directory record by scanning back from
  *   EOF (signature `PK\x05\x06`, comment up to 65 535 bytes);
  * - walks the Central Directory file headers (signature `PK\x01\x02`),
- *   reading only the file-name field;
+ *   reading the file name plus `version_made_by` / `external_attr`;
  * - fails loud on zip64 sentinels — supported archives must fit in
  *   plain-zip metadata (entries < 65 535, sizes < 4 GiB). GitHub
  *   zipballs and Composer-shaped donor archives are comfortably under
@@ -50,6 +51,24 @@ final class ZipCentralDirectoryReader
      * @throws UnpackerException on missing / truncated / zip64 archives
      */
     public function readNames(string $zipPath): array
+    {
+        return \array_map(
+            static fn(ZipEntry $entry): string => $entry->name,
+            $this->readEntries($zipPath),
+        );
+    }
+
+    /**
+     * Same walk as {@see self::readNames()}, keeping the symlink flag
+     * each entry carries.
+     *
+     * @param non-empty-string $zipPath
+     *
+     * @return list<ZipEntry> entries in central-directory order
+     *
+     * @throws UnpackerException on missing / truncated / zip64 archives
+     */
+    public function readEntries(string $zipPath): array
     {
         $size = @\filesize($zipPath);
         if ($size === false || $size < self::EOCD_MIN_SIZE) {
@@ -125,13 +144,13 @@ final class ZipCentralDirectoryReader
     }
 
     /**
-     * @return list<string>
+     * @return list<ZipEntry>
      *
      * @psalm-pure
      */
     private static function parseCentralDirectory(string $cd, int $entries): array
     {
-        $names = [];
+        $out = [];
         $pos = 0;
         $len = \strlen($cd);
 
@@ -140,38 +159,38 @@ final class ZipCentralDirectoryReader
                 throw new UnpackerException('central directory truncated mid-header');
             }
 
-            /** @var array{sig: int}|false $sig */
-            $sig = @\unpack('Vsig', \substr($cd, $pos, 4));
-            if ($sig === false || $sig['sig'] !== self::CD_FILE_HEADER_SIGNATURE) {
+            // One unpack over the fixed 46-byte header; `@n` repositions
+            // to the field offsets given in APPNOTE.TXT §4.3.12.
+            /** @var array{sig: int, made_by: int, name_len: int, extra_len: int, comment_len: int, external_attr: int}|false $fields */
+            $fields = @\unpack(
+                'Vsig/vmade_by/@28/vname_len/vextra_len/vcomment_len/@38/Vexternal_attr',
+                \substr($cd, $pos, self::CD_HEADER_FIXED_SIZE),
+            );
+            if ($fields === false || $fields['sig'] !== self::CD_FILE_HEADER_SIGNATURE) {
                 throw new UnpackerException(\sprintf(
                     'unexpected signature at central-directory offset %d — archive is malformed',
                     $pos,
                 ));
             }
 
-            /** @var array{name_len: int, extra_len: int, comment_len: int}|false $lengths */
-            $lengths = @\unpack(
-                'vname_len/vextra_len/vcomment_len',
-                \substr($cd, $pos + 28, 6),
-            );
-            if ($lengths === false) {
-                throw new UnpackerException('failed to parse central-directory header lengths');
-            }
-
-            $nameLen = $lengths['name_len'];
-            $extraLen = $lengths['extra_len'];
-            $commentLen = $lengths['comment_len'];
+            $nameLen = $fields['name_len'];
 
             $nameStart = $pos + self::CD_HEADER_FIXED_SIZE;
             if ($nameStart + $nameLen > $len) {
                 throw new UnpackerException('central directory truncated mid-name');
             }
 
-            $names[] = \substr($cd, $nameStart, $nameLen);
-            $pos = $nameStart + $nameLen + $extraLen + $commentLen;
+            $out[] = new ZipEntry(
+                name: \substr($cd, $nameStart, $nameLen),
+                isSymlink: ZipEntry::isSymlinkAttributes(
+                    $fields['made_by'] >> 8,
+                    $fields['external_attr'],
+                ),
+            );
+            $pos = $nameStart + $nameLen + $fields['extra_len'] + $fields['comment_len'];
         }
 
-        return $names;
+        return $out;
     }
 
     /**

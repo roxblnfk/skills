@@ -13,6 +13,7 @@ use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorPattern;
 use LLM\Skills\Discovery\Provider\ProviderId;
+use LLM\Skills\Discovery\Provider\Source\RefResolver;
 
 /**
  * Maps the consumer project's configuration into a typed
@@ -300,6 +301,40 @@ final readonly class ProjectConfigMapper
             $out[] = $name;
         }
         return $out;
+    }
+
+    /**
+     * Reject a `ref` that carries version-constraint syntax the
+     * {@see RefResolver} cannot satisfy.
+     *
+     * Adapters treat any `ref` they do not recognise as a constraint as
+     * a literal tag / branch / SHA and hand it to the host verbatim.
+     * That is the right default for `main` or `v1.2.3`, but it turns a
+     * near-miss like `~1.2.3` (before tilde support) or `>=1.0` into a
+     * bare 404 from the archive endpoint — a wrong-looking network error
+     * for what is really a typo in `skills.json`. Catching it here
+     * names the field and lists what is accepted.
+     *
+     * @param non-empty-string $ref
+     * @param non-empty-string $field
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
+     */
+    private static function assertSupportedRef(string $ref, string $field): void
+    {
+        $resolver = new RefResolver();
+        if (!$resolver->looksLikeConstraint($ref) || $resolver->isConstraint($ref)) {
+            return;
+        }
+
+        throw new MalformedProjectConfig(\sprintf(
+            '%s.ref "%s" is not a supported version constraint — use a caret (^1.2.3), '
+            . 'a tilde (~1.2), or a literal tag / branch / commit (v1.2.3, main)',
+            $field,
+            $ref,
+        ));
     }
 
     /**
@@ -930,6 +965,10 @@ final readonly class ProjectConfigMapper
                     );
                 }
             }
+        }
+
+        if ($ref !== null) {
+            self::assertSupportedRef($ref, $field);
         }
 
         $skills = self::mapSourceSkills($entry['skills'] ?? null, $field);

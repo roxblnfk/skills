@@ -60,7 +60,7 @@ final class SourceProviderTest
         Assert::false($provider->isActive($this->projectRoot()));
         $result = $provider->discover($this->projectRoot());
         Assert::same($result->donors, []);
-        Assert::same($result->warnings, []);
+        Assert::same($result->failures, []);
     }
 
     public function activeWhenSourceYieldsAtLeastOneRef(): void
@@ -86,8 +86,8 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'no fetcher is configured'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'no fetcher is configured'));
     }
 
     public function warnsOnFetchException(): void
@@ -106,9 +106,11 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'host unreachable'));
-        Assert::true(\str_contains($result->warnings[0], $ref->describe()));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'host unreachable'));
+        // The failure row names the entry by its short `<from>:<id>`
+        // label, not the full archive URL — that lives in the detail.
+        Assert::true(\str_contains($result->failures[0]->describe(), $ref->label()));
     }
 
     public function warnsWhenNeitherComposerJsonNorSkillMdIsPresent(): void
@@ -122,9 +124,9 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'neither a composer.json'));
-        Assert::true(\str_contains($result->warnings[0], 'SKILL.md'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'neither a composer.json'));
+        Assert::true(\str_contains($result->failures[0]->describe(), 'SKILL.md'));
     }
 
     public function autoDiscoversBareSkillsRepoFromPackageHint(): void
@@ -147,7 +149,7 @@ final class SourceProviderTest
         // (the "auto-found, gate behind --discovery" flag) does NOT
         // apply even when the source dir was auto-probed.
         Assert::false($result->donors[0]->discovered);
-        Assert::same($result->warnings, []);
+        Assert::same($result->failures, []);
     }
 
     public function autoDiscoversSkillsNestedBelowConventionalRoots(): void
@@ -164,7 +166,7 @@ final class SourceProviderTest
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->packageName, 'artem/maintenance');
         Assert::false($result->donors[0]->discovered);
-        Assert::same($result->warnings, []);
+        Assert::same($result->failures, []);
     }
 
     public function warnsWhenBareSkillsRepoHasNoPackageHint(): void
@@ -178,8 +180,8 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'no package name'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'no package name'));
     }
 
     public function warnsWhenComposerJsonInvalidJson(): void
@@ -190,8 +192,8 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'not valid JSON'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'not valid JSON'));
     }
 
     public function warnsWhenComposerJsonIsScalar(): void
@@ -207,8 +209,8 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'must be a JSON object'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'must be a JSON object'));
     }
 
     public function fallsBackToPackageHintWhenComposerJsonHasNoName(): void
@@ -267,15 +269,17 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'not a donor'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'not a donor'));
     }
 
     public function warnsAndRecordsMalformedWhenExtraSkillsBroken(): void
     {
-        // `source` is a non-string — mapper rejects, provider lifts
-        // to both a printable warning AND a structured MalformedDonor
-        // entry, parity with ComposerProvider.
+        // `source` is a non-string — mapper rejects, provider reports a
+        // structured MalformedDonor entry, parity with ComposerProvider.
+        // Deliberately NOT also a SourceFailure: the archive *was* a
+        // donor and its Composer name is known, so the two channels
+        // would describe the same event twice.
         $extracted = $this->makeExtracted(
             'bad-source',
             \json_encode([
@@ -288,7 +292,7 @@ final class SourceProviderTest
         $result = $provider->discover($this->projectRoot());
 
         Assert::same($result->donors, []);
-        Assert::count($result->warnings, 1);
+        Assert::same($result->failures, []);
         Assert::count($result->malformed, 1);
         Assert::same($result->malformed[0]->packageName, 'acme/pkg');
         Assert::true(\str_contains($result->malformed[0]->reason, 'extra.skills.source'));
@@ -311,7 +315,7 @@ final class SourceProviderTest
         Assert::same($result->donors[0]->packageName, 'acme/pkg');
         Assert::same($result->donors[0]->source, 'skills');
         Assert::same((string) $result->donors[0]->packageRoot, (string) $extracted);
-        Assert::same($result->warnings, []);
+        Assert::same($result->failures, []);
         Assert::same($result->malformed, []);
     }
 
@@ -350,7 +354,7 @@ final class SourceProviderTest
 
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->packageName, 'acme/pkg');
-        Assert::count($result->warnings, 1);
+        Assert::count($result->failures, 1);
     }
 
     // ── dir refs ──────────────────────────────────────────────────────────────
@@ -377,7 +381,7 @@ final class SourceProviderTest
         Assert::same($result->donors[0]->packageName, 'acme/local');
         Assert::same($result->donors[0]->provenance, 'dir');
         Assert::true($result->donors[0]->implicitTrust);
-        Assert::same($result->warnings, []);
+        Assert::same($result->failures, []);
     }
 
     public function dirRefMissingDirectoryWarnsAndSkipsWithoutBlockingSiblings(): void
@@ -402,9 +406,9 @@ final class SourceProviderTest
 
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->packageName, 'acme/good');
-        Assert::count($result->warnings, 1);
-        Assert::true(\str_contains($result->warnings[0], 'dir ./missing'));
-        Assert::true(\str_contains($result->warnings[0], 'directory does not exist'));
+        Assert::count($result->failures, 1);
+        Assert::true(\str_contains($result->failures[0]->describe(), 'dir:./missing'));
+        Assert::true(\str_contains($result->failures[0]->describe(), 'directory does not exist'));
     }
 
     public function dirRefBareSkillDirUsesDerivedHintForItsName(): void
@@ -423,7 +427,7 @@ final class SourceProviderTest
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->packageName, 'team/skills');
         Assert::false($result->donors[0]->discovered);
-        Assert::same($result->warnings, []);
+        Assert::same($result->failures, []);
     }
 
     public function dirRefComposerShapedUsesItsOwnComposerName(): void
@@ -532,7 +536,7 @@ final class SourceProviderTest
             }
 
             #[\Override]
-            public function warnings(): array
+            public function failures(): array
             {
                 return [];
             }
@@ -558,7 +562,7 @@ final class SourceProviderTest
             }
 
             #[\Override]
-            public function warnings(): array
+            public function failures(): array
             {
                 return [];
             }

@@ -144,10 +144,15 @@ final class UnpackerFactory
         // `-qq` quiet, `-d` target dir. Modern `unzip` strips leading
         // slashes and `..` segments on its own, but we do not rely on
         // it — entries are validated by the fetcher beforehand.
+        //
+        // `-x` opens an exclusion list that extends to the end of the
+        // command line, so the paths follow it as bare tokens.
         return new CliUnpacker(
             id: 'unzip',
             executablePath: $path,
             extractArgsTemplate: ['-qq', '{file}', '-d', '{dir}'],
+            excludeArgsTemplate: ['-x'],
+            excludePathTemplate: '{path}',
         );
     }
 
@@ -164,10 +169,15 @@ final class UnpackerFactory
         // scratch dir, so there's nothing to overwrite anyway).
         // `-o<dir>` is intentionally one token — 7z does not accept a
         // space between `-o` and the path.
+        //
+        // Each exclusion is its own `-x!<path>` token; there is no
+        // list-opening switch, hence the empty `excludeArgsTemplate`.
         return new CliUnpacker(
             id: $id,
             executablePath: $path,
             extractArgsTemplate: ['x', '-bb0', '-y', '{file}', '-o{dir}'],
+            excludeArgsTemplate: [],
+            excludePathTemplate: '-x!{path}',
         );
     }
 }

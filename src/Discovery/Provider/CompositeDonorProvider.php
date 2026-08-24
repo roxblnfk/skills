@@ -21,8 +21,8 @@ use LLM\Skills\Discovery\MalformedDonor;
  * `isActive()` is the OR of all children. `directDependencies()` is the
  * union (deduplicated, order-preserved). `discover()` concatenates
  * donors and warnings, then deduplicates donors as described above —
- * malformed and discoverable lists are concatenated verbatim because
- * their consumers do not care about cross-provider conflicts.
+ * malformed, discoverable, and failure lists are concatenated verbatim
+ * because their consumers do not care about cross-provider conflicts.
  *
  * @psalm-suppress MissingImmutableAnnotation
  *         the composite holds {@see DonorProvider} children which are deliberately not
@@ -66,6 +66,8 @@ final readonly class CompositeDonorProvider implements DonorProvider
         $malformed = [];
         /** @var list<\LLM\Skills\Config\VendorConfig> $discoverable */
         $discoverable = [];
+        /** @var list<\LLM\Skills\Discovery\SourceFailure> $failures */
+        $failures = [];
 
         foreach ($this->children as $child) {
             if (!$child->isActive($projectRoot)) {
@@ -105,6 +107,9 @@ final readonly class CompositeDonorProvider implements DonorProvider
             foreach ($result->discoverable as $d) {
                 $discoverable[] = $d;
             }
+            foreach ($result->failures as $f) {
+                $failures[] = $f;
+            }
         }
 
         return new DonorDiscoveryResult(
@@ -112,6 +117,7 @@ final readonly class CompositeDonorProvider implements DonorProvider
             warnings: $warnings,
             malformed: $malformed,
             discoverable: $discoverable,
+            failures: $failures,
         );
     }
 

@@ -80,19 +80,50 @@ final class SkillsDirSourceTest
         ],
         'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
     ])]
-    public function missingDirSourceWarnsUnderVerboseAndStillSucceeds(): void
+    public function missingDirSourceFailsInTheListingAndStillSucceeds(): void
     {
-        $process = $this->runUpdate('-v');
-        $combined = $process->getOutput() . $process->getErrorOutput();
+        // No `-v`: a declared donor that produced nothing has to be
+        // visible at default verbosity, otherwise the only signal is a
+        // silently shorter list of packages.
+        $process = $this->runUpdate();
+        $out = $process->getOutput();
 
         // A missing directory degrades gracefully: the run still exits 0.
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
         Assert::true(
-            \str_contains($combined, 'dir ./no-such-dir')
-            && \str_contains($combined, 'directory does not exist'),
-            'the per-entry warning must name the missing directory. Got: ' . $combined,
+            \str_contains($out, 'dir:./no-such-dir')
+            && \str_contains($out, '[failed] directory does not exist'),
+            'the failure row must name the missing directory. Got: ' . $out,
+        );
+        // The exact count is the sandbox's business — it ships other
+        // broken fixtures too. What this pins is that the tally reaches
+        // the summary line at all, so a reader who only sees the last
+        // line still knows something was dropped.
+        Assert::true(
+            \str_contains($out, 'donor(s) failed)'),
+            'the summary line must carry the failure tally. Got: ' . $out,
         );
         Assert::false(\is_file(self::TARGET_DIR . '/dir-hello/SKILL.md'));
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './no-such-dir'],
+        ],
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function missingDirSourceIsListedAsFailedByShow(): void
+    {
+        $process = $this->runShow();
+        $out = $process->getOutput();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \str_contains($out, 'source-failed')
+            && \str_contains($out, 'dir:./no-such-dir'),
+            'show must list the unresolvable entry under Skipped:. Got: ' . $out,
+        );
     }
 
     #[WithSkillsJson([

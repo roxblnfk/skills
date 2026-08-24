@@ -95,4 +95,18 @@ final readonly class DirDonorRef
     {
         return 'dir ' . $this->spelling;
     }
+
+    /**
+     * Short `<from>:<identifier>` identity for the summary listing,
+     * mirroring {@see RemoteDonorRef::label()} so a failure row reads
+     * the same whichever ref shape produced it.
+     *
+     * @return non-empty-string
+     *
+     * @psalm-mutation-free
+     */
+    public function label(): string
+    {
+        return ($this->provenance ?? 'dir') . ':' . $this->spelling;
+    }
 }

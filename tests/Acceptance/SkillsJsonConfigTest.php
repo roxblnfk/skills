@@ -202,6 +202,33 @@ final class SkillsJsonConfigTest
 
     #[WithSkillsJson([
         'target' => 'external-target/skills',
+        'sources' => [
+            ['from' => 'github', 'package' => 'acme/skills', 'ref' => '1.*'],
+        ],
+    ])]
+    public function unsupportedRefConstraintIsRejectedAtConfigLoad(): void
+    {
+        // A constraint flavour the resolver cannot satisfy must be
+        // caught before anything touches the network. Passing it through
+        // would send `1.*` to the host as a tag name and surface as a
+        // 404 — a transport error for what is really a config typo.
+        $process = $this->runSync();
+        $err = $process->getErrorOutput();
+
+        Assert::notSame($process->getExitCode(), 0, 'an unsupported ref must fail the run');
+        Assert::true(
+            \str_contains($err, 'sources[0].ref')
+            && \str_contains($err, 'not a supported version constraint'),
+            'the error must name the offending field and say what is accepted. Got: ' . $err,
+        );
+        Assert::true(
+            \str_contains($err, '^1.2.3') && \str_contains($err, '~1.2'),
+            'the error must spell out the accepted operators. Got: ' . $err,
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => 'external-target/skills',
         'rogue' => 'value',
     ])]
     public function unknownKeyInSkillsJsonIsFatal(): void

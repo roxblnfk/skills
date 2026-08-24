@@ -118,6 +118,7 @@ final readonly class InspectionBuilder
 
         $skipped = $this->buildSkippedList(
             $discovery->malformed,
+            $discovery->failures,
             $approvedEnumeration->warnings,
             $plan,
             $resolution->excluded,
@@ -396,6 +397,9 @@ final readonly class InspectionBuilder
 
     /**
      * @param list<\LLM\Skills\Discovery\MalformedDonor> $malformed
+     * @param list<\LLM\Skills\Discovery\SourceFailure> $failures `sources[]` entries that never
+     *         became donors; listed under `source-failed` so a declared donor that could not be
+     *         resolved or fetched is visible in the report instead of being absent from it
      * @param list<string> $enumerationWarnings raw text from {@see SkillEnumerator}
      * @param list<VendorConfig> $unactivatedDiscoverable packages that ship undeclared skills
      *         (found by {@see \LLM\Skills\Discovery\SkillTreeScanner}) but were not promoted
@@ -408,11 +412,23 @@ final readonly class InspectionBuilder
      */
     private function buildSkippedList(
         array $malformed,
+        array $failures,
         array $enumerationWarnings,
         \LLM\Skills\Sync\SyncPlan $plan,
         array $unactivatedDiscoverable,
     ): array {
         $result = [];
+
+        // Source failures come first: a donor the user declared and
+        // cannot get is more actionable than one that merely needs a
+        // trust decision or a flag.
+        foreach ($failures as $failure) {
+            $result[] = new SkippedDonor(
+                packageName: $failure->label,
+                reason: SkipReason::SourceFailed,
+                detail: $failure->summary,
+            );
+        }
 
         foreach ($malformed as $bad) {
             $result[] = new SkippedDonor(
