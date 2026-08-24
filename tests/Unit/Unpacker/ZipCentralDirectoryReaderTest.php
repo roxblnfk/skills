@@ -55,7 +55,7 @@ final class ZipCentralDirectoryReaderTest
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
-        $zipPath = self::buildZipIn($this->tmpDir,[
+        $zipPath = self::buildZipIn($this->tmpDir, [
             'first.txt' => 'a',
             'sub/second.txt' => 'bb',
             'sub/third.txt' => 'ccc',
