@@ -7,6 +7,7 @@ namespace LLM\Skills\Tests\Testo\Composer;
 use Internal\Path;
 use LLM\Skills\Tests\Acceptance\Info;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Tests\Testo\SandboxIsolation;
 use Testo\Core\Context\SuiteInfo;
 use Testo\Core\Context\SuiteResult;
 use Testo\Pipeline\Middleware\TestSuiteRunInterceptor;
@@ -35,7 +36,21 @@ final readonly class ComposerInstallInterceptor implements TestSuiteRunIntercept
         $autoload = $this->projectRoot->join('vendor', 'autoload.php');
 
         if (!$autoload->isFile()) {
-            ComposerRunner::run($this->projectRoot, 'install --prefer-dist');
+            // `composer install` fires the plugin's post-install-cmd
+            // auto-sync, which migrates the sandbox's inline
+            // `extra.skills` out of composer.json into a fresh
+            // skills.json. That is a side effect of provisioning the
+            // suite, not of any test — left in place it becomes the
+            // baseline every test inherits, so the first test already
+            // sees a migrated project and no `#[WithSandboxExtras]`
+            // block survives. Snapshot the config files across the
+            // install and put them back.
+            $snapshot = SandboxIsolation::snapshot();
+            try {
+                ComposerRunner::run($this->projectRoot, 'install --prefer-dist');
+            } finally {
+                SandboxIsolation::restore($snapshot);
+            }
         }
 
         try {
