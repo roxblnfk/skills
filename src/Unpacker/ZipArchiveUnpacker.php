@@ -137,7 +137,10 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
      */
     private static function keptNames(\ZipArchive $zip, array $excludeNames): array
     {
-        $excluded = \array_flip($excludeNames);
+        $excluded = [];
+        foreach ($excludeNames as $excludeName) {
+            $excluded["\0" . $excludeName] = true;
+        }
         $keep = [];
         $count = $zip->numFiles;
 
@@ -147,7 +150,7 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
             if (!\is_string($name)) {
                 throw new UnpackerException(\sprintf('entry %d has an unreadable name', $i));
             }
-            if (!isset($excluded[$name])) {
+            if (!isset($excluded["\0" . $name])) {
                 $keep[] = $name;
             }
         }
