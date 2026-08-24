@@ -8,9 +8,9 @@ namespace LLM\Skills\Unpacker;
  * Minimal zip Central Directory parser — enumerates entries from a
  * `.zip` file **without** depending on `ext-zip`.
  *
- * Used by the CLI unpacker for two things: validating every entry name
- * lexically (zip-slip guard) before invoking `unzip` / `7z`, and
- * spotting symlink entries so they can be excluded from the extraction.
+ * Backs {@see CliUnpacker::listEntries()}: the fetcher uses the listing
+ * to validate every entry name lexically (zip-slip guard) and to spot
+ * symlink entries it wants excluded, all before invoking `unzip` / `7z`.
  * The CLI tools expose no pre-extraction validation hook and apply
  * `-y`-style overwrite semantics by default, so the only safe place to
  * decide what gets written is *here*, before any byte hits disk.
@@ -42,19 +42,6 @@ final class ZipCentralDirectoryReader
     private const ZIP64_UINT16_SENTINEL = 0xFFFF;
     private const EOCD_MIN_SIZE = 22;
     private const CD_HEADER_FIXED_SIZE = 46;
-
-    /**
-     * `version_made_by` high byte for the Unix host (APPNOTE.TXT
-     * §4.4.2.2). Only archives written by a Unix-family host put a
-     * Unix mode in the high half of `external_attr`; on an MS-DOS-host
-     * archive those bits mean nothing and must not be read as one.
-     */
-    private const HOST_UNIX = 3;
-
-    /** Mask and value selecting `S_IFLNK` out of a Unix `st_mode`. */
-    private const S_IFMT = 0xF000;
-
-    private const S_IFLNK = 0xA000;
 
     /**
      * @param non-empty-string $zipPath
@@ -172,39 +159,21 @@ final class ZipCentralDirectoryReader
                 throw new UnpackerException('central directory truncated mid-header');
             }
 
-            /** @var array{sig: int}|false $sig */
-            $sig = @\unpack('Vsig', \substr($cd, $pos, 4));
-            if ($sig === false || $sig['sig'] !== self::CD_FILE_HEADER_SIGNATURE) {
+            // One unpack over the fixed 46-byte header; `@n` repositions
+            // to the field offsets given in APPNOTE.TXT §4.3.12.
+            /** @var array{sig: int, made_by: int, name_len: int, extra_len: int, comment_len: int, external_attr: int}|false $fields */
+            $fields = @\unpack(
+                'Vsig/vmade_by/@28/vname_len/vextra_len/vcomment_len/@38/Vexternal_attr',
+                \substr($cd, $pos, self::CD_HEADER_FIXED_SIZE),
+            );
+            if ($fields === false || $fields['sig'] !== self::CD_FILE_HEADER_SIGNATURE) {
                 throw new UnpackerException(\sprintf(
                     'unexpected signature at central-directory offset %d — archive is malformed',
                     $pos,
                 ));
             }
 
-            /** @var array{made_by: int}|false $madeBy */
-            $madeBy = @\unpack('vmade_by', \substr($cd, $pos + 4, 2));
-            if ($madeBy === false) {
-                throw new UnpackerException('failed to parse central-directory version_made_by');
-            }
-
-            /** @var array{name_len: int, extra_len: int, comment_len: int}|false $lengths */
-            $lengths = @\unpack(
-                'vname_len/vextra_len/vcomment_len',
-                \substr($cd, $pos + 28, 6),
-            );
-            if ($lengths === false) {
-                throw new UnpackerException('failed to parse central-directory header lengths');
-            }
-
-            /** @var array{external_attr: int}|false $attrs */
-            $attrs = @\unpack('Vexternal_attr', \substr($cd, $pos + 38, 4));
-            if ($attrs === false) {
-                throw new UnpackerException('failed to parse central-directory external_attr');
-            }
-
-            $nameLen = $lengths['name_len'];
-            $extraLen = $lengths['extra_len'];
-            $commentLen = $lengths['comment_len'];
+            $nameLen = $fields['name_len'];
 
             $nameStart = $pos + self::CD_HEADER_FIXED_SIZE;
             if ($nameStart + $nameLen > $len) {
@@ -213,33 +182,15 @@ final class ZipCentralDirectoryReader
 
             $out[] = new ZipEntry(
                 name: \substr($cd, $nameStart, $nameLen),
-                isSymlink: self::isSymlink($madeBy['made_by'], $attrs['external_attr']),
+                isSymlink: ZipEntry::isSymlinkAttributes(
+                    $fields['made_by'] >> 8,
+                    $fields['external_attr'],
+                ),
             );
-            $pos = $nameStart + $nameLen + $extraLen + $commentLen;
+            $pos = $nameStart + $nameLen + $fields['extra_len'] + $fields['comment_len'];
         }
 
         return $out;
-    }
-
-    /**
-     * Decide whether a Central Directory header describes a symlink.
-     *
-     * The Unix mode lives in the high 16 bits of `external_attr`, but
-     * only when `version_made_by`'s high byte says the archive was
-     * written by a Unix-family host. On an MS-DOS-host archive the low
-     * bits are DOS attribute flags and the high half is unspecified, so
-     * reading a mode out of it would classify arbitrary entries as
-     * links.
-     *
-     * @psalm-pure
-     */
-    private static function isSymlink(int $versionMadeBy, int $externalAttr): bool
-    {
-        if (($versionMadeBy >> 8) !== self::HOST_UNIX) {
-            return false;
-        }
-
-        return ((($externalAttr >> 16) & 0xFFFF) & self::S_IFMT) === self::S_IFLNK;
     }
 
     /**

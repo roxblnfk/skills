@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Unpacker;
 
+use LLM\Skills\Tests\Fixture\ZipFixtures;
 use LLM\Skills\Unpacker\CliUnpacker;
 use LLM\Skills\Unpacker\UnpackerException;
 use LLM\Skills\Unpacker\UnpackerFactory;
+use LLM\Skills\Unpacker\ZipEntry;
 use Symfony\Component\Process\ExecutableFinder;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -31,6 +33,8 @@ use Testo\Test;
 #[Covers(CliUnpacker::class)]
 final class CliUnpackerTest
 {
+    use ZipFixtures;
+
     private string $tmpDir;
 
     #[BeforeTest]
@@ -53,7 +57,7 @@ final class CliUnpackerTest
         }
         $unpacker = $this->pickCliUnpackerOrSkip();
 
-        $zipPath = $this->buildZip([
+        $zipPath = self::buildZipIn($this->tmpDir, [
             'root.txt' => 'top-level',
             'sub/nested.txt' => 'nested content',
         ]);
@@ -74,15 +78,18 @@ final class CliUnpackerTest
         }
         $unpacker = $this->pickCliUnpackerOrSkip();
 
-        $zipPath = $this->buildZip([
+        $zipPath = self::buildZipIn($this->tmpDir, [
             'one.txt' => 'a',
             'dir/two.txt' => 'b',
         ]);
 
-        Assert::same($unpacker->listEntries($zipPath), ['one.txt', 'dir/two.txt']);
+        Assert::same(
+            \array_map(static fn(ZipEntry $e): string => $e->name, $unpacker->listEntries($zipPath)),
+            ['one.txt', 'dir/two.txt'],
+        );
     }
 
-    public function liveCliExtractorSkipsSymlinkEntriesInsteadOfFailing(): void
+    public function liveCliExtractorSkipsExcludedSymlinkEntriesInsteadOfFailing(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
@@ -90,33 +97,77 @@ final class CliUnpackerTest
         $unpacker = $this->pickCliUnpackerOrSkip();
 
         // Reproduces the reported break: a donor shipping AGENTS.md as
-        // a symlink to CLAUDE.md. 7-Zip on Windows cannot create the
-        // link without SeCreateSymbolicLinkPrivilege and used to exit 2,
-        // taking the entire donor down with it.
-        $zipPath = $this->buildZipWithSymlinks(
+        // a symlink to CLAUDE.md, nested under the top-level directory
+        // every GitHub zipball wraps its contents in. 7-Zip on Windows
+        // cannot create the link without SeCreateSymbolicLinkPrivilege
+        // and used to exit 2, taking the entire donor down with it. The
+        // nesting matters: the exclusion pattern must match a name with
+        // a `/` separator against the real tool.
+        $zipPath = self::buildUnixZipIn(
+            $this->tmpDir,
             [
-                'CLAUDE.md' => 'real content',
-                'AGENTS.md' => 'CLAUDE.md',
-                'skills/hello/SKILL.md' => 'hi',
+                'acme-skills-v1/CLAUDE.md' => 'real content',
+                'acme-skills-v1/AGENTS.md' => 'CLAUDE.md',
+                'acme-skills-v1/skills/hello/SKILL.md' => 'hi',
             ],
-            symlinks: ['AGENTS.md'],
+            symlinks: ['acme-skills-v1/AGENTS.md'],
         );
+
+        // Mirror the fetcher's contract: symlink entries flagged by
+        // listEntries() are handed back to extractTo() as exclusions.
+        $exclude = [];
+        foreach ($unpacker->listEntries($zipPath) as $entry) {
+            if ($entry->isSymlink) {
+                $exclude[] = $entry->name;
+            }
+        }
+        Assert::same($exclude, ['acme-skills-v1/AGENTS.md']);
 
         $target = $this->tmpDir . '/out-symlink';
         \mkdir($target, 0o777, true);
 
-        $unpacker->extractTo($zipPath, $target);
+        $unpacker->extractTo($zipPath, $target, $exclude);
 
         Assert::true(
-            \is_file($target . '/CLAUDE.md'),
+            \is_file($target . '/acme-skills-v1/CLAUDE.md'),
             'a symlink entry must not stop the rest of the archive from extracting',
         );
-        Assert::same(\file_get_contents($target . '/CLAUDE.md'), 'real content');
-        Assert::true(\is_file($target . '/skills/hello/SKILL.md'));
+        Assert::same(\file_get_contents($target . '/acme-skills-v1/CLAUDE.md'), 'real content');
+        Assert::true(\is_file($target . '/acme-skills-v1/skills/hello/SKILL.md'));
         Assert::false(
-            \file_exists($target . '/AGENTS.md') || \is_link($target . '/AGENTS.md'),
-            'the symlink entry must be excluded from the extraction',
+            \file_exists($target . '/acme-skills-v1/AGENTS.md') || \is_link($target . '/acme-skills-v1/AGENTS.md'),
+            'the excluded symlink entry must not be extracted',
         );
+    }
+
+    public function liveCliExtractorNeverPassesOptionOrWildcardShapedExclusions(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+        $unpacker = $this->pickCliUnpackerOrSkip();
+
+        $zipPath = self::buildZipIn($this->tmpDir, [
+            'root.txt' => 'top-level',
+            'sub/keep.txt' => 'kept',
+            'sub/skip.txt' => 'skipped',
+        ]);
+
+        $target = $this->tmpDir . '/out-guard';
+        \mkdir($target, 0o777, true);
+
+        // `-j` reads as an Info-ZIP option (junk paths) and `sub/*` as
+        // a wildcard covering keep.txt — passing either verbatim would
+        // corrupt or over-shrink the extraction. Both must be dropped
+        // from the argv; only the literal name may take effect.
+        $unpacker->extractTo($zipPath, $target, ['-j', 'sub/*', 'sub/skip.txt']);
+
+        Assert::true(\is_file($target . '/root.txt'));
+        Assert::true(
+            \is_file($target . '/sub/keep.txt'),
+            'a wildcard-shaped exclusion must not widen to sibling entries',
+        );
+        Assert::false(\file_exists($target . '/sub/skip.txt'));
     }
 
     public function failedExtractionSurfacesAsUnpackerException(): void
@@ -155,47 +206,6 @@ final class CliUnpackerTest
             throw new SkipTest('no CLI extractor (unzip / 7z / 7zz / 7za) on PATH');
         }
         return $unpacker;
-    }
-
-    /**
-     * Fixture archive whose `$symlinks` entries carry the Unix mode a
-     * real symlink has (`S_IFLNK | 0777`) in the high half of
-     * `external_attr` — the shape `git archive` and GitHub zipballs
-     * produce, and the one the CLI tools act on.
-     *
-     * @param array<string, string> $files
-     * @param list<string> $symlinks names from `$files` to flag as links
-     */
-    private function buildZipWithSymlinks(array $files, array $symlinks): string
-    {
-        $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';
-        $zip = new \ZipArchive();
-        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
-        foreach ($files as $name => $content) {
-            $zip->addFromString($name, $content);
-            $zip->setExternalAttributesName(
-                $name,
-                \ZipArchive::OPSYS_UNIX,
-                (\in_array($name, $symlinks, true) ? 0xA1FF : 0x81A4) << 16,
-            );
-        }
-        $zip->close();
-        return $zipPath;
-    }
-
-    /**
-     * @param array<string, string> $files
-     */
-    private function buildZip(array $files): string
-    {
-        $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';
-        $zip = new \ZipArchive();
-        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
-        foreach ($files as $name => $content) {
-            $zip->addFromString($name, $content);
-        }
-        $zip->close();
-        return $zipPath;
     }
 
     private function cleanup(string $path): void

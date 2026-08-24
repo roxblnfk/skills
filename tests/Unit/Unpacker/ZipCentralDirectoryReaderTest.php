@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Tests\Unit\Unpacker;
 
+use LLM\Skills\Tests\Fixture\ZipFixtures;
 use LLM\Skills\Unpacker\UnpackerException;
 use LLM\Skills\Unpacker\ZipCentralDirectoryReader;
 use Testo\Assert;
@@ -31,6 +32,8 @@ use Testo\Test;
 #[Covers(ZipCentralDirectoryReader::class)]
 final class ZipCentralDirectoryReaderTest
 {
+    use ZipFixtures;
+
     private string $tmpDir;
 
     #[BeforeTest]
@@ -52,7 +55,7 @@ final class ZipCentralDirectoryReaderTest
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
-        $zipPath = $this->buildZip([
+        $zipPath = self::buildZipIn($this->tmpDir,[
             'first.txt' => 'a',
             'sub/second.txt' => 'bb',
             'sub/third.txt' => 'ccc',
@@ -73,7 +76,8 @@ final class ZipCentralDirectoryReaderTest
         // recreate the link without SeCreateSymbolicLinkPrivilege and
         // aborts the whole archive, so the entry has to be identifiable
         // before extraction starts.
-        $zipPath = $this->buildZipWithSymlinks(
+        $zipPath = self::buildUnixZipIn(
+            $this->tmpDir,
             [
                 'CLAUDE.md' => 'real content',
                 'AGENTS.md' => 'CLAUDE.md',
@@ -96,18 +100,47 @@ final class ZipCentralDirectoryReaderTest
         ]);
     }
 
+    public function flagsSymlinkEntriesWrittenByADarwinHost(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        // APPNOTE.TXT §4.4.2.2 lists OS X (Darwin, host byte 19)
+        // separately from UNIX (3), but Darwin tools store the same
+        // `st_mode` layout in external_attr — a link written on macOS
+        // must be recognised just like a Linux-written one.
+        $zipPath = $this->tmpDir . '/darwin.zip';
+        $zip = new \ZipArchive();
+        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
+        $zip->addFromString('file.txt', 'x');
+        $zip->addFromString('link', 'file.txt');
+        $zip->setExternalAttributesName('file.txt', 19, self::ZIP_MODE_REGULAR << 16);
+        $zip->setExternalAttributesName('link', 19, self::ZIP_MODE_SYMLINK << 16);
+        $zip->close();
+
+        $entries = (new ZipCentralDirectoryReader())->readEntries($zipPath);
+
+        $flags = [];
+        foreach ($entries as $entry) {
+            $flags[$entry->name] = $entry->isSymlink;
+        }
+
+        Assert::same($flags, ['file.txt' => false, 'link' => true]);
+    }
+
     public function doesNotReadASymlinkModeOutOfADosHostArchive(): void
     {
         if (!\class_exists(\ZipArchive::class)) {
             throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
         }
 
-        // `buildZip()` leaves the default MS-DOS host, so the high half
-        // of external_attr carries no Unix mode. Reading one anyway
-        // would classify arbitrary entries as links and silently drop
-        // them from every extraction.
+        // `buildZipIn()` leaves the default MS-DOS host, so the high
+        // half of external_attr carries no Unix mode. Reading one
+        // anyway would classify arbitrary entries as links and silently
+        // drop them from every extraction.
         $entries = (new ZipCentralDirectoryReader())->readEntries(
-            $this->buildZip(['plain.txt' => 'x']),
+            self::buildZipIn($this->tmpDir,['plain.txt' => 'x']),
         );
 
         Assert::count($entries, 1);
@@ -123,7 +156,8 @@ final class ZipCentralDirectoryReaderTest
         // Excluding symlinks from extraction must not exclude them from
         // validation: a link named `../escape` still has to reach the
         // fetcher's lexical zip-slip check.
-        $zipPath = $this->buildZipWithSymlinks(
+        $zipPath = self::buildUnixZipIn(
+            $this->tmpDir,
             ['keep.txt' => 'x', 'link' => 'keep.txt'],
             symlinks: ['link'],
         );
@@ -232,46 +266,6 @@ final class ZipCentralDirectoryReaderTest
         Assert::same($names, ['safe.txt', '../escape.txt']);
     }
 
-    /**
-     * @param array<string, string> $files
-     */
-    /**
-     * Build a fixture archive, marking `$symlinks` with the Unix mode a
-     * real symlink entry carries (`S_IFLNK | 0777`) in the high half of
-     * `external_attr` — the same shape `git archive` and GitHub zipballs
-     * produce.
-     *
-     * @param array<string, string> $files
-     * @param list<string> $symlinks names from `$files` to flag as links
-     */
-    private function buildZipWithSymlinks(array $files, array $symlinks): string
-    {
-        $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';
-        $zip = new \ZipArchive();
-        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
-        foreach ($files as $name => $content) {
-            $zip->addFromString($name, $content);
-            $zip->setExternalAttributesName(
-                $name,
-                \ZipArchive::OPSYS_UNIX,
-                (\in_array($name, $symlinks, true) ? 0xA1FF : 0x81A4) << 16,
-            );
-        }
-        $zip->close();
-        return $zipPath;
-    }
-
-    private function buildZip(array $files): string
-    {
-        $zipPath = $this->tmpDir . '/' . \bin2hex(\random_bytes(4)) . '.zip';
-        $zip = new \ZipArchive();
-        $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
-        foreach ($files as $name => $content) {
-            $zip->addFromString($name, $content);
-        }
-        $zip->close();
-        return $zipPath;
-    }
 
     private function cleanup(string $path): void
     {

@@ -12,13 +12,10 @@ namespace LLM\Skills\Unpacker;
  * Used in-process so no subprocess is spawned and no temp files beyond
  * the scratch directory are involved.
  *
- * Symlink entries are skipped, matching {@see CliUnpacker}. `ext-zip`
- * does not hit the Windows privilege wall the CLI tools do — it writes
- * the link target as ordinary file content — but that leaves a file
- * whose bytes are a path, which the copy step would then treat as real
- * content. Since {@see \LLM\Skills\Filesystem\LinkGuard} drops symlinks
- * on the way into the target anyway, dropping them at extraction keeps
- * both unpackers producing the same tree.
+ * Exclusions are honoured exactly: `\ZipArchive::extractTo()` takes a
+ * literal name list, so every name the caller excludes is guaranteed to
+ * stay out of the target tree — unlike the pattern-based CLI switches
+ * in {@see CliUnpacker}.
  *
  * @psalm-suppress MissingImmutableAnnotation
  *         stateless wrapper, but `listEntries`/`extractTo` perform I/O
@@ -35,7 +32,7 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
     }
 
     /**
-     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedPropertyFetch,MixedArgument
+     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedPropertyFetch,MixedArgument,MixedArgumentTypeCoercion
      *         ext-zip is a soft requirement — guarded by class_exists above
      */
     #[\Override]
@@ -56,7 +53,7 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
         }
 
         try {
-            $names = [];
+            $entries = [];
             $count = $zip->numFiles;
             for ($i = 0; $i < $count; $i++) {
                 /** @var string|false $name */
@@ -64,9 +61,20 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
                 if (!\is_string($name)) {
                     throw new UnpackerException(\sprintf('entry %d has an unreadable name', $i));
                 }
-                $names[] = $name;
+
+                // `$opsys` is the same APPNOTE §4.4.2.2 host byte the
+                // raw Central Directory reader derives from
+                // `version_made_by`, so both paths share one symlink
+                // definition.
+                $opsys = 0;
+                $attr = 0;
+                $entries[] = new ZipEntry(
+                    name: $name,
+                    isSymlink: $zip->getExternalAttributesIndex($i, $opsys, $attr)
+                        && ZipEntry::isSymlinkAttributes($opsys, $attr),
+                );
             }
-            return $names;
+            return $entries;
         } finally {
             $zip->close();
         }
@@ -77,7 +85,7 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
      *         ext-zip is a soft requirement — guarded by class_exists above
      */
     #[\Override]
-    public function extractTo(string $zipPath, string $targetDir): void
+    public function extractTo(string $zipPath, string $targetDir, array $excludeNames = []): void
     {
         if (!\class_exists(\ZipArchive::class)) {
             throw new UnpackerException('ZipArchive is not available');
@@ -92,18 +100,17 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
         }
 
         try {
-            $keep = self::nonSymlinkNames($zip);
+            $keep = $excludeNames === [] ? null : self::keptNames($zip, $excludeNames);
 
-            // An archive of nothing but symlinks leaves no work; calling
-            // extractTo() with an empty list is not portable.
+            // Everything excluded leaves no work; calling extractTo()
+            // with an empty list is not portable.
             if ($keep === []) {
                 return;
             }
 
-            // Pass the explicit name list only when something was
-            // filtered out — the unfiltered call is the well-trodden
-            // path and stays byte-identical to the previous behaviour
-            // for the overwhelming majority of archives.
+            // The single-argument call is the far more exercised
+            // ext-zip code path and avoids any name round-trip through
+            // getNameIndex(); take it whenever nothing is excluded.
             $extracted = $keep === null
                 ? $zip->extractTo($targetDir)
                 : $zip->extractTo($targetDir, $keep);
@@ -116,24 +123,22 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
     }
 
     /**
-     * Names to extract, or `null` when the archive holds no symlink and
-     * the caller should extract everything.
+     * Entry names to pass to `\ZipArchive::extractTo()` — everything
+     * except `$excludeNames`. Reading the names back from the same
+     * `\ZipArchive` instance keeps them byte-identical to what
+     * `extractTo()` matches against.
      *
-     * The Unix mode lives in the high 16 bits of the entry's external
-     * attributes and is only meaningful when the entry was written by a
-     * Unix-family host — an MS-DOS-host entry keeps DOS attribute flags
-     * there instead, so reading a mode out of it would classify
-     * arbitrary files as links.
+     * @param non-empty-list<string> $excludeNames
      *
-     * @return list<string>|null
+     * @return list<string>
      *
      * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedPropertyFetch,MixedArgument,MixedArgumentTypeCoercion
      *         ext-zip is a soft requirement — guarded by the caller's class_exists
      */
-    private static function nonSymlinkNames(\ZipArchive $zip): ?array
+    private static function keptNames(\ZipArchive $zip, array $excludeNames): array
     {
+        $excluded = \array_flip($excludeNames);
         $keep = [];
-        $sawSymlink = false;
         $count = $zip->numFiles;
 
         for ($i = 0; $i < $count; $i++) {
@@ -142,21 +147,11 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
             if (!\is_string($name)) {
                 throw new UnpackerException(\sprintf('entry %d has an unreadable name', $i));
             }
-
-            $opsys = 0;
-            $attr = 0;
-            if (
-                $zip->getExternalAttributesIndex($i, $opsys, $attr)
-                && $opsys === \ZipArchive::OPSYS_UNIX
-                && ((($attr >> 16) & 0xFFFF) & 0xF000) === 0xA000
-            ) {
-                $sawSymlink = true;
-                continue;
+            if (!isset($excluded[$name])) {
+                $keep[] = $name;
             }
-
-            $keep[] = $name;
         }
 
-        return $sawSymlink ? $keep : null;
+        return $keep;
     }
 }

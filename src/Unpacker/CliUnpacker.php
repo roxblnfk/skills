@@ -28,17 +28,12 @@ use Symfony\Component\Process\Process;
  * zip-slip protection and apply `-y`-style overwrite by default;
  * validating ourselves is the only safe approach.
  *
- * **Symlink entries are excluded from the extraction.** Recreating a
- * symlink on Windows needs `SeCreateSymbolicLinkPrivilege`, which an
- * unelevated process outside Developer Mode does not hold; 7-Zip treats
- * the refusal as a fatal error and exits non-zero, losing the whole
- * archive over a single link. Excluding the entries up front sidesteps
- * that, and costs nothing downstream: {@see \LLM\Skills\Filesystem\LinkGuard}
- * refuses to copy symlinks into the target anyway, so a link that did
- * extract could never reach a skill directory. The exclusion is spelled
- * per tool (`-x!<path>` for 7-Zip, `-x <path>` for Info-ZIP) rather than
- * with 7-Zip's `-snl-`, which only exists from 21.02 and would break the
- * p7zip 16.02 builds still shipping as `7za` on older distributions.
+ * Exclusions are expressed per tool (`-x!<path>` for 7-Zip, a `-x`
+ * list for Info-ZIP) rather than with 7-Zip's `-snl-` (skip symlinks),
+ * which only exists from 21.02 and would break the p7zip 16.02 builds
+ * still shipping as `7za` on older distributions. Both tools treat the
+ * exclusion argument as a wildcard pattern, not a literal name — see
+ * {@see self::isSafeExclusionName()} for how that is contained.
  *
  * @psalm-suppress MissingImmutableAnnotation
  *         stateless wrapper, but `listEntries`/`extractTo` perform I/O
@@ -50,12 +45,11 @@ final readonly class CliUnpacker implements ArchiveUnpacker
      * @param non-empty-string $executablePath absolute path to the binary
      * @param non-empty-list<string> $extractArgsTemplate argv template with `{file}` / `{dir}` placeholders.
      * @param list<string> $excludeArgsTemplate tokens appended once, ahead of the excluded
-     *        paths, when the archive holds any symlink entry. Info-ZIP takes a single `-x`
-     *        that opens a list; 7-Zip needs no opener, so this is empty for it. Nothing is
-     *        appended when the archive has no symlinks.
-     * @param non-empty-string|null $excludePathTemplate per-path template with a `{path}`
-     *        placeholder — `-x!{path}` for 7-Zip, `{path}` for Info-ZIP. `null` marks a tool
-     *        that cannot express exclusions, in which case extraction runs unfiltered.
+     *        paths, when anything is excluded. Info-ZIP takes a single `-x` that opens a
+     *        list; 7-Zip needs no opener, so this is empty for it. Nothing is appended
+     *        when nothing is excluded.
+     * @param non-empty-string $excludePathTemplate per-path template with a `{path}`
+     *        placeholder — `-x!{path}` for 7-Zip, `{path}` for Info-ZIP.
      *
      * @psalm-mutation-free
      */
@@ -63,8 +57,8 @@ final readonly class CliUnpacker implements ArchiveUnpacker
         private string $id,
         private string $executablePath,
         private array $extractArgsTemplate,
-        private array $excludeArgsTemplate = [],
-        private ?string $excludePathTemplate = null,
+        private array $excludeArgsTemplate,
+        private string $excludePathTemplate,
         private ZipCentralDirectoryReader $cdReader = new ZipCentralDirectoryReader(),
         /**
          * Hard cap on `Process::setTimeout()` — extraction of a typical
@@ -89,11 +83,11 @@ final readonly class CliUnpacker implements ArchiveUnpacker
     #[\Override]
     public function listEntries(string $zipPath): array
     {
-        return $this->cdReader->readNames($zipPath);
+        return $this->cdReader->readEntries($zipPath);
     }
 
     #[\Override]
-    public function extractTo(string $zipPath, string $targetDir): void
+    public function extractTo(string $zipPath, string $targetDir, array $excludeNames = []): void
     {
         $argv = [$this->executablePath];
         foreach ($this->extractArgsTemplate as $arg) {
@@ -107,7 +101,7 @@ final readonly class CliUnpacker implements ArchiveUnpacker
         // the end of the command line, so it cannot precede `{file}` or
         // `-d {dir}`. 7-Zip accepts `-x!` anywhere, so one ordering
         // serves both.
-        foreach ($this->buildExclusions($zipPath) as $arg) {
+        foreach ($this->buildExclusionArgs($excludeNames) as $arg) {
             $argv[] = $arg;
         }
 
@@ -134,42 +128,51 @@ final readonly class CliUnpacker implements ArchiveUnpacker
     }
 
     /**
-     * Argv tail excluding every symlink entry in the archive, or an
-     * empty list when there are none (the overwhelmingly common case)
-     * or when the tool has no exclusion syntax.
+     * Whether an entry name can be passed to the CLI tool as an
+     * exclusion without changing the command's meaning:
      *
-     * A malformed Central Directory is swallowed here rather than
-     * raised: the fetcher already ran {@see self::listEntries()} over
-     * the same archive and would have rejected it, so a throw at this
-     * point could only turn a readable archive into a failure. Losing
-     * the exclusions degrades to the previous behaviour.
+     * - a leading `-` reads as an option — Info-ZIP terminates its `-x`
+     *   list at the next switch-looking token and would apply the name
+     *   as a flag (`-j`, `-d …`) instead of an exclusion;
+     * - `*` / `?` / `[` are wildcard metacharacters in both tools'
+     *   exclusion patterns, so such a name could exclude entries other
+     *   than itself (silently dropping wanted files);
+     * - `\` doubles as a path separator / escape on Windows tool
+     *   builds, making the match platform-dependent.
      *
-     * @param non-empty-string $zipPath
+     * Neither tool offers list-terminating `--` semantics or a
+     * universally supported literal-match switch inside the supported
+     * version range, so unexpressible names are simply not excluded.
+     *
+     * @psalm-pure
+     */
+    private static function isSafeExclusionName(string $name): bool
+    {
+        return !\str_starts_with($name, '-') && \strpbrk($name, '*?[\\') === false;
+    }
+
+    /**
+     * Argv tail excluding the given entry names, or an empty list when
+     * nothing (expressible) is excluded.
+     *
+     * Names that {@see self::isSafeExclusionName()} rejects are dropped
+     * from the exclusion list, not from the archive: the tool extracts
+     * them like any other entry. That keeps a hostile name from
+     * touching the command line while never widening an exclusion
+     * beyond what the caller asked for.
+     *
+     * @param list<string> $excludeNames
      *
      * @return list<string>
+     *
+     * @psalm-mutation-free
      */
-    private function buildExclusions(string $zipPath): array
+    private function buildExclusionArgs(array $excludeNames): array
     {
-        if ($this->excludePathTemplate === null) {
-            return [];
-        }
-
-        try {
-            $entries = $this->cdReader->readEntries($zipPath);
-        } catch (UnpackerException) {
-            return [];
-        }
-
         $paths = [];
-        foreach ($entries as $entry) {
-            if ($entry->isSymlink) {
-                // 7-Zip reads `-x!` patterns as wildcards, so an entry
-                // name containing `*` or `?` can exclude more than
-                // itself. Over-excluding only ever drops files the copy
-                // step would not have wanted (and cannot widen what
-                // gets written), so it is left as-is rather than
-                // guarded with a version-dependent literal-match switch.
-                $paths[] = \strtr($this->excludePathTemplate, ['{path}' => $entry->name]);
+        foreach ($excludeNames as $name) {
+            if (self::isSafeExclusionName($name)) {
+                $paths[] = \strtr($this->excludePathTemplate, ['{path}' => $name]);
             }
         }
 
