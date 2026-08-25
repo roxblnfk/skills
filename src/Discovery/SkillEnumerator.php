@@ -42,6 +42,14 @@ final readonly class SkillEnumerator
         $skills = [];
         $warnings = [];
 
+        // Allowlist bookkeeping spans donor rows: a multi-source donor
+        // arrives as several rows sharing one package name, and a
+        // declared skill living in any of its source directories must
+        // not be reported missing by the sibling rows. Keyed
+        // package → declared name → seen anywhere.
+        /** @var array<non-empty-string, array<string, bool>> $allowlistSeen */
+        $allowlistSeen = [];
+
         foreach ($donors as $donor) {
             // Auto-discovered donors carry their skill directories explicitly
             // (they may sit at a catalog depth the immediate-subdir scan below
@@ -77,7 +85,12 @@ final readonly class SkillEnumerator
             // we actually saw so the "declared but missing" warning can
             // call them out without false positives from typos elsewhere.
             $filter = $donor->skillFilter;
-            $filterSet = $filter === null ? null : \array_fill_keys($filter, false);
+            if ($filter !== null) {
+                foreach ($filter as $declared) {
+                    $allowlistSeen[$donor->packageName][$declared] ??= false;
+                }
+            }
+            $filterSet = $filter === null ? null : \array_fill_keys($filter, true);
 
             foreach ($candidates as [$entry, $skillPath]) {
                 $canonicalName = $this->readCanonicalName(Path::create($skillPath), $entry);
@@ -91,7 +104,7 @@ final readonly class SkillEnumerator
                         // drown out the legitimate diagnostics.
                         continue;
                     }
-                    $filterSet[$canonicalName] = true;
+                    $allowlistSeen[$donor->packageName][$canonicalName] = true;
                 }
 
                 $skills[] = new Skill(
@@ -101,20 +114,20 @@ final readonly class SkillEnumerator
                     packageName: $donor->packageName,
                 );
             }
+        }
 
-            // Allowlist names that never matched any directory in the
-            // donor are most likely typos or stale entries. Surface them
-            // as `-v` warnings without aborting — the rest of the
-            // allowlist still syncs.
-            if ($filterSet !== null) {
-                foreach ($filterSet as $name => $seen) {
-                    if (!$seen) {
-                        $warnings[] = \sprintf(
-                            '%s: skill "%s" declared in the skill allowlist but not found in the donor',
-                            $donor->packageName,
-                            $name,
-                        );
-                    }
+        // Allowlist names that never matched a directory in any of the
+        // donor's rows are most likely typos or stale entries. Surface
+        // them as `-v` warnings without aborting — the rest of the
+        // allowlist still syncs.
+        foreach ($allowlistSeen as $packageName => $names) {
+            foreach ($names as $name => $seen) {
+                if (!$seen) {
+                    $warnings[] = \sprintf(
+                        '%s: skill "%s" declared in the skill allowlist but not found in the donor',
+                        $packageName,
+                        $name,
+                    );
                 }
             }
         }

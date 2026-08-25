@@ -13,7 +13,8 @@ use LLM\Skills\Config\VendorConfig;
 
 /**
  * Walks Composer's local repository and maps every package's
- * `extra.skills` block into a {@see \LLM\Skills\Config\VendorConfig}.
+ * `extra.skills` block into {@see \LLM\Skills\Config\VendorConfig} rows —
+ * one per declared source directory.
  *
  * Non-donors (no `extra.skills` block) are skipped silently. Donors with
  * a malformed block become entries in the returned `warnings` list — one
@@ -65,7 +66,9 @@ final readonly class DonorDiscovery
             }
 
             try {
-                $donors[] = $this->vendorMapper->fromExtra($name, Path::create($installPath), $extra);
+                foreach ($this->vendorMapper->fromExtra($name, Path::create($installPath), $extra) as $donor) {
+                    $donors[] = $donor;
+                }
             } catch (MalformedVendorConfig $e) {
                 $warnings[] = $e->getMessage();
                 // Strip the `Package "..." :` prefix the exception adds, so the

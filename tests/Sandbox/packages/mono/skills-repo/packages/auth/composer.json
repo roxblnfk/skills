@@ -1,0 +1,6 @@
+{
+    "name": "mono/auth",
+    "description": "Gitsplit component manifest; its presence must not hide the sibling skills directory",
+    "type": "library",
+    "license": "MIT"
+}

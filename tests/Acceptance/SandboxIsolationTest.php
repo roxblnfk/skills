@@ -71,7 +71,7 @@ final class SandboxIsolationTest
         );
         Assert::same(
             $this->inlineSkillsBlock(),
-            ['trusted' => ['acme/skills-basic', 'acme/skills-pro']],
+            ['trusted' => ['acme/skills-basic', 'acme/skills-pro', 'mono/skills-repo']],
             'the previous test migrated composer.json; its inline block must be back',
         );
     }

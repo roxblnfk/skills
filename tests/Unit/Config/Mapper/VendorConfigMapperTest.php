@@ -62,13 +62,83 @@ final class VendorConfigMapperTest
         $mapper = new VendorConfigMapper();
         $root = Path::create(__DIR__);
 
-        $cfg = $mapper->fromExtra('acme/skills-pro', $root, [
+        $donors = $mapper->fromExtra('acme/skills-pro', $root, [
             'skills' => ['source' => 'resources/skills'],
         ]);
 
-        Assert::same($cfg->packageName, 'acme/skills-pro');
-        Assert::same($cfg->source, 'resources/skills');
-        Assert::same((string) $cfg->packageRoot, (string) $root);
+        Assert::count($donors, 1);
+        Assert::same($donors[0]->packageName, 'acme/skills-pro');
+        Assert::same($donors[0]->source, 'resources/skills');
+        Assert::same((string) $donors[0]->packageRoot, (string) $root);
+    }
+
+    public function fromExtraMapsSourceListToOneDonorRowPerEntry(): void
+    {
+        // A monorepo published as one package may ship skills in several
+        // non-contiguous directories; each list entry becomes its own donor
+        // row so downstream stays single-source.
+        $mapper = new VendorConfigMapper();
+        $root = Path::create(__DIR__);
+
+        $donors = $mapper->fromExtra('acme/monorepo', $root, [
+            'skills' => ['source' => ['packages/dto/skills', 'packages/auth/skills']],
+        ]);
+
+        Assert::count($donors, 2);
+        Assert::same($donors[0]->source, 'packages/dto/skills');
+        Assert::same($donors[1]->source, 'packages/auth/skills');
+        Assert::same($donors[0]->packageName, 'acme/monorepo');
+        Assert::same($donors[1]->packageName, 'acme/monorepo');
+    }
+
+    public function fromExtraThrowsWhenSourceListIsEmpty(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must not be an empty list');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => []]],
+        );
+    }
+
+    public function fromExtraThrowsWhenSourceListContainsNonString(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('extra.skills.source');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => ['resources/skills', 42]]],
+        );
+    }
+
+    public function fromExtraThrowsWhenSourceListContainsDuplicates(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must not contain duplicate entries');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => ['resources/skills', 'resources/skills']]],
+        );
+    }
+
+    public function fromExtraThrowsWhenAnySourceListEntryEscapesPackageRoot(): void
+    {
+        // Every entry is held to the same rules as a single-string source: one
+        // escaping entry poisons the whole declaration.
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('must not escape the package root');
+
+        (new VendorConfigMapper())->fromExtra(
+            'acme/foo',
+            Path::create(__DIR__),
+            ['skills' => ['source' => ['resources/skills', '../outside']]],
+        );
     }
 
     public function fromExtraThrowsWhenExtraIsNotAnArray(): void
@@ -118,7 +188,7 @@ final class VendorConfigMapperTest
         );
     }
 
-    public function fromExtraThrowsWhenSourceIsNotAString(): void
+    public function fromExtraThrowsWhenSourceIsNeitherStringNorList(): void
     {
         Expect::exception(MalformedVendorConfig::class)
             ->withMessageContaining('extra.skills.source');
@@ -126,7 +196,7 @@ final class VendorConfigMapperTest
         (new VendorConfigMapper())->fromExtra(
             'acme/foo',
             Path::create(__DIR__),
-            ['skills' => ['source' => ['nested']]],
+            ['skills' => ['source' => 42]],
         );
     }
 
