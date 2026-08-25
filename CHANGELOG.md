@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/roxblnfk/skills/compare/1.10.0...1.11.0) (2026-08-25)
+
+
+### Features
+
+* accept a list of directories in `extra.skills.source` ([#36](https://github.com/roxblnfk/skills/issues/36)) ([3ad2850](https://github.com/roxblnfk/skills/commit/3ad28500409559fad98f191d85f2d6bdc6b8e221))
+
 ## [1.10.0](https://github.com/roxblnfk/skills/compare/1.9.0...1.10.0) (2026-08-24)
 
 
