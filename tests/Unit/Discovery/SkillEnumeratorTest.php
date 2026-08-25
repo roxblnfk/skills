@@ -135,6 +135,42 @@ final class SkillEnumeratorTest
         Assert::true(\str_contains($result->warnings[0], 'not found'));
     }
 
+    public function skillFilterDoesNotWarnWhenSkillLivesInASiblingSourceRow(): void
+    {
+        // A multi-directory `source` declaration arrives as several donor
+        // rows sharing one package name. A declared skill that lives in one
+        // of the directories must not be reported missing by the rows that
+        // don't contain it.
+        $rowA = $this->makeDonor('acme/mono', 'src-a', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['alpha', 'beta']);
+        $rowB = $this->makeDonor('acme/mono', 'src-b', ['beta/SKILL.md' => 'B'])
+            ->withSkillFilter(['alpha', 'beta']);
+
+        $result = (new SkillEnumerator())->enumerate([$rowA, $rowB]);
+
+        $names = \array_map(static fn($s) => $s->name, $result->skills);
+        \sort($names);
+        Assert::same($names, ['alpha', 'beta']);
+        Assert::same($result->warnings, []);
+    }
+
+    public function skillFilterWarnsOnceForANameMissingFromEverySiblingRow(): void
+    {
+        // A name absent from ALL of the package's source directories is a
+        // genuine typo/stale entry — one warning for the package, not one
+        // per row.
+        $rowA = $this->makeDonor('acme/mono', 'src-a', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['alpha', 'oops']);
+        $rowB = $this->makeDonor('acme/mono', 'src-b', ['beta/SKILL.md' => 'B'])
+            ->withSkillFilter(['alpha', 'oops']);
+
+        $result = (new SkillEnumerator())->enumerate([$rowA, $rowB]);
+
+        Assert::same(\count($result->warnings), 1);
+        Assert::true(\str_contains($result->warnings[0], 'acme/mono'));
+        Assert::true(\str_contains($result->warnings[0], '"oops"'));
+    }
+
     public function emptySkillFilterDropsAllSkillsAndEmitsNoWarnings(): void
     {
         // An explicitly empty allowlist means "the donor is on file but
