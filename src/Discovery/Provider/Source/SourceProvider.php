@@ -94,8 +94,7 @@ final readonly class SourceProvider implements DonorProvider
 
         foreach ($this->source->refs($projectRoot) as $ref) {
             if ($ref instanceof DirDonorRef) {
-                $donor = $this->resolveDirRef($ref, $failures, $malformed);
-                if ($donor !== null) {
+                foreach ($this->resolveDirRef($ref, $failures, $malformed) as $donor) {
                     $donors[] = $donor;
                 }
                 continue;
@@ -127,8 +126,7 @@ final readonly class SourceProvider implements DonorProvider
                 continue;
             }
 
-            $donor = $this->buildDonor($ref, $path, $failures, $malformed);
-            if ($donor !== null) {
+            foreach ($this->buildDonor($ref, $path, $failures, $malformed) as $donor) {
                 $donors[] = $donor;
             }
         }
@@ -174,8 +172,9 @@ final readonly class SourceProvider implements DonorProvider
     }
 
     /**
-     * Resolve a `dir` ref into a `VendorConfig`, or `null` when the
-     * directory is absent or not a donor. The "fetch" for a dir ref is
+     * Resolve a `dir` ref into `VendorConfig` rows (one per declared
+     * source directory), or an empty list when the directory is absent
+     * or not a donor. The "fetch" for a dir ref is
      * simply confirming the directory exists — no download, no cache,
      * no unpacker — and then running the shared inspector against the
      * live directory, exactly as the remote path does against an
@@ -188,6 +187,8 @@ final readonly class SourceProvider implements DonorProvider
      * @param list<SourceFailure>      $failures  appended to in place
      * @param list<MalformedDonor>     $malformed appended to in place
      *
+     * @return list<VendorConfig>
+     *
      * @param-out list<SourceFailure>  $failures
      * @param-out list<MalformedDonor> $malformed
      */
@@ -195,29 +196,30 @@ final readonly class SourceProvider implements DonorProvider
         DirDonorRef $ref,
         array &$failures,
         array &$malformed,
-    ): ?VendorConfig {
+    ): array {
         if (!$ref->directory->isDir()) {
             $failures[] = new SourceFailure(
                 label: $ref->label(),
                 summary: 'directory does not exist',
                 detail: (string) $ref->directory,
             );
-            return null;
+            return [];
         }
 
         return $this->buildDonor($ref, $ref->directory, $failures, $malformed);
     }
 
     /**
-     * Resolve a single ref into a `VendorConfig`, or `null` when the
-     * archive cannot be turned into a donor. Accumulates per-ref
-     * warnings + malformed entries into the caller's lists.
+     * Resolve a single ref into `VendorConfig` rows (one per declared
+     * source directory), or an empty list when the archive cannot be
+     * turned into a donor. Accumulates per-ref warnings + malformed
+     * entries into the caller's lists.
      *
      * The parse-and-classify step is delegated to the shared
      * {@see DonorArchiveInspector} — the same inspector `skills:add`
      * runs when it fetches the archive, so what the two paths accept as
      * a donor never drifts. This method only turns the inspection into
-     * a {@see VendorConfig} (or a warning):
+     * {@see VendorConfig} rows (or a warning):
      *
      * - **Composer-shaped** → hand the name + raw `extra` to the mapper;
      *   a mapper rejection lifts to a {@see MalformedDonor}.
@@ -228,6 +230,8 @@ final readonly class SourceProvider implements DonorProvider
      * @param list<SourceFailure>      $failures  appended to in place
      * @param list<MalformedDonor>     $malformed appended to in place
      *
+     * @return list<VendorConfig>
+     *
      * @param-out list<SourceFailure>  $failures
      * @param-out list<MalformedDonor> $malformed
      */
@@ -236,7 +240,7 @@ final readonly class SourceProvider implements DonorProvider
         Path $path,
         array &$failures,
         array &$malformed,
-    ): ?VendorConfig {
+    ): array {
         $inspection = $this->inspector->inspect($path, $ref->packageHint);
 
         $rejection = $inspection->rejection;
@@ -245,14 +249,14 @@ final readonly class SourceProvider implements DonorProvider
                 label: $ref->label(),
                 summary: $this->describeRejection($rejection, $inspection->detail),
             );
-            return null;
+            return [];
         }
 
         if ($inspection->isComposerShaped) {
             /** @var non-empty-string $packageName */
             $packageName = $inspection->packageName;
             try {
-                $donor = $this->vendorMapper->fromExtra($packageName, $path, $inspection->extra);
+                $donors = $this->vendorMapper->fromExtra($packageName, $path, $inspection->extra);
             } catch (MalformedVendorConfig $e) {
                 /** @var non-empty-string $reason */
                 $reason = \preg_replace('/^Package "[^"]+": /', '', $e->getMessage())
@@ -265,9 +269,9 @@ final readonly class SourceProvider implements DonorProvider
                     packageName: $e->packageName,
                     reason: $reason,
                 );
-                return null;
+                return [];
             }
-            return $this->decorate($donor, $ref);
+            return \array_map(fn(VendorConfig $donor): VendorConfig => $this->decorate($donor, $ref), $donors);
         }
 
         // Bare skill repo. NOTE: `discovered: false` even though the
@@ -283,7 +287,7 @@ final readonly class SourceProvider implements DonorProvider
         $packageName = $inspection->packageName;
         /** @var non-empty-string $source */
         $source = $inspection->source;
-        return $this->decorate(
+        return [$this->decorate(
             new VendorConfig(
                 packageName: $packageName,
                 packageRoot: $path,
@@ -291,7 +295,7 @@ final readonly class SourceProvider implements DonorProvider
                 discoveredSkillDirs: $inspection->discoveredSkillDirs,
             ),
             $ref,
-        );
+        )];
     }
 
     /**

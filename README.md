@@ -159,6 +159,21 @@ After `skills:update`, the consumer project gets:
 - Loose files at the root of `source` (e.g. `README.md`) are ignored.
 - A package without `extra.skills` is not a donor by default — see [Auto-discovery](#auto-discovery).
 
+`source` also accepts a **list** of directories — useful for a monorepo published as a
+single package whose skills live per component:
+
+```jsonc
+// vendor/acme/components/composer.json
+{
+  "extra": {
+    "skills": { "source": ["packages/dto/skills", "packages/auth/skills"] }
+  }
+}
+```
+
+Every listed directory is scanned the same way as a single `source`; skills from all of
+them are synced together.
+
 
 ## Project configuration
 

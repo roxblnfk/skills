@@ -39,9 +39,15 @@ use Testo\Test;
  *                            non-`skills/` locations — `.claude/skills/hidden-claude/`
  *                            and a catalog layout `skills/php/hidden-catalog/` — to
  *                            exercise recursive `SKILL.md` auto-discovery.
+ * - `mono/skills-repo`     — trusted. Declares `extra.skills.source` as a **list**
+ *                            (`packages/dto/skills`, `packages/auth/skills`); each
+ *                            component dir also carries its own `composer.json`
+ *                            (gitsplit monorepo layout). Skills: `dto-guides/`,
+ *                            `auth-guides/`.
  *
- * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro"]`
- * with the default `trusted-replace: false` — so built-in patterns still apply.
+ * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro",
+ * "mono/skills-repo"]` with the default `trusted-replace: false` — so built-in patterns
+ * still apply.
  */
 #[Test]
 final class SkillsSyncTest
@@ -129,13 +135,46 @@ final class SkillsSyncTest
     {
         // internal/path declares no extra.skills; acme/skills-broken has malformed
         // extra; clash/skills-conflict and evil/payload are untrusted. The default
-        // sync yields: the four skills from acme/* (project trust) plus the one
-        // skill from spiral/skills-demo (built-in `spiral/*` trust).
+        // sync yields: the four skills from acme/* (project trust), the one skill
+        // from spiral/skills-demo (built-in `spiral/*` trust), and the two skills
+        // from mono/skills-repo (project trust).
         $this->runSync();
 
         $entries = $this->listTargetEntries();
 
-        Assert::same($entries, ['code-review', 'demo', 'greeting', 'migrate', 'refactor']);
+        Assert::same(
+            $entries,
+            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor'],
+        );
+    }
+
+    // ── multi-directory source declaration ──────────────────────────────────
+
+    public function sourceListSyncsSkillsFromEveryDeclaredDirectory(): void
+    {
+        // mono/skills-repo declares `extra.skills.source` as a list of two
+        // per-component directories; skills from both must land in the target.
+        $process = $this->runSync('mono/skills-repo');
+
+        Assert::same($process->getExitCode(), 0);
+        Assert::same(
+            $this->listTargetEntries(),
+            ['auth-guides', 'dto-guides'],
+            'both declared source directories must be synced. stderr: '
+            . $process->getErrorOutput(),
+        );
+    }
+
+    public function sourceListEntriesAreNotHiddenByNestedComposerJson(): void
+    {
+        // Each component directory of mono/skills-repo carries its own
+        // composer.json (the gitsplit layout); a declared source list must read
+        // straight through it, unlike the fallback scanner which treats a nested
+        // manifest as a foreign distribution boundary.
+        $this->runSync('mono/skills-repo');
+
+        Assert::true(\is_file(self::TARGET_DIR . '/dto-guides/SKILL.md'));
+        Assert::true(\is_file(self::TARGET_DIR . '/auth-guides/SKILL.md'));
     }
 
     // ── trust policy ────────────────────────────────────────────────────────
@@ -310,7 +349,7 @@ final class SkillsSyncTest
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['code-review', 'demo', 'greeting', 'migrate', 'refactor', 'tutorial'],
+            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor', 'tutorial'],
             'project wildcard unlocks evil/payload; direct-dep trust covers the rest. stderr: '
             . $process->getErrorOutput(),
         );
@@ -389,7 +428,7 @@ final class SkillsSyncTest
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['code-review', 'demo', 'greeting', 'migrate', 'refactor'],
+            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor'],
         );
     }
 

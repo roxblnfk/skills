@@ -12,11 +12,14 @@ use LLM\Skills\Discovery\MalformedDonor;
  * Stacks several {@see DonorProvider}s behind a single interface so the
  * sync/show runners stay provider-agnostic.
  *
- * Children are queried in **declaration order**; on duplicate
- * `packageName` collisions the later child wins (the displaced earlier
- * entry is reported as a `-v` warning). Wire the composite with locals
- * first and remote last so an explicit `sources[]` entry naturally
- * overrides a transitive local discovery of the same package name.
+ * Children are queried in **declaration order**; when two children
+ * provide the same `packageName` the later child wins and displaces
+ * every row the earlier one contributed (reported as a `-v` warning).
+ * Multiple rows for one package from the SAME child are siblings — a
+ * multi-directory `source` declaration — and all survive. Wire the
+ * composite with locals first and remote last so an explicit
+ * `sources[]` entry naturally overrides a transitive local discovery
+ * of the same package name.
  *
  * `isActive()` is the OR of all children. `directDependencies()` is the
  * union (deduplicated, order-preserved). `discover()` concatenates
@@ -58,8 +61,10 @@ final readonly class CompositeDonorProvider implements DonorProvider
     #[\Override]
     public function discover(Path $projectRoot): DonorDiscoveryResult
     {
-        /** @var array<non-empty-string, \LLM\Skills\Config\VendorConfig> $donorsByName */
+        /** @var array<non-empty-string, non-empty-list<\LLM\Skills\Config\VendorConfig>> $donorsByName */
         $donorsByName = [];
+        /** @var array<non-empty-string, int> $ownerIndex which child currently owns the package */
+        $ownerIndex = [];
         /** @var list<string> $warnings */
         $warnings = [];
         /** @var list<MalformedDonor> $malformed */
@@ -69,7 +74,7 @@ final readonly class CompositeDonorProvider implements DonorProvider
         /** @var list<\LLM\Skills\Discovery\SourceFailure> $failures */
         $failures = [];
 
-        foreach ($this->children as $child) {
+        foreach ($this->children as $index => $child) {
             if (!$child->isActive($projectRoot)) {
                 continue;
             }
@@ -77,25 +82,32 @@ final readonly class CompositeDonorProvider implements DonorProvider
             $result = $child->discover($projectRoot);
 
             foreach ($result->donors as $donor) {
-                if (isset($donorsByName[$donor->packageName])) {
-                    // Later child wins. The displaced earlier entry
-                    // becomes a warning so `-v` users can see what
-                    // got overridden; the sync proceeds normally. The
-                    // composite is generic — the winner is "whichever
-                    // provider declared the package last" (typically
-                    // remote, since callers wire it last to honour the
-                    // explicit-over-transitive rule), not necessarily
-                    // remote in every wiring.
-                    $loser = $donorsByName[$donor->packageName];
+                $name = $donor->packageName;
+                if (isset($donorsByName[$name]) && $ownerIndex[$name] !== $index) {
+                    // Later child wins and displaces every row the
+                    // earlier child contributed for this package. The
+                    // takeover becomes a warning so `-v` users can see
+                    // what got overridden; the sync proceeds normally.
+                    // The composite is generic — the winner is
+                    // "whichever provider declared the package last"
+                    // (typically remote, since callers wire it last to
+                    // honour the explicit-over-transitive rule), not
+                    // necessarily remote in every wiring. Rows arriving
+                    // from the SAME child are siblings, not conflicts: a
+                    // multi-directory `source` declaration is one donor
+                    // spread over several rows.
+                    $loser = $donorsByName[$name][0];
                     $warnings[] = \sprintf(
                         'donor "%s" was provided by multiple providers — '
                         . 'later "%s" overrides earlier "%s"',
-                        $donor->packageName,
+                        $name,
                         $donor->provenance,
                         $loser->provenance,
                     );
+                    unset($donorsByName[$name]);
                 }
-                $donorsByName[$donor->packageName] = $donor;
+                $ownerIndex[$name] = $index;
+                $donorsByName[$name][] = $donor;
             }
 
             foreach ($result->warnings as $w) {
@@ -113,7 +125,7 @@ final readonly class CompositeDonorProvider implements DonorProvider
         }
 
         return new DonorDiscoveryResult(
-            donors: \array_values($donorsByName),
+            donors: \array_merge([], ...\array_values($donorsByName)),
             warnings: $warnings,
             malformed: $malformed,
             discoverable: $discoverable,

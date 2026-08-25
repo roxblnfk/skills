@@ -10,8 +10,15 @@ use LLM\Skills\Config\VendorConfig;
 
 /**
  * Maps a donor package's `extra` array (as returned by
- * {@see \Composer\Package\PackageInterface::getExtra()}) into a typed
- * {@see VendorConfig}.
+ * {@see \Composer\Package\PackageInterface::getExtra()}) into typed
+ * {@see VendorConfig} rows.
+ *
+ * `extra.skills.source` is either a single relative directory or a list
+ * of them (a monorepo published as one package may ship skills in
+ * several non-contiguous locations). Each entry becomes its own
+ * {@see VendorConfig} row — the same one-row-per-container shape
+ * auto-discovery already produces — so nothing downstream has to know
+ * how many directories the donor declared.
  *
  * Two distinct outcomes:
  *
@@ -55,9 +62,11 @@ final readonly class VendorConfigMapper
      * @param Path $packageRoot absolute install path of the package
      * @param mixed $extra raw value of `composer.json` `extra` field
      *
+     * @return non-empty-list<VendorConfig> one row per declared source directory
+     *
      * @throws MalformedVendorConfig when `extra.skills` is present but invalid
      */
-    public function fromExtra(string $packageName, Path $packageRoot, mixed $extra): VendorConfig
+    public function fromExtra(string $packageName, Path $packageRoot, mixed $extra): array
     {
         if (!\is_array($extra)) {
             throw new MalformedVendorConfig($packageName, 'extra must be an object');
@@ -68,32 +77,56 @@ final readonly class VendorConfigMapper
             throw new MalformedVendorConfig($packageName, 'extra.skills must be an object');
         }
 
+        /** @var mixed $source */
         $source = $skills['source'] ?? null;
-        if (!\is_string($source) || $source === '') {
+        $sources = \is_array($source) ? \array_values($source) : [$source];
+        if ($sources === []) {
             throw new MalformedVendorConfig(
                 $packageName,
-                'extra.skills.source must be a non-empty string',
+                'extra.skills.source must not be an empty list',
             );
         }
 
-        if (Path::create($source)->isAbsolute()) {
-            throw new MalformedVendorConfig(
-                $packageName,
-                'extra.skills.source must be a relative path',
+        $donors = [];
+        $seen = [];
+        /** @var mixed $entry */
+        foreach ($sources as $entry) {
+            if (!\is_string($entry) || $entry === '') {
+                throw new MalformedVendorConfig(
+                    $packageName,
+                    'extra.skills.source must be a non-empty string or a list of non-empty strings',
+                );
+            }
+
+            if (Path::create($entry)->isAbsolute()) {
+                throw new MalformedVendorConfig(
+                    $packageName,
+                    'extra.skills.source must be a relative path',
+                );
+            }
+
+            if (!$packageRoot->join($entry)->match($packageRoot->join('*'))) {
+                throw new MalformedVendorConfig(
+                    $packageName,
+                    'extra.skills.source must not escape the package root',
+                );
+            }
+
+            if (isset($seen[$entry])) {
+                throw new MalformedVendorConfig(
+                    $packageName,
+                    'extra.skills.source must not contain duplicate entries',
+                );
+            }
+            $seen[$entry] = true;
+
+            $donors[] = new VendorConfig(
+                packageName: $packageName,
+                packageRoot: $packageRoot,
+                source: $entry,
             );
         }
 
-        if (!$packageRoot->join($source)->match($packageRoot->join('*'))) {
-            throw new MalformedVendorConfig(
-                $packageName,
-                'extra.skills.source must not escape the package root',
-            );
-        }
-
-        return new VendorConfig(
-            packageName: $packageName,
-            packageRoot: $packageRoot,
-            source: $source,
-        );
+        return $donors;
     }
 }

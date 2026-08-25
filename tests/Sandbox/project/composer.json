@@ -15,6 +15,7 @@
         "acme/skills-broken": "@dev",
         "acme/skills-rootlike": "@dev",
         "acme/skills-undeclared": "@dev",
+        "mono/skills-repo": "@dev",
         "nested/skills-tree": "@dev",
         "spiral/skills-demo": "@dev",
         "transit/untrusted-relay": "@dev"
@@ -26,7 +27,7 @@
     },
     "extra": {
         "skills": {
-            "trusted": ["acme/skills-basic", "acme/skills-pro"]
+            "trusted": ["acme/skills-basic", "acme/skills-pro", "mono/skills-repo"]
         }
     }
 }
