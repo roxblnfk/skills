@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.0](https://github.com/roxblnfk/skills/compare/1.9.0...1.10.0) (2026-08-24)
+
+
+### Features
+
+* report unresolvable source donors in the sync listing and skills:show ([553fb0b](https://github.com/roxblnfk/skills/commit/553fb0b1a254e7d3f11eaa6ce7410a00e4542b4e))
+* tilde `sources[].ref` constraints and visible source failures ([553fb0b](https://github.com/roxblnfk/skills/commit/553fb0b1a254e7d3f11eaa6ce7410a00e4542b4e))
+
 ## [1.9.0](https://github.com/roxblnfk/skills/compare/1.8.1...1.9.0) (2026-07-08)
 
 
