@@ -40,15 +40,30 @@ final readonly class DonorDiscovery
         $warnings = [];
         $malformed = [];
         $discoverable = [];
+        $seenPaths = [];
 
         /** @var PackageInterface $package */
         foreach ($composer->getRepositoryManager()->getLocalRepository()->getPackages() as $package) {
             $extra = $package->getExtra();
             /** @var non-empty-string $name */
             $name = $package->getName();
+            $installPath = $composer->getInstallationManager()->getInstallPath($package);
+
+            // A dependency installed from a dev branch without a `branch-alias`
+            // surfaces twice here: the real package and the synthetic
+            // default-branch AliasPackage (`9999999-dev`) Composer pairs with
+            // it, both resolving to one install path. Enumerating that path
+            // once keeps a donor from being counted against itself as a
+            // self-conflict. An empty path (metapackage) carries no skills, so
+            // it never contends for deduplication.
+            if ($installPath !== null && $installPath !== '') {
+                if (isset($seenPaths[$installPath])) {
+                    continue;
+                }
+                $seenPaths[$installPath] = true;
+            }
 
             if (!VendorConfigMapper::declaresSkills($extra)) {
-                $installPath = $composer->getInstallationManager()->getInstallPath($package);
                 if ($installPath === null) {
                     continue;
                 }
@@ -59,7 +74,6 @@ final readonly class DonorDiscovery
                 continue;
             }
 
-            $installPath = $composer->getInstallationManager()->getInstallPath($package);
             if ($installPath === null) {
                 $warnings[] = \sprintf('%s: install path unavailable', $name);
                 continue;

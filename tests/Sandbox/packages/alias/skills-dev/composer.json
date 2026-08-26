@@ -1,0 +1,13 @@
+{
+    "name": "alias/skills-dev",
+    "description": "Stub donor pinned to dev-main with default-branch set and no branch-alias, so Composer loads it as a real package plus a `9999999-dev` AliasPackage sharing one install path — the shape a dev-branch dependency produces. Used to prove donor deduplication.",
+    "type": "library",
+    "license": "MIT",
+    "version": "dev-main",
+    "default-branch": true,
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}
