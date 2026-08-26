@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/roxblnfk/skills/compare/1.11.0...1.11.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* **discovery:** deduplicate donors sharing an install path ([#39](https://github.com/roxblnfk/skills/issues/39)) ([41bfa51](https://github.com/roxblnfk/skills/commit/41bfa51a80c12b5b17ed6b609a3e7e0791800e2b))
+
 ## [1.11.0](https://github.com/roxblnfk/skills/compare/1.10.0...1.11.0) (2026-08-25)
 
 
