@@ -44,6 +44,11 @@ use Testo\Test;
  *                            component dir also carries its own `composer.json`
  *                            (gitsplit monorepo layout). Skills: `dto-guides/`,
  *                            `auth-guides/`.
+ * - `alias/skills-dev`     — untrusted (transitive via `transit/untrusted-relay`).
+ *                            Pinned to `dev-main` with `default-branch: true`, so
+ *                            Composer loads it twice — the real package plus a
+ *                            `9999999-dev` `AliasPackage` sharing one install path.
+ *                            One `alias-guide` skill; exercises donor deduplication.
  *
  * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro",
  * "mono/skills-repo"]` with the default `trusted-replace: false` — so built-in patterns
@@ -535,6 +540,35 @@ final class SkillsSyncTest
         Assert::false(
             \is_file(self::TARGET_DIR . '/refactor/SKILL.md'),
             'unrelated skills must not be written either — the engine is transactional',
+        );
+    }
+
+    // ── dev-branch alias deduplication ──────────────────────────────────────
+
+    public function devBranchDonorWithDefaultBranchAliasSyncsOnceWithoutSelfConflict(): void
+    {
+        // alias/skills-dev is installed from a dev branch with
+        // `default-branch: true` and no `branch-alias`, so Composer's local
+        // repository returns it twice — the real `dev-main` package and a
+        // synthetic `9999999-dev` AliasPackage at the same install path.
+        // Trusting it must sync its one skill exactly once, not abort with a
+        // conflict of the package against itself.
+        $process = $this->runSync('--trust=alias/skills-dev');
+
+        Assert::same(
+            $process->getExitCode(),
+            0,
+            'a dev-branch donor and its default-branch alias must not self-conflict. stderr: '
+            . $process->getErrorOutput(),
+        );
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/alias-guide/SKILL.md'),
+            'the aliased donor\'s skill must be synced. stderr: ' . $process->getErrorOutput(),
+        );
+        Assert::false(
+            \str_contains($process->getErrorOutput(), 'Sync aborted'),
+            'sync must not abort for a package aliased against itself. Got: '
+            . $process->getErrorOutput(),
         );
     }
 
