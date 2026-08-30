@@ -252,4 +252,159 @@ final class VendorConfigMapperTest
             ['skills' => ['source' => 'C:\\Windows']],
         );
     }
+
+    // ── declaresSources ──
+
+    public function declaresSourcesTrueForNonEmptyList(): void
+    {
+        Assert::true(VendorConfigMapper::declaresSources([
+            'skills' => ['sources' => [['from' => 'github', 'package' => 'acme/skills']]],
+        ]));
+    }
+
+    public function declaresSourcesTrueEvenWhenEntriesAreInvalid(): void
+    {
+        // Shape-only on purpose: a botched list must still activate the
+        // ref source so the parse error surfaces instead of the donor
+        // being skipped silently.
+        Assert::true(VendorConfigMapper::declaresSources(['skills' => ['sources' => ['garbage']]]));
+    }
+
+    public function declaresSourcesFalseForEmptyMissingOrNonListValues(): void
+    {
+        Assert::false(VendorConfigMapper::declaresSources(['skills' => ['sources' => []]]));
+        Assert::false(VendorConfigMapper::declaresSources(['skills' => ['source' => 'skills']]));
+        Assert::false(VendorConfigMapper::declaresSources(['skills' => ['sources' => 'not-a-list']]));
+        Assert::false(VendorConfigMapper::declaresSources(['skills' => 'not-an-object']));
+        Assert::false(VendorConfigMapper::declaresSources(null));
+    }
+
+    // ── sourceEntriesFromExtra ──
+
+    public function sourceEntriesMapsHappyPath(): void
+    {
+        $entries = (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => [
+                'source' => 'resources/skills',
+                'sources' => [
+                    ['from' => 'github', 'package' => 'acme/skills', 'ref' => '^1.2', 'skills' => ['deploy']],
+                    ['from' => 'gitlab', 'package' => 'acme/other'],
+                ],
+            ],
+        ]);
+
+        Assert::count($entries, 2);
+        Assert::same($entries[0]->from, 'github');
+        Assert::same($entries[0]->package, 'acme/skills');
+        Assert::same($entries[0]->ref, '^1.2');
+        Assert::same($entries[0]->skills, ['deploy']);
+        Assert::same($entries[1]->from, 'gitlab');
+    }
+
+    public function sourceEntriesAllowsSelfVersionRef(): void
+    {
+        $entries = (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => [
+                'sources' => [['from' => 'github', 'package' => 'acme/skills', 'ref' => 'self.version']],
+            ],
+        ]);
+
+        Assert::count($entries, 1);
+        Assert::same($entries[0]->ref, 'self.version');
+    }
+
+    public function sourceEntriesReturnsEmptyWhenKeyAbsentOrExtraNotAnArray(): void
+    {
+        $mapper = new VendorConfigMapper();
+
+        Assert::same($mapper->sourceEntriesFromExtra('acme/foo', ['skills' => ['source' => 'skills']]), []);
+        Assert::same($mapper->sourceEntriesFromExtra('acme/foo', ['skills' => []]), []);
+        Assert::same($mapper->sourceEntriesFromExtra('acme/foo', []), []);
+        Assert::same($mapper->sourceEntriesFromExtra('acme/foo', 'not-an-array'), []);
+    }
+
+    public function sourceEntriesRejectsDirAdapterWithTailoredMessage(): void
+    {
+        // An in-package path is what `extra.skills.source` is for; a
+        // vendor-controlled `dir` entry would point at the consumer's
+        // filesystem and has no safe meaning.
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('extra.skills.sources[0].from "dir" is not allowed in a vendor package');
+
+        (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => ['sources' => [['from' => 'dir', 'path' => './skills']]],
+        ]);
+    }
+
+    public function sourceEntriesRejectsDirAdapterEvenWhenTheEntryShapeIsOtherwiseBroken(): void
+    {
+        // The tailored message wins over whichever shape rule the shared
+        // mapper would trip on first (here: a missing `path`).
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('not allowed in a vendor package');
+
+        (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => ['sources' => [['from' => 'dir']]],
+        ]);
+    }
+
+    public function sourceEntriesThrowsOnUnknownAdapter(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('not a known source adapter');
+
+        (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => ['sources' => [['from' => 'nonsense', 'package' => 'acme/skills']]],
+        ]);
+    }
+
+    public function sourceEntriesThrowsOnDuplicateCompositeKey(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('duplicates an earlier entry');
+
+        (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => ['sources' => [
+                ['from' => 'github', 'package' => 'acme/skills'],
+                ['from' => 'github', 'package' => 'acme/skills'],
+            ]],
+        ]);
+    }
+
+    public function sourceEntriesThrowsWhenSourcesIsNotAList(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('extra.skills.sources must be a list of objects');
+
+        (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => ['sources' => 'not-a-list'],
+        ]);
+    }
+
+    public function sourceEntriesErrorMessagesCarryTheVendorFieldPath(): void
+    {
+        Expect::exception(MalformedVendorConfig::class)
+            ->withMessageContaining('extra.skills.sources[0].package is required');
+
+        (new VendorConfigMapper())->sourceEntriesFromExtra('acme/foo', [
+            'skills' => ['sources' => [['from' => 'github']]],
+        ]);
+    }
+
+    public function fromExtraIgnoresTheSourcesKey(): void
+    {
+        // Local rows and external refs feed different discovery paths;
+        // `fromExtra` must neither validate nor map `sources` — a fetched
+        // archive's own `sources` list is never honoured (no transitive
+        // remote chains).
+        $donors = (new VendorConfigMapper())->fromExtra('acme/foo', Path::create(__DIR__), [
+            'skills' => [
+                'source' => 'resources/skills',
+                'sources' => 'total garbage that must not be parsed here',
+            ],
+        ]);
+
+        Assert::count($donors, 1);
+        Assert::same($donors[0]->source, 'resources/skills');
+    }
 }

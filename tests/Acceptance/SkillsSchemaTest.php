@@ -71,6 +71,22 @@ final class SkillsSchemaTest
         $this->assertAccepts([
             'sources' => [
                 ['from' => 'github', 'package' => 'acme/skills'],
+                ['from' => 'gitlab', 'package' => 'team/skills', 'ref' => '^1.2'],
+            ],
+        ]);
+    }
+
+    public function urlOnlySourceIsRejectedBySchema(): void
+    {
+        // `http` / `zip` are reserved in the ProviderId vocabulary but
+        // have no adapter yet. The schema deliberately does not document
+        // them, so editors offer no autocomplete for entries that would
+        // only fail at resolve time with "unknown source adapter". The
+        // PHP mapper still accepts the shape (vocabulary is locked) —
+        // when a url-only adapter lands, the schema regains a
+        // sourceByUrl branch without a mapper change.
+        $this->assertRejects([
+            'sources' => [
                 ['from' => 'zip', 'url' => 'https://example.com/skills.zip'],
             ],
         ]);

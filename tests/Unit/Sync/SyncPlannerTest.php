@@ -979,6 +979,96 @@ final class SyncPlannerTest
         Assert::same($plan->skippedUntrustedNames, ['untrusted/local']);
     }
 
+    // ── vendor-declared donors (declaredBy) ──
+
+    public function vendorDeclaredDonorIsApprovedWhenTheDeclaringPackageIsTrusted(): void
+    {
+        // The external bundle's own name matches no trust pattern — the
+        // approval must come from the declaring package.
+        $donor = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::fromStrings('acme/*'),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'ext/bundle');
+    }
+
+    public function vendorDeclaredDonorIsSkippedWhenTheDeclaringPackageIsUntrusted(): void
+    {
+        // Even a bundle whose OWN name matches a trust pattern must be
+        // judged by its declarer: the declaration is the third-party
+        // input, not the bundle name it advertises.
+        $donor = $this->donor('acme/bundle')->withDeclaredBy('evil/payload');
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::fromStrings('acme/*'),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same($plan->approvedDonors, []);
+        Assert::same($plan->skippedUntrustedNames, ['acme/bundle']);
+    }
+
+    public function vendorDeclaredDonorInheritsDirectDependencyTrust(): void
+    {
+        $donor = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+            directDependencies: ['acme/foo'],
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'ext/bundle');
+    }
+
+    public function positionalFilterOnTheDeclaringPackageKeepsItsDeclaredDonors(): void
+    {
+        // `skills:update acme/foo` must pull foo's external skills too;
+        // an unrelated donor is still filtered out.
+        $local = $this->donor('acme/foo');
+        $declared = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $other = $this->donor('other/pkg');
+        $plan = $this->planner()->plan(
+            donors: [$local, $declared, $other],
+            project: ProjectConfig::default(),
+            options: $this->optionsWithFilters('acme/foo'),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        $approvedNames = \array_map(static fn($d) => $d->packageName, $plan->approvedDonors);
+        \sort($approvedNames);
+        Assert::same($approvedNames, ['acme/foo', 'ext/bundle']);
+        Assert::same(\count($plan->filteredOutDonors), 1);
+        Assert::same($plan->filteredOutDonors[0]->packageName, 'other/pkg');
+    }
+
+    public function positionalFilterOnTheBundleNameAlsoKeepsTheDeclaredDonor(): void
+    {
+        $declared = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $plan = $this->planner()->plan(
+            donors: [$declared],
+            project: ProjectConfig::default(),
+            options: $this->optionsWithFilters('ext/bundle'),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'ext/bundle');
+    }
+
     private function planner(): SyncPlanner
     {
         return new SyncPlanner();

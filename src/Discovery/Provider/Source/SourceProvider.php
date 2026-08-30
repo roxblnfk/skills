@@ -326,23 +326,31 @@ final readonly class SourceProvider implements DonorProvider
     }
 
     /**
-     * Apply the provenance + implicit-trust + skill-filter that every
-     * remote donor inherits from its `RemoteDonorRef`.
+     * Apply the provenance + trust attribution + skill-filter that
+     * every remote donor inherits from its `RemoteDonorRef`.
      *
      * @psalm-mutation-free
      */
     private function decorate(VendorConfig $donor, RemoteDonorRef|DirDonorRef $ref): VendorConfig
     {
         $provenance = $ref->provenance ?? 'source';
-        // `sources[]` entries are user-declared and therefore
-        // implicit-trusted, regardless of `from` value. The planner's
-        // trust list applies to local-provider transitive discoveries
-        // only. The optional skill allowlist carries through to the
-        // enumerator via {@see VendorConfig::$skillFilter}; `null`
-        // keeps the default "sync every skill" behaviour.
-        return $donor
+        $donor = $donor
             ->withProvenance($provenance)
-            ->asImplicitlyTrusted()
             ->withSkillFilter($ref->skillFilter);
+
+        // A ref declared by an installed vendor package (its
+        // `extra.skills.sources`) is third-party input: it inherits the
+        // declaring package's trust verdict via `declaredBy` and is
+        // never implicit-trusted. Every other `sources[]` entry is
+        // something the user typed by hand, so the planner does not
+        // consult the trust list for it. The optional skill allowlist
+        // carries through to the enumerator via
+        // {@see VendorConfig::$skillFilter}; `null` keeps the default
+        // "sync every skill" behaviour.
+        if ($ref instanceof RemoteDonorRef && $ref->declaredBy !== null) {
+            return $donor->withDeclaredBy($ref->declaredBy);
+        }
+
+        return $donor->asImplicitlyTrusted();
     }
 }

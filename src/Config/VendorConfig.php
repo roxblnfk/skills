@@ -49,6 +49,12 @@ final readonly class VendorConfig
      *         catalog depth (`<source>/<category>/<name>/`). Always `null` for declared
      *         donors, whose `source` directory is the contract. Orthogonal to
      *         {@see $skillFilter}, which still applies on top.
+     * @param non-empty-string|null $declaredBy name of the installed Composer package whose
+     *         `extra.skills.sources` produced this donor; `null` for every other origin.
+     *         {@see \LLM\Skills\Sync\SyncPlanner} evaluates trust (and positional package
+     *         filters) against `declaredBy ?? packageName`, so a vendor-declared external
+     *         source is approved exactly when the declaring package itself would be —
+     *         unlike project `sources[]` entries, it is never implicit-trusted.
      *
      * @psalm-mutation-free
      */
@@ -61,6 +67,7 @@ final readonly class VendorConfig
         public bool $implicitTrust = false,
         public ?array $skillFilter = null,
         public ?array $discoveredSkillDirs = null,
+        public ?string $declaredBy = null,
     ) {}
 
     /**
@@ -92,6 +99,7 @@ final readonly class VendorConfig
             implicitTrust: $this->implicitTrust,
             skillFilter: $this->skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
+            declaredBy: $this->declaredBy,
         );
     }
 
@@ -118,6 +126,32 @@ final readonly class VendorConfig
             implicitTrust: true,
             skillFilter: $this->skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
+            declaredBy: $this->declaredBy,
+        );
+    }
+
+    /**
+     * Return a copy of this donor attributed to the vendor package that
+     * declared it in `extra.skills.sources`. The planner then evaluates
+     * trust and positional filters against the declaring package's name
+     * instead of the donor's own.
+     *
+     * @param non-empty-string $declaredBy
+     *
+     * @psalm-mutation-free
+     */
+    public function withDeclaredBy(string $declaredBy): self
+    {
+        return new self(
+            packageName: $this->packageName,
+            packageRoot: $this->packageRoot,
+            source: $this->source,
+            discovered: $this->discovered,
+            provenance: $this->provenance,
+            implicitTrust: $this->implicitTrust,
+            skillFilter: $this->skillFilter,
+            discoveredSkillDirs: $this->discoveredSkillDirs,
+            declaredBy: $declaredBy,
         );
     }
 
@@ -141,6 +175,7 @@ final readonly class VendorConfig
             implicitTrust: $this->implicitTrust,
             skillFilter: $skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
+            declaredBy: $this->declaredBy,
         );
     }
 }

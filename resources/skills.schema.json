@@ -68,6 +68,11 @@
                 }
             }
         },
+        "vendor-sources": {
+            "type": "boolean",
+            "description": "When true (default), installed vendor packages may advertise external skill sources via their own extra.skills.sources; each such source is gated by the same trust rules as the declaring package itself. Set to false to ignore vendor-declared external sources entirely — only the project's own sources[] and local package directories contribute donors.",
+            "default": true
+        },
         "sources": {
             "type": "array",
             "description": "Explicit donor sources. Each entry tells the provider what to fetch and from where: an adapter id in `from`, an identifier in `package` or `url`, and optional `host`/`ref`/`skills`/adapter-specific extras.",
@@ -75,7 +80,6 @@
             "items": {
                 "oneOf": [
                     { "$ref": "#/$defs/sourceByPackage" },
-                    { "$ref": "#/$defs/sourceByUrl" },
                     { "$ref": "#/$defs/sourceByDir" }
                 ]
             }
@@ -164,43 +168,6 @@
                         "type": "string",
                         "minLength": 1
                     }
-                }
-            }
-        },
-        "sourceByUrl": {
-            "type": "object",
-            "description": "Donor source entry for URL-only adapters (http, zip).",
-            "required": ["from", "url"],
-            "properties": {
-                "from": {
-                    "type": "string",
-                    "enum": ["http", "zip"]
-                },
-                "url": {
-                    "type": "string",
-                    "minLength": 1,
-                    "format": "uri"
-                },
-                "host": {
-                    "type": "string",
-                    "minLength": 1
-                },
-                "ref": {
-                    "type": "string",
-                    "minLength": 1
-                },
-                "skills": {
-                    "type": "array",
-                    "description": "Optional allowlist of skill directory names to sync from this donor. Absent / omitted → sync every skill the donor ships; empty list → donor is registered but no skills are pulled (matches `sourceByPackage` semantics).",
-                    "items": {
-                        "type": "string",
-                        "minLength": 1
-                    }
-                },
-                "sha256": {
-                    "type": "string",
-                    "minLength": 1,
-                    "description": "Optional integrity hash (zip adapter)."
                 }
             }
         },

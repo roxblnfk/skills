@@ -32,9 +32,14 @@ use LLM\Skills\Config\VendorConfig;
  *   the bouncer for *auto-discovered* donors, not for ones the user already
  *   asked for by name.
  * - A donor flagged {@see VendorConfig::$implicitTrust} is user-declared at
- *   the source level (today: every `sources[]` entry, regardless of `from`).
- *   The trust list applies to local-provider transitive discoveries only,
- *   so the planner skips it for these donors.
+ *   the source level (every project `sources[]` entry, regardless of `from`).
+ *   The trust list applies to third-party declarations only, so the planner
+ *   skips it for these donors.
+ * - A donor carrying {@see VendorConfig::$declaredBy} was declared by an
+ *   installed vendor package (`extra.skills.sources`); it is never implicit-
+ *   trusted, and every rule below — positional filters, direct-dependency
+ *   trust, the trust list — is evaluated against the declaring package's
+ *   name instead of the donor's own.
  * - A package declared as a direct dependency in the consumer's root
  *   `composer.json` (under `require` or `require-dev`) is implicitly
  *   trusted — the user already owns the decision to depend on it. This
@@ -76,13 +81,18 @@ final readonly class SyncPlanner
                 : \array_fill_keys($directDependencies, true);
             foreach ($filtered as $donor) {
                 // A donor flagged `implicitTrust` is user-declared
-                // (today: every `sources[]` entry); the trust list
-                // applies only to local-provider transitive discoveries,
-                // so we skip the check entirely.
+                // (project `sources[]` entries); the trust list applies
+                // only to third-party declarations, so we skip the
+                // check entirely. A donor carrying `declaredBy` came
+                // from a vendor package's `extra.skills.sources` and is
+                // judged by the declaring package's name — the external
+                // bundle is approved exactly when the package that
+                // pointed at it would be.
+                $trustName = $donor->declaredBy ?? $donor->packageName;
                 if (
                     $donor->implicitTrust
-                    || isset($directSet[$donor->packageName])
-                    || $trust->trusts($donor->packageName)
+                    || isset($directSet[$trustName])
+                    || $trust->trusts($trustName)
                 ) {
                     $approved[] = $donor;
                     continue;
@@ -270,7 +280,14 @@ final readonly class SyncPlanner
         $kept = [];
         $rejected = [];
         foreach ($donors as $donor) {
-            if ($options->matchesFilter($donor->packageName)) {
+            // A vendor-declared external donor travels with the package
+            // that declared it: naming `acme/foo` positionally keeps
+            // foo's remote skills too, while naming the bundle itself
+            // also works.
+            if (
+                $options->matchesFilter($donor->packageName)
+                || ($donor->declaredBy !== null && $options->matchesFilter($donor->declaredBy))
+            ) {
                 $kept[] = $donor;
             } else {
                 $rejected[] = $donor;

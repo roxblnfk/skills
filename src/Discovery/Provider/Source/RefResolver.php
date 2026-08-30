@@ -15,17 +15,20 @@ namespace LLM\Skills\Discovery\Provider\Source;
  * - **Pick the best tag** from a list — highest stable, falling
  *   back to highest semver overall, falling back to the default
  *   branch HEAD (the cascade).
- * - **Apply range constraints** — match a caret (`^X.Y.Z`) or tilde
- *   (`~X.Y.Z`) constraint against a tag list.
+ * - **Apply constraints** — match a caret (`^X.Y.Z`) or tilde
+ *   (`~X.Y.Z`) range, or an exact version (`=X.Y.Z`), against a tag
+ *   list. The exact form matches by normalized equality, so `=1.4.2`
+ *   finds `v1.4.2` and `1.4.2` alike — this is what `self.version`
+ *   refs in vendor-declared sources compile down to.
  * - **Reject what it cannot do** — {@see self::looksLikeConstraint()}
- *   flags constraint syntax outside that pair, so the config layer can
+ *   flags constraint syntax outside that set, so the config layer can
  *   answer "unsupported constraint" instead of letting the string reach
  *   the wire as a literal tag name and come back a 404.
  *
  * Composer ships a full semver implementation in `composer/semver`,
- * but the resolver here intentionally rolls a narrow subset: caret and
- * tilde, no `*` / `>=` / `<` / `||` / hyphen-range / stability-flag
- * parsing. Both supported operators follow Composer's own rules —
+ * but the resolver here intentionally rolls a narrow subset: caret,
+ * tilde and exact, no `*` / `>=` / `<` / `||` / hyphen-range /
+ * stability-flag parsing. Both supported operators follow Composer's own rules —
  * caret honours the pre-1.0 special case (`^0.y.z` locks the minor),
  * so a version `skills:add` pins on a 0.x donor resolves the way
  * Composer would; tilde has no such special case, so `~0.2` allows the
@@ -58,6 +61,16 @@ final readonly class RefResolver
      * rule without re-parsing the string.
      */
     private const CONSTRAINT_REGEX = '/^([\^~])v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/';
+
+    /**
+     * Exact-version constraint: `=` followed by one to four numeric
+     * components and an optional prerelease suffix (`=1.4.2`,
+     * `=v1.4`, `=2.0.0-beta1`). Matching is by normalized equality —
+     * the `v` prefix is ignored, missing components count as zero, and
+     * trailing zero components collapse — so the constraint finds the
+     * tag regardless of the repository's prefix convention.
+     */
+    private const EXACT_CONSTRAINT_REGEX = '/^=v?\d+(?:\.\d+){0,3}(?:-[\w.+-]+)?$/';
 
     /**
      * Syntax that is unmistakably a version constraint rather than a
@@ -157,10 +170,16 @@ final readonly class RefResolver
     }
 
     /**
-     * Resolve a caret or tilde constraint against a tag list. Returns
-     * the highest stable tag that satisfies the constraint, or null
-     * when none does (including when `$constraint` is not a
+     * Resolve a caret, tilde, or exact constraint against a tag list.
+     * Returns the highest stable tag that satisfies the constraint, or
+     * null when none does (including when `$constraint` is not a
      * constraint at all).
+     *
+     * Exact — `=` followed by a version; matches the first tag whose
+     * normalized form (`v` prefix ignored, missing components counted
+     * as zero) equals the version, so `=1.4.2` finds `v1.4.2`,
+     * `1.4.2`, and `=1.4` finds `v1.4.0`. Prerelease suffixes must
+     * match verbatim.
      *
      * Caret — bump the left-most non-zero component the constraint
      * specified:
@@ -194,6 +213,10 @@ final readonly class RefResolver
      */
     public function resolveConstraint(string $constraint, array $tags): ?string
     {
+        if (\preg_match(self::EXACT_CONSTRAINT_REGEX, $constraint) === 1) {
+            return self::resolveExact(\substr($constraint, 1), $tags);
+        }
+
         $match = \preg_match(self::CONSTRAINT_REGEX, $constraint, $m);
         if ($match !== 1) {
             return null;
@@ -266,7 +289,8 @@ final readonly class RefResolver
      */
     public function isConstraint(string $ref): bool
     {
-        return \preg_match(self::CONSTRAINT_REGEX, $ref) === 1;
+        return \preg_match(self::CONSTRAINT_REGEX, $ref) === 1
+            || \preg_match(self::EXACT_CONSTRAINT_REGEX, $ref) === 1;
     }
 
     /**
@@ -289,6 +313,65 @@ final readonly class RefResolver
     public function looksLikeConstraint(string $ref): bool
     {
         return \preg_match(self::CONSTRAINT_SYNTAX_REGEX, $ref) === 1;
+    }
+
+    /**
+     * First tag equal to `$version` under exact-match normalization,
+     * or null when none is. The tag is returned verbatim (prefix
+     * preserved) so the archive URL uses the spelling the host knows.
+     *
+     * @param list<non-empty-string> $tags
+     *
+     * @return non-empty-string|null
+     *
+     * @psalm-pure
+     */
+    private static function resolveExact(string $version, array $tags): ?string
+    {
+        $wanted = self::normaliseExact($version);
+        foreach ($tags as $tag) {
+            if (self::normaliseExact($tag) === $wanted) {
+                return $tag;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Canonical spelling for exact-match comparison: the `v` prefix is
+     * dropped, a purely numeric core is padded to three zero-trimmed
+     * components (`1.4` → `1.4.0`), and a prerelease suffix rides along
+     * verbatim. Non-numeric cores (branch-like strings) are returned
+     * as-is minus the prefix, degrading to literal comparison.
+     *
+     * @psalm-pure
+     */
+    private static function normaliseExact(string $version): string
+    {
+        $bare = \preg_replace('/^v(?=\d)/', '', $version) ?? $version;
+
+        $dash = \strpos($bare, '-');
+        $core = $dash === false ? $bare : \substr($bare, 0, $dash);
+        $suffix = $dash === false ? '' : \substr($bare, $dash);
+
+        $parts = \explode('.', $core);
+        foreach ($parts as $part) {
+            if ($part === '' || !\ctype_digit($part)) {
+                return $bare;
+            }
+        }
+        while (\count($parts) < 3) {
+            $parts[] = '0';
+        }
+        $parts = \array_map(static fn(string $p): string => (string) (int) $p, $parts);
+        // A fourth (or later) all-zero component is noise Composer adds
+        // in normalized versions — `1.2.3.0` and `1.2.3` are the same
+        // release.
+        while (\count($parts) > 3 && $parts[\count($parts) - 1] === '0') {
+            \array_pop($parts);
+        }
+
+        return \implode('.', $parts) . $suffix;
     }
 
     /**

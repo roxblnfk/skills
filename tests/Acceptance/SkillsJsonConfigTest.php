@@ -229,6 +229,51 @@ final class SkillsJsonConfigTest
 
     #[WithSkillsJson([
         'target' => 'external-target/skills',
+        'trusted' => ['acme/skills-basic'],
+        'vendor-sources' => false,
+    ])]
+    public function vendorSourcesToggleIsAcceptedAndSyncStillRuns(): void
+    {
+        // `vendor-sources: false` opts the project out of external
+        // sources declared by installed packages. No sandbox package
+        // declares any, so the observable contract here is that the key
+        // passes the strict skills.json loader and the sync proceeds
+        // normally.
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \is_file(self::EXTERNAL_TARGET . '/greeting/SKILL.md'),
+            'local donors must sync as usual with vendor-sources disabled',
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => 'external-target/skills',
+        'sources' => [
+            ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'self.version'],
+        ],
+    ])]
+    public function selfVersionRefIsRejectedInProjectSources(): void
+    {
+        // `self.version` binds a ref to the version of the vendor
+        // package declaring it — meaningless in project config, where
+        // there is no declaring package. Caught at config load, before
+        // anything touches the network.
+        $process = $this->runSync();
+        $err = $process->getErrorOutput();
+
+        Assert::notSame($process->getExitCode(), 0, 'self.version in project sources must fail the run');
+        Assert::true(
+            \str_contains($err, 'sources[0].ref')
+            && \str_contains($err, 'self.version')
+            && \str_contains($err, 'vendor package'),
+            'the error must name the field and point at extra.skills.sources. Got: ' . $err,
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => 'external-target/skills',
         'rogue' => 'value',
     ])]
     public function unknownKeyInSkillsJsonIsFatal(): void
