@@ -178,7 +178,15 @@ them are synced together.
 
 A package can also advertise skills that live **outside** the package itself — a separate
 skills repository, or a bundle shared by several integration packages — using the same
-`sources[]` vocabulary as `skills.json`:
+`sources[]` vocabulary as `skills.json`.
+
+The two lists share one syntax but answer different questions. `sources[]` in
+**`skills.json`** is the consumer's pull list: *"my project takes skills from here"* —
+you wrote it, so every entry is trusted by declaration. `sources[]` in a **package's
+`composer.json`** is a donor's address book: *"my skills live over there"* — the same
+statement `extra.skills.source` makes for in-package paths, just pointing outside. It is
+third-party input, so it only takes effect when the declaring package clears the exact
+same trust gate as its bundled skills would:
 
 ```jsonc
 // vendor/acme/foo/composer.json
@@ -218,8 +226,11 @@ skills repository, or a bundle shared by several integration packages — using 
 ## Project configuration
 
 Project-level settings live in a dedicated **`skills.json`** at the project root. The file
-is the single source of truth for everything the plugin does in your project — what to copy,
-where to put it, who to trust, whether to auto-sync.
+is the single source of truth for every decision the plugin makes in your project — what to
+copy, where to put it, who to trust, whether to auto-sync. Skill *content* may arrive from
+manifests you did not write (vendor packages, their
+[external sources](#external-sources-extraskillssources)), but whether it is allowed in is
+always governed here, by the trust lists and the `vendor-sources` toggle.
 
 ```jsonc
 // <project-root>/skills.json
@@ -251,7 +262,7 @@ where to put it, who to trust, whether to auto-sync.
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
 | `dependencies`    | object      | `{}`             | Per-package-manager config: `<id>` → `bool` (walk toggle) or `{ enabled, trusted, trusted-replace }`. Ids: `composer` (walk default `true`), `npm`/`go` (future, default `false`). `trusted` extends the manager's trust list; `trusted-replace` makes it fully replace the built-in and direct-dependency trust. Deprecated aliases `trusted`, `trusted-replace`, `local` fold into this block. See [Trust](#trust) and [Donor sources](#donor-sources). |
 | `vendor-sources`  | bool        | `true`           | Allow installed packages to advertise external sources via their own `extra.skills.sources` (gated by the same trust rules as the declaring package). Set to `false` to ignore them entirely. See [External sources](#external-sources-extraskillssources). |
-| `sources`         | object[]    | `[]`             | Explicit donor source entries. Managed by `skills:add`; documented in [Donor sources](#donor-sources). |
+| `sources`         | object[]    | `[]`             | The project's own donor source entries — implicitly trusted, you wrote them. Managed by `skills:add`; documented in [Donor sources](#donor-sources). Not to be confused with the trust-gated [`extra.skills.sources`](#external-sources-extraskillssources) a vendor package declares for itself. |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
