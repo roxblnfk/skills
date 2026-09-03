@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.0](https://github.com/roxblnfk/skills/compare/1.11.1...1.12.0) (2026-09-03)
+
+
+### Features
+
+* vendor packages can declare external skill sources (`extra.skills.sources`) ([#41](https://github.com/roxblnfk/skills/issues/41)) ([67e04cc](https://github.com/roxblnfk/skills/commit/67e04cc51b3d0dabeb7225706fc8aa8d9da6f273))
+
+
+### Bug Fixes
+
+* **schema:** drop unimplemented url-only adapters from `sources[].from` autocomplete ([67e04cc](https://github.com/roxblnfk/skills/commit/67e04cc51b3d0dabeb7225706fc8aa8d9da6f273))
+
 ## [1.11.1](https://github.com/roxblnfk/skills/compare/1.11.0...1.11.1) (2026-08-26)
 
 
