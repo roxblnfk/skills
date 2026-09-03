@@ -549,6 +549,48 @@ final class SourceProviderTest
         };
     }
 
+    public function vendorDeclaredRefIsAttributedInsteadOfImplicitlyTrusted(): void
+    {
+        // A ref carrying `declaredBy` came from a vendor package's
+        // `extra.skills.sources` — third-party input. The donor must
+        // carry the attribution for the planner's trust check and must
+        // NOT get the implicit trust that user-declared entries enjoy.
+        $extracted = $this->makeExtracted(
+            'vendor-declared',
+            \json_encode([
+                'name' => 'acme/bundle',
+                'extra' => ['skills' => ['source' => 'skills']],
+            ]),
+        );
+        $ref = new RemoteDonorRef(
+            url: 'https://example.com/bundle.zip',
+            ref: 'v1.0.0',
+            provenance: 'github',
+            skillFilter: ['deploy'],
+            packageHint: 'acme/bundle',
+            declaredBy: ['acme/foo'],
+        );
+        $fetcher = new class($extracted) implements RemoteFetcher {
+            public function __construct(private readonly Path $extracted) {}
+
+            public function fetch(RemoteDonorRef $ref): Path
+            {
+                return $this->extracted;
+            }
+        };
+
+        $provider = new SourceProvider($this->sourceWithRefs($ref), $fetcher);
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        $donor = $result->donors[0];
+        Assert::same($donor->packageName, 'acme/bundle');
+        Assert::same($donor->declaredBy, ['acme/foo']);
+        Assert::false($donor->implicitTrust);
+        Assert::same($donor->provenance, 'github');
+        Assert::same($donor->skillFilter, ['deploy']);
+    }
+
     private function sourceWithRefs(RemoteDonorRef ...$refs): DonorRefSource
     {
         return new class($refs) implements DonorRefSource {

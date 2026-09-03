@@ -35,6 +35,16 @@ use LLM\Skills\Discovery\Provider\ProviderId;
 final readonly class SourceEntry
 {
     /**
+     * Ref alias that binds the entry to the installed version of the
+     * vendor package declaring it (`extra.skills.sources` only): a
+     * released version resolves to the tag whose normalized form equals
+     * that version, a branch install (`dev-main`, `1.x-dev`) resolves to
+     * the branch itself. Rejected in project config, where there is no
+     * declaring package to bind to.
+     */
+    public const SELF_VERSION = 'self.version';
+
+    /**
      * @param non-empty-string $from adapter id, e.g. {@see ProviderId::GITHUB}
      * @param non-empty-string|null $package adapter-namespaced identifier (`acme/skills`,
      *         `@scope/pkg`, `github.com/owner/mod`, …). The identifier for name-based
@@ -46,8 +56,9 @@ final readonly class SourceEntry
      *         "use the adapter's default" (e.g. `https://api.github.com` for github).
      * @param non-empty-string|null $ref version pin — either a constraint the
      *         {@see \LLM\Skills\Discovery\Provider\Source\RefResolver} resolves against the
-     *         donor's tag list (`^1.2.3`, `~1.2`) or a literal ref the host accepts verbatim
-     *         (`v1.2.3`, `main`, a full SHA). Absent means the adapter picks the latest
+     *         donor's tag list (`^1.2.3`, `~1.2`, `=1.2.3`) or a literal ref the host accepts
+     *         verbatim (`v1.2.3`, `main`, a full SHA). Vendor-declared entries may also use
+     *         the {@see self::SELF_VERSION} alias. Absent means the adapter picks the latest
      *         stable tag, falling back to the default branch HEAD. Constraint flavours the
      *         resolver does not implement (`1.*`, `>=1.0`, `^1 || ^2`) are rejected by the
      *         config mapper rather than passed through as a literal ref.

@@ -310,4 +310,48 @@ final class RefResolverTest
         Assert::false($r->looksLikeConstraint('feature/some-thing'));
         Assert::false($r->looksLikeConstraint('9f8e7d6c5b4a3928170615243342516079889900'));
     }
+
+    public function isConstraintMatchesExactShapes(): void
+    {
+        $r = new RefResolver();
+
+        Assert::true($r->isConstraint('=1.2.3'));
+        Assert::true($r->isConstraint('=v1.2.3'));
+        Assert::true($r->isConstraint('=1.2'));
+        Assert::true($r->isConstraint('=1'));
+        Assert::true($r->isConstraint('=1.2.3.4'));
+        Assert::true($r->isConstraint('=1.0.0-beta1'));
+
+        // `=` followed by a non-version stays unrecognised — the config
+        // layer rejects it as an unsupported constraint instead of the
+        // host 404-ing on a literal `=main` tag.
+        Assert::false($r->isConstraint('=main'));
+        Assert::false($r->isConstraint('='));
+        Assert::true($r->looksLikeConstraint('=main'));
+    }
+
+    public function exactConstraintMatchesByNormalizedEquality(): void
+    {
+        $r = new RefResolver();
+
+        // The `v` prefix is ignored on both sides, and the tag is
+        // returned verbatim so the archive URL keeps the host's spelling.
+        Assert::same($r->resolveConstraint('=1.4.2', ['v1.0.0', 'v1.4.2', 'v2.0.0']), 'v1.4.2');
+        Assert::same($r->resolveConstraint('=v1.4.2', ['1.4.2']), '1.4.2');
+
+        // Missing components count as zero; a trailing zero fourth
+        // component collapses (Composer-normalized version noise).
+        Assert::same($r->resolveConstraint('=1.4', ['v1.4.0']), 'v1.4.0');
+        Assert::same($r->resolveConstraint('=1.4.0', ['v1.4']), 'v1.4');
+        Assert::same($r->resolveConstraint('=1.2.3.0', ['1.2.3']), '1.2.3');
+
+        // Exact means exact — no range semantics.
+        Assert::same($r->resolveConstraint('=1.4.2', ['v1.4.3']), null);
+        Assert::same($r->resolveConstraint('=1.4.2', []), null);
+
+        // Prerelease suffixes must match verbatim.
+        Assert::same($r->resolveConstraint('=1.0.0-beta1', ['v1.0.0-beta1']), 'v1.0.0-beta1');
+        Assert::same($r->resolveConstraint('=1.0.0-beta1', ['v1.0.0']), null);
+        Assert::same($r->resolveConstraint('=1.0.0', ['v1.0.0-beta1']), null);
+    }
 }

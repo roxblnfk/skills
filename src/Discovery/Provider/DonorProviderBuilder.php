@@ -17,6 +17,7 @@ use LLM\Skills\Discovery\Provider\Source\Http\ComposerHttpClient;
 use LLM\Skills\Discovery\Provider\Source\HttpArchiveFetcher;
 use LLM\Skills\Discovery\Provider\Source\SourceProvider;
 use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
+use LLM\Skills\Discovery\Provider\Source\VendorDeclaredRefSource;
 
 /**
  * Constructs the {@see CompositeDonorProvider} for an entrypoint.
@@ -35,14 +36,24 @@ use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
  *  1. **`ComposerProvider`** — local, honours the `dependencies.composer`
  *     toggle. Inactive when no Composer instance is supplied or when
  *     the toggle is `false`.
- *  2. **`SourceProvider`** — wired with a {@see SkillsJsonDonorRefSource}
- *     (reads `sources[]` from `skills.json`) and a {@see HttpArchiveFetcher}
- *     (downloads + extracts archives into `vendor/llm-skills/cache/...`).
- *     Inactive when `sources[]` is empty.
+ *  2. **`SourceProvider` over vendor declarations** — wired with a
+ *     {@see VendorDeclaredRefSource} (reads `extra.skills.sources`
+ *     from installed packages). Inactive when no package declares
+ *     external sources, when no Composer instance is supplied, or when
+ *     the project sets `vendor-sources: false`.
+ *  3. **`SourceProvider` over project config** — wired with a
+ *     {@see SkillsJsonDonorRefSource} (reads `sources[]` from
+ *     `skills.json`). Inactive when `sources[]` is empty.
  *
- * Source is wired LAST so the composite's "later-wins" semantic
- * makes explicit source entries override transitive local discoveries
- * of the same package name.
+ * Both source providers share the {@see HttpArchiveFetcher} (downloads
+ * + extracts archives into `vendor/llm-skills/cache/...`), so two
+ * origins pointing at the same archive resolve to one cached copy.
+ *
+ * Sources are wired after local, project entries LAST, so the
+ * composite's "later-wins" semantic makes explicit source entries
+ * override transitive local discoveries of the same package name, and
+ * the project's own entry override a vendor-declared one for the same
+ * donor.
  *
  * The builder does a **best-effort** read of `skills.json` to pick up
  * the `dependencies` toggles. If that read throws (malformed config), the
@@ -70,13 +81,14 @@ final readonly class DonorProviderBuilder
         $composerEnabled = $this->resolveManagerEnabled($projectRoot, $extra, ProviderId::COMPOSER);
 
         $local = new ComposerProvider($composer, enabled: $composerEnabled);
-        $source = $this->buildSourceProvider($composer);
+        [$vendorSource, $projectSource] = $this->buildSourceProviders($composer);
 
-        return new CompositeDonorProvider($local, $source);
+        return new CompositeDonorProvider($local, $vendorSource, $projectSource);
     }
 
     /**
-     * Build the source provider. Wires the GitHub adapter, an HTTP
+     * Build the two source providers — vendor-declared entries first,
+     * project entries second. Wires the GitHub/GitLab adapters, an HTTP
      * client (so auth.json credentials apply), and an archive fetcher
      * into the {@see SourceProvider} skeleton.
      *
@@ -93,8 +105,15 @@ final readonly class DonorProviderBuilder
      *   from `<cwd>`. This matters because the local Composer donor
      *   is just one provider — refusing to wire source when local is
      *   unavailable would defeat the multi-source design.
+     *
+     * Vendor declarations, however, do require a Composer instance —
+     * they live in the installed packages' metadata. Without one, the
+     * {@see VendorDeclaredRefSource} simply reports no refs.
+     *
+     * @return array{SourceProvider, SourceProvider} vendor-declared provider first,
+     *         project provider second — the wiring order the composite relies on
      */
-    private function buildSourceProvider(?Composer $composer): SourceProvider
+    private function buildSourceProviders(?Composer $composer): array
     {
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
         $httpClient = ComposerHttpClient::fromConfig($config);
@@ -103,7 +122,6 @@ final readonly class DonorProviderBuilder
             new GithubAdapter($httpClient),
             new GitlabAdapter($httpClient),
         );
-        $source = new SkillsJsonDonorRefSource($registry, $this->mapper);
         $fetcher = new HttpArchiveFetcher(
             $httpClient,
             $composer !== null
@@ -112,7 +130,13 @@ final readonly class DonorProviderBuilder
             CachePathBuilder::fromVendorDir($config->get('vendor-dir')),
         );
 
-        return new SourceProvider($source, $fetcher);
+        $vendorSource = new VendorDeclaredRefSource($composer, $registry, projectMapper: $this->mapper);
+        $projectSource = new SkillsJsonDonorRefSource($registry, $this->mapper);
+
+        return [
+            new SourceProvider($vendorSource, $fetcher),
+            new SourceProvider($projectSource, $fetcher),
+        ];
     }
 
     /**

@@ -56,6 +56,7 @@ final readonly class ExternalProjectConfigLoader
         'auto-sync',
         'path-from-root',
         'local',
+        'vendor-sources',
         'sources',
         'remote',
     ];

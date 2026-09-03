@@ -1573,6 +1573,69 @@ final class ProjectConfigMapperTest
         Assert::same($resolution->usedDeprecatedDependencyKeys, []);
     }
 
+    // ── vendor-sources toggle ──
+
+    public function vendorSourcesDefaultsToTrue(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::true($config->vendorSources);
+    }
+
+    public function vendorSourcesFalseIsMapped(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['vendor-sources' => false],
+        ]);
+
+        Assert::false($config->vendorSources);
+    }
+
+    public function vendorSourcesRejectsNonBoolean(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('vendor-sources must be a boolean');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['vendor-sources' => 'yes']]);
+    }
+
+    public function vendorSourcesIsReportedAsShadowedInlineKey(): void
+    {
+        $this->writeSkillsJson(['target' => '.agents/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['vendor-sources' => false]],
+        );
+
+        Assert::true(\in_array('vendor-sources', $resolution->ignoredInlineKeys, true));
+    }
+
+    // ── ref flavours in sources[] ──
+
+    public function sourcesRefSelfVersionIsRejectedInProjectConfig(): void
+    {
+        // `self.version` binds to the version of the declaring vendor
+        // package; project config has no such package, so the alias is
+        // caught at load time instead of 404-ing as a literal tag.
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('"self.version" is only supported in a vendor package');
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => [
+            'sources' => [['from' => 'github', 'package' => 'acme/skills', 'ref' => 'self.version']],
+        ]]);
+    }
+
+    public function sourcesRefExactConstraintIsAccepted(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => [
+            'sources' => [['from' => 'github', 'package' => 'acme/skills', 'ref' => '=1.2.3']],
+        ]]);
+
+        Assert::count($config->sources, 1);
+        Assert::same($config->sources[0]->ref, '=1.2.3');
+    }
+
     /**
      * @param array<string, mixed> $data
      */

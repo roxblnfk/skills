@@ -63,6 +63,11 @@ final readonly class ProjectConfig
      *         model until the per-manager providers land. Empty when the block is absent
      *         (legacy `trusted` / `local` forms leave it empty and feed the flat fields
      *         directly).
+     * @param bool $vendorSources honours the `vendor-sources` toggle. When `false`, external
+     *         sources declared by vendor packages under their own `extra.skills.sources` are
+     *         ignored entirely — only the project's own `sources[]` and local package
+     *         directories contribute donors. Default `true`: a vendor-declared source is
+     *         still gated by the same trust rules as the declaring package itself.
      *
      * @psalm-mutation-free
      */
@@ -77,6 +82,7 @@ final readonly class ProjectConfig
         public array $managerEnabled = [],
         public array $sources = [],
         public array $dependencies = [],
+        public bool $vendorSources = true,
     ) {}
 
     /**
@@ -98,6 +104,7 @@ final readonly class ProjectConfig
             managerEnabled: [],
             sources: [],
             dependencies: [],
+            vendorSources: true,
         );
     }
 
@@ -136,6 +143,7 @@ final readonly class ProjectConfig
             $this->managerEnabled,
             $this->sources,
             $this->dependencies,
+            $this->vendorSources,
         );
     }
 
@@ -157,6 +165,7 @@ final readonly class ProjectConfig
             $this->managerEnabled,
             $this->sources,
             $this->dependencies,
+            $this->vendorSources,
         );
     }
 }

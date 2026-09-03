@@ -32,9 +32,15 @@ use LLM\Skills\Config\VendorConfig;
  *   the bouncer for *auto-discovered* donors, not for ones the user already
  *   asked for by name.
  * - A donor flagged {@see VendorConfig::$implicitTrust} is user-declared at
- *   the source level (today: every `sources[]` entry, regardless of `from`).
- *   The trust list applies to local-provider transitive discoveries only,
- *   so the planner skips it for these donors.
+ *   the source level (every project `sources[]` entry, regardless of `from`).
+ *   The trust list applies to third-party declarations only, so the planner
+ *   skips it for these donors.
+ * - A donor carrying {@see VendorConfig::$declaredBy} was declared by one or
+ *   more installed vendor packages (`extra.skills.sources`); it is never
+ *   implicit-trusted, and every rule below — positional filters, direct-
+ *   dependency trust, the trust list — is evaluated against the declaring
+ *   packages' names instead of the donor's own, passing when any of them
+ *   clears it.
  * - A package declared as a direct dependency in the consumer's root
  *   `composer.json` (under `require` or `require-dev`) is implicitly
  *   trusted — the user already owns the decision to depend on it. This
@@ -76,14 +82,14 @@ final readonly class SyncPlanner
                 : \array_fill_keys($directDependencies, true);
             foreach ($filtered as $donor) {
                 // A donor flagged `implicitTrust` is user-declared
-                // (today: every `sources[]` entry); the trust list
-                // applies only to local-provider transitive discoveries,
-                // so we skip the check entirely.
-                if (
-                    $donor->implicitTrust
-                    || isset($directSet[$donor->packageName])
-                    || $trust->trusts($donor->packageName)
-                ) {
+                // (project `sources[]` entries); the trust list applies
+                // only to third-party declarations, so we skip the
+                // check entirely. A donor carrying `declaredBy` came
+                // from vendor packages' `extra.skills.sources` and is
+                // judged by the declaring packages' names — the external
+                // bundle is approved exactly when any package that
+                // pointed at it would be.
+                if ($donor->implicitTrust || self::anyTrusted($donor->trustNames(), $directSet, $trust)) {
                     $approved[] = $donor;
                     continue;
                 }
@@ -150,6 +156,39 @@ final readonly class SyncPlanner
             }
             $current = $parent;
         }
+    }
+
+    /**
+     * @param non-empty-list<non-empty-string> $names
+     * @param array<non-empty-string, true> $directSet
+     *
+     * @psalm-mutation-free
+     */
+    private static function anyTrusted(array $names, array $directSet, TrustedVendors $trust): bool
+    {
+        foreach ($names as $name) {
+            if (isset($directSet[$name]) || $trust->trusts($name)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param non-empty-list<non-empty-string> $names
+     *
+     * @psalm-mutation-free
+     */
+    private static function anyMatchesFilter(array $names, SyncOptions $options): bool
+    {
+        foreach ($names as $name) {
+            if ($options->matchesFilter($name)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -270,7 +309,11 @@ final readonly class SyncPlanner
         $kept = [];
         $rejected = [];
         foreach ($donors as $donor) {
-            if ($options->matchesFilter($donor->packageName)) {
+            // A vendor-declared external donor travels with the packages
+            // that declared it: naming `acme/foo` positionally keeps
+            // foo's remote skills too, while naming the bundle itself
+            // also works.
+            if (self::anyMatchesFilter([$donor->packageName, ...$donor->declaredBy], $options)) {
                 $kept[] = $donor;
             } else {
                 $rejected[] = $donor;

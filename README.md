@@ -174,12 +174,64 @@ single package whose skills live per component:
 Every listed directory is scanned the same way as a single `source`; skills from all of
 them are synced together.
 
+### External sources (`extra.skills.sources`)
+
+A package can also advertise skills that live **outside** the package itself — a separate
+skills repository, or a bundle shared by several integration packages — using the same
+`sources[]` vocabulary as `skills.json`.
+
+The two lists share one syntax but answer different questions. `sources[]` in
+**`skills.json`** is the consumer's pull list: *"my project takes skills from here"* —
+you wrote it, so every entry is trusted by declaration. `sources[]` in a **package's
+`composer.json`** is a donor's address book: *"my skills live over there"* — the same
+statement `extra.skills.source` makes for in-package paths, just pointing outside. It is
+third-party input, so it only takes effect when the declaring package clears the exact
+same trust gate as its bundled skills would:
+
+```jsonc
+// vendor/acme/foo/composer.json
+{
+  "extra": {
+    "skills": {
+      "source": "resources/skills",                 // optional: in-package skills
+      "sources": [                                   // external skills
+        { "from": "github", "package": "acme/project-skills", "ref": "self.version" },
+        { "from": "gitlab", "package": "acme/shared-skills", "skills": ["deploy"] }
+      ]
+    }
+  }
+}
+```
+
+- **Trust follows the declaring package.** The external bundle is fetched and synced exactly
+  when `acme/foo` itself would be allowed to donate skills (built-in/project trust list,
+  direct dependency, or a positional `skills:update acme/foo`). Unlike the project's own
+  `sources[]`, a vendor-declared entry is never implicitly trusted. Projects can turn the
+  feature off entirely with `"vendor-sources": false` in `skills.json`.
+- **`ref: "self.version"`** pins the external source to the installed version of the
+  declaring package — made for monorepos that tag the skills repository in lockstep. A
+  released version resolves to the matching tag (`1.4.2` finds `v1.4.2` or `1.4.2`); a
+  branch install maps to the branch (`dev-main` → `main`, `1.x-dev` → `1.x`). A plain
+  exact pin is also available as `"ref": "=1.4.2"` (works in `skills.json` too).
+- **Shared bundles dedupe.** Several packages pointing at the same source and ref produce a
+  single fetch and a single donor; their `skills` allowlists are merged (an entry without
+  an allowlist means "all skills" and wins the merge), and the donor is approved when
+  **any** of the declaring packages is trusted (or named positionally).
+- **No chaining.** The fetched archive's own `extra.skills.sources` is ignored — depth is
+  exactly one. Its `extra.skills.source` (path inside the archive) works as usual.
+- The `dir` adapter is not allowed here — for in-package paths use `extra.skills.source`.
+- Failures (unknown adapter, unresolvable ref, fetch error) are reported per entry as
+  `acme/foo → github:acme/project-skills — <reason>` and never block the rest of the sync.
+
 
 ## Project configuration
 
 Project-level settings live in a dedicated **`skills.json`** at the project root. The file
-is the single source of truth for everything the plugin does in your project — what to copy,
-where to put it, who to trust, whether to auto-sync.
+is the single source of truth for every decision the plugin makes in your project — what to
+copy, where to put it, who to trust, whether to auto-sync. Skill *content* may arrive from
+manifests you did not write (vendor packages, their
+[external sources](#external-sources-extraskillssources)), but whether it is allowed in is
+always governed here, by the trust lists and the `vendor-sources` toggle.
 
 ```jsonc
 // <project-root>/skills.json
@@ -210,7 +262,8 @@ where to put it, who to trust, whether to auto-sync.
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
 | `dependencies`    | object      | `{}`             | Per-package-manager config: `<id>` → `bool` (walk toggle) or `{ enabled, trusted, trusted-replace }`. Ids: `composer` (walk default `true`), `npm`/`go` (future, default `false`). `trusted` extends the manager's trust list; `trusted-replace` makes it fully replace the built-in and direct-dependency trust. Deprecated aliases `trusted`, `trusted-replace`, `local` fold into this block. See [Trust](#trust) and [Donor sources](#donor-sources). |
-| `sources`         | object[]    | `[]`             | Explicit donor source entries. Managed by `skills:add`; documented in [Donor sources](#donor-sources). |
+| `vendor-sources`  | bool        | `true`           | Allow installed packages to advertise external sources via their own `extra.skills.sources` (gated by the same trust rules as the declaring package). Set to `false` to ignore them entirely. See [External sources](#external-sources-extraskillssources). |
+| `sources`         | object[]    | `[]`             | The project's own donor source entries — implicitly trusted, you wrote them. Managed by `skills:add`; documented in [Donor sources](#donor-sources). Not to be confused with the trust-gated [`extra.skills.sources`](#external-sources-extraskillssources) a vendor package declares for itself. |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
 directory. Redirect to `.claude/skills`, `.cursor/skills`, etc. for single-agent projects.
@@ -440,10 +493,10 @@ Shipped in [`resources/trusted-composer.txt`](resources/trusted-composer.txt); e
 `llm/skills` reads donors from two axes:
 
 - **Local providers** — walk a manifest the project already owns. Today only `composer`; `npm` and `go` are reserved in the vocabulary but ship later.
-- **Remote providers** — fetch an explicit ref from a URL (currently GitHub and GitLab; the format is forward-compatible with Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`).
+- **Remote providers** — fetch an explicit ref from a URL (currently GitHub and GitLab; the format is forward-compatible with Bitbucket, npm registry, Go module proxy, private Packagist, `http`/`zip`). Entries come from the project's own `sources[]` **and** from installed packages' `extra.skills.sources` (see [External sources](#external-sources-extraskillssources)).
 - **Local directory donors** — the `dir` adapter reads a directory already on disk (a shared skills folder next to the repo, a monorepo sibling); no fetch, no cache. See [Local directory donors](#local-directory-donors-dir).
 
-Both axes coexist. When the same package name arrives via both, the **`sources` entry wins** (you typed it; the transitive Composer pickup is treated as stale) and the displaced donor is logged under `-v`.
+The axes coexist. When the same package name arrives via more than one, the later origin wins — project `sources[]` over vendor-declared, either of those over the transitive Composer pickup — and the displaced donor is logged under `-v`.
 
 ### `skills:add` — register a remote donor
 
