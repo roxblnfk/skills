@@ -43,12 +43,13 @@ final readonly class RemoteDonorRef
      *         package name when the archive ships skills without a `composer.json` —
      *         the only stable identifier we have for ad-hoc skill repos. `null` for
      *         URL-only entries the adapter couldn't reduce to a vendor/package pair.
-     * @param non-empty-string|null $declaredBy name of the installed Composer package whose
-     *         `extra.skills.sources` produced this ref; `null` for refs the user declared
+     * @param list<non-empty-string> $declaredBy names of the installed Composer packages whose
+     *         `extra.skills.sources` produced this ref — several when they point at the same
+     *         source and ref and were merged into one fetch. Empty for refs the user declared
      *         directly (project `sources[]`, `skills:add`). Carried through to
      *         {@see \LLM\Skills\Config\VendorConfig::$declaredBy} so trust follows the
-     *         declaring package instead of being implicit, and woven into {@see label()}
-     *         so diagnostics name both parties.
+     *         declaring packages instead of being implicit, and woven into {@see label()}
+     *         so diagnostics name every party.
      *
      * @psalm-mutation-free
      */
@@ -58,7 +59,7 @@ final readonly class RemoteDonorRef
         public ?string $provenance = null,
         public ?array $skillFilter = null,
         public ?string $packageHint = null,
-        public ?string $declaredBy = null,
+        public array $declaredBy = [],
     ) {}
 
     /**
@@ -81,8 +82,9 @@ final readonly class RemoteDonorRef
      * Falls back to the URL when the adapter could not reduce the entry
      * to a `vendor/repo` pair, which is the only identifier a URL-only
      * entry has. Vendor-declared refs are prefixed with the declaring
-     * package (`acme/foo → github:acme/skills`) so a failure names the
-     * `composer.json` the entry actually lives in.
+     * package(s) (`acme/foo → github:acme/skills`,
+     * `acme/one, acme/two → github:acme/bundle`) so a failure names
+     * every `composer.json` the entry actually lives in.
      *
      * @return non-empty-string
      *
@@ -92,6 +94,6 @@ final readonly class RemoteDonorRef
     {
         $own = ($this->provenance ?? 'source') . ':' . ($this->packageHint ?? $this->url);
 
-        return $this->declaredBy === null ? $own : $this->declaredBy . ' → ' . $own;
+        return $this->declaredBy === [] ? $own : \implode(', ', $this->declaredBy) . ' → ' . $own;
     }
 }

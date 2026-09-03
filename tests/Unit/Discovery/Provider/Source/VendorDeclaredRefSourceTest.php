@@ -98,7 +98,7 @@ final class VendorDeclaredRefSourceTest
         $refs = $this->collect($source->refs($this->root()));
 
         Assert::count($refs, 1);
-        Assert::same($refs[0]->declaredBy, 'acme/foo');
+        Assert::same($refs[0]->declaredBy, ['acme/foo']);
         Assert::same($refs[0]->provenance, 'github');
         Assert::same($refs[0]->packageHint, 'acme/skills');
         Assert::same($refs[0]->skillFilter, ['deploy']);
@@ -218,7 +218,31 @@ final class VendorDeclaredRefSourceTest
 
         Assert::count($refs, 1);
         Assert::same($refs[0]->skillFilter, ['deploy', 'review']);
-        Assert::same($refs[0]->declaredBy, 'acme/one');
+        Assert::same($refs[0]->declaredBy, ['acme/one', 'acme/two']);
+    }
+
+    public function sharedBundleFailureNamesEveryDeclarer(): void
+    {
+        // A resolve failure on a merged entry must point at both
+        // composer.json files it lives in, not just the first one seen.
+        $registry = new HostAdapterRegistry(self::stubAdapter('github', static function (SourceEntry $entry): RemoteDonorRef {
+            throw new RemoteResolveException($entry, 'no matching tag');
+        }));
+        $composer = $this->composerWith(
+            self::declaringPackage('acme/one', '1.0.0', [
+                ['from' => 'github', 'package' => 'acme/bundle', 'ref' => '^9.0'],
+            ]),
+            self::declaringPackage('acme/two', '1.0.0', [
+                ['from' => 'github', 'package' => 'acme/bundle', 'ref' => '^9.0'],
+            ]),
+        );
+        $source = new VendorDeclaredRefSource($composer, $registry);
+
+        $this->collect($source->refs($this->root()));
+
+        Assert::count($source->failures(), 1);
+        Assert::string($source->failures()[0]->describe())
+            ->contains('acme/one, acme/two → github:acme/bundle');
     }
 
     public function absentAllowlistAbsorbsTheUnion(): void
@@ -277,7 +301,7 @@ final class VendorDeclaredRefSourceTest
         $refs = $this->collect($source->refs($this->root()));
 
         Assert::count($refs, 1);
-        Assert::same($refs[0]->declaredBy, 'acme/good');
+        Assert::same($refs[0]->declaredBy, ['acme/good']);
         Assert::count($source->failures(), 1);
         Assert::string($source->failures()[0]->describe())
             ->contains('acme/broken')

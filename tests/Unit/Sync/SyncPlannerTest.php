@@ -985,7 +985,7 @@ final class SyncPlannerTest
     {
         // The external bundle's own name matches no trust pattern — the
         // approval must come from the declaring package.
-        $donor = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $donor = $this->donor('ext/bundle')->withDeclaredBy(['acme/foo']);
         $plan = $this->planner()->plan(
             donors: [$donor],
             project: ProjectConfig::default(),
@@ -1003,7 +1003,7 @@ final class SyncPlannerTest
         // Even a bundle whose OWN name matches a trust pattern must be
         // judged by its declarer: the declaration is the third-party
         // input, not the bundle name it advertises.
-        $donor = $this->donor('acme/bundle')->withDeclaredBy('evil/payload');
+        $donor = $this->donor('acme/bundle')->withDeclaredBy(['evil/payload']);
         $plan = $this->planner()->plan(
             donors: [$donor],
             project: ProjectConfig::default(),
@@ -1018,7 +1018,7 @@ final class SyncPlannerTest
 
     public function vendorDeclaredDonorInheritsDirectDependencyTrust(): void
     {
-        $donor = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $donor = $this->donor('ext/bundle')->withDeclaredBy(['acme/foo']);
         $plan = $this->planner()->plan(
             donors: [$donor],
             project: ProjectConfig::default(),
@@ -1037,7 +1037,7 @@ final class SyncPlannerTest
         // `skills:update acme/foo` must pull foo's external skills too;
         // an unrelated donor is still filtered out.
         $local = $this->donor('acme/foo');
-        $declared = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $declared = $this->donor('ext/bundle')->withDeclaredBy(['acme/foo']);
         $other = $this->donor('other/pkg');
         $plan = $this->planner()->plan(
             donors: [$local, $declared, $other],
@@ -1054,9 +1054,58 @@ final class SyncPlannerTest
         Assert::same($plan->filteredOutDonors[0]->packageName, 'other/pkg');
     }
 
+    public function sharedBundleIsApprovedWhenAnyDeclarerIsTrusted(): void
+    {
+        // Two packages declare the same bundle; only the second one is
+        // trusted. The merge order must not decide the verdict — one
+        // trusted declarer is enough.
+        $donor = $this->donor('ext/bundle')->withDeclaredBy(['evil/payload', 'acme/foo']);
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::fromStrings('acme/*'),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->skippedUntrustedNames, []);
+    }
+
+    public function sharedBundleIsSkippedWhenNoDeclarerIsTrusted(): void
+    {
+        $donor = $this->donor('ext/bundle')->withDeclaredBy(['evil/payload', 'shady/other']);
+        $plan = $this->planner()->plan(
+            donors: [$donor],
+            project: ProjectConfig::default(),
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::fromStrings('acme/*'),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same($plan->approvedDonors, []);
+        Assert::same($plan->skippedUntrustedNames, ['ext/bundle']);
+    }
+
+    public function positionalFilterOnAnyDeclarerKeepsTheSharedBundle(): void
+    {
+        // `skills:update acme/two` names the second declarer only.
+        $declared = $this->donor('ext/bundle')->withDeclaredBy(['acme/one', 'acme/two']);
+        $plan = $this->planner()->plan(
+            donors: [$declared],
+            project: ProjectConfig::default(),
+            options: $this->optionsWithFilters('acme/two'),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+
+        Assert::same(\count($plan->approvedDonors), 1);
+        Assert::same($plan->approvedDonors[0]->packageName, 'ext/bundle');
+    }
+
     public function positionalFilterOnTheBundleNameAlsoKeepsTheDeclaredDonor(): void
     {
-        $declared = $this->donor('ext/bundle')->withDeclaredBy('acme/foo');
+        $declared = $this->donor('ext/bundle')->withDeclaredBy(['acme/foo']);
         $plan = $this->planner()->plan(
             donors: [$declared],
             project: ProjectConfig::default(),

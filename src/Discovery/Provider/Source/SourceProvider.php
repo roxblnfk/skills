@@ -347,7 +347,7 @@ final readonly class SourceProvider implements DonorProvider
         // carries through to the enumerator via
         // {@see VendorConfig::$skillFilter}; `null` keeps the default
         // "sync every skill" behaviour.
-        if ($ref instanceof RemoteDonorRef && $ref->declaredBy !== null) {
+        if ($ref instanceof RemoteDonorRef && $ref->declaredBy !== []) {
             return $donor->withDeclaredBy($ref->declaredBy);
         }
 

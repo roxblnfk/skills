@@ -215,7 +215,8 @@ same trust gate as its bundled skills would:
   exact pin is also available as `"ref": "=1.4.2"` (works in `skills.json` too).
 - **Shared bundles dedupe.** Several packages pointing at the same source and ref produce a
   single fetch and a single donor; their `skills` allowlists are merged (an entry without
-  an allowlist means "all skills" and wins the merge).
+  an allowlist means "all skills" and wins the merge), and the donor is approved when
+  **any** of the declaring packages is trusted (or named positionally).
 - **No chaining.** The fetched archive's own `extra.skills.sources` is ignored — depth is
   exactly one. Its `extra.skills.source` (path inside the archive) works as usual.
 - The `dir` adapter is not allowed here — for in-package paths use `extra.skills.source`.

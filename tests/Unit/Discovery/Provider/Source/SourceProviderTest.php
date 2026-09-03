@@ -568,7 +568,7 @@ final class SourceProviderTest
             provenance: 'github',
             skillFilter: ['deploy'],
             packageHint: 'acme/bundle',
-            declaredBy: 'acme/foo',
+            declaredBy: ['acme/foo'],
         );
         $fetcher = new class($extracted) implements RemoteFetcher {
             public function __construct(private readonly Path $extracted) {}
@@ -585,7 +585,7 @@ final class SourceProviderTest
         Assert::count($result->donors, 1);
         $donor = $result->donors[0];
         Assert::same($donor->packageName, 'acme/bundle');
-        Assert::same($donor->declaredBy, 'acme/foo');
+        Assert::same($donor->declaredBy, ['acme/foo']);
         Assert::false($donor->implicitTrust);
         Assert::same($donor->provenance, 'github');
         Assert::same($donor->skillFilter, ['deploy']);

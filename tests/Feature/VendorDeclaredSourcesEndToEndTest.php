@@ -117,7 +117,7 @@ final class VendorDeclaredSourcesEndToEndTest
         Assert::count($result->donors, 1);
         $donor = $result->donors[0];
         Assert::same($donor->packageName, 'acme/project-skills');
-        Assert::same($donor->declaredBy, 'acme/foo');
+        Assert::same($donor->declaredBy, ['acme/foo']);
         Assert::same($donor->provenance, 'github');
         Assert::false($donor->implicitTrust, 'vendor-declared sources must not be implicit-trusted');
 
@@ -190,6 +190,7 @@ final class VendorDeclaredSourcesEndToEndTest
         Assert::same($result->failures, []);
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->skillFilter, ['deploy', 'review']);
+        Assert::same($result->donors[0]->declaredBy, ['acme/integration-a', 'acme/integration-b']);
         Assert::same($this->httpHits[$zipballUrl] ?? 0, 1, 'the shared bundle must be downloaded exactly once');
 
         // The unioned allowlist drives enumeration: both declared skills

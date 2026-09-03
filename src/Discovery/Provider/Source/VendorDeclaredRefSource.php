@@ -130,7 +130,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
          *     entry: SourceEntry,
          *     ref: non-empty-string|null,
          *     skills: list<non-empty-string>|null,
-         *     declaredBy: non-empty-string,
+         *     declaredBy: non-empty-list<non-empty-string>,
          *     hasFilter: bool,
          * }> $merged
          */
@@ -176,15 +176,21 @@ final class VendorDeclaredRefSource implements DonorRefSource
                         'entry' => $entry,
                         'ref' => $ref,
                         'skills' => $entry->skills,
-                        'declaredBy' => $name,
+                        'declaredBy' => [$name],
                         'hasFilter' => $entry->skills !== null,
                     ];
                     continue;
                 }
 
-                // Shared bundle: union the allowlists. An absent list
-                // means "every skill" and absorbs the union; otherwise
-                // merge preserving first-seen order.
+                // Shared bundle: every declarer is recorded, so the
+                // planner can approve the donor when any of them is
+                // trusted (or positionally named) — not just whichever
+                // package the repository happened to list first.
+                $merged[$key]['declaredBy'][] = $name;
+
+                // Union the allowlists. An absent list means "every
+                // skill" and absorbs the union; otherwise merge
+                // preserving first-seen order.
                 if ($merged[$key]['hasFilter'] && $entry->skills !== null) {
                     $merged[$key]['skills'] = \array_values(\array_unique(
                         [...($merged[$key]['skills'] ?? []), ...$entry->skills],
@@ -324,18 +330,20 @@ final class VendorDeclaredRefSource implements DonorRefSource
     }
 
     /**
-     * `<declarer> → <from>:<identifier>` identity for failure rows —
-     * names both the `composer.json` the entry lives in and the
-     * external source it points at.
+     * `<declarer>[, <declarer>…] → <from>:<identifier>` identity for
+     * failure rows — names every `composer.json` the entry lives in and
+     * the external source it points at.
      *
-     * @param non-empty-string $declaredBy
+     * @param non-empty-string|non-empty-list<non-empty-string> $declaredBy
      *
      * @return non-empty-string
      *
      * @psalm-mutation-free
      */
-    private function entryLabel(string $declaredBy, SourceEntry $entry): string
+    private function entryLabel(string|array $declaredBy, SourceEntry $entry): string
     {
-        return $declaredBy . ' → ' . $entry->from . ':' . $entry->identifier();
+        $declarers = \is_string($declaredBy) ? $declaredBy : \implode(', ', $declaredBy);
+
+        return $declarers . ' → ' . $entry->from . ':' . $entry->identifier();
     }
 }

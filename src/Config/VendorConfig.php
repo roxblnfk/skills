@@ -49,12 +49,14 @@ final readonly class VendorConfig
      *         catalog depth (`<source>/<category>/<name>/`). Always `null` for declared
      *         donors, whose `source` directory is the contract. Orthogonal to
      *         {@see $skillFilter}, which still applies on top.
-     * @param non-empty-string|null $declaredBy name of the installed Composer package whose
-     *         `extra.skills.sources` produced this donor; `null` for every other origin.
-     *         {@see \LLM\Skills\Sync\SyncPlanner} evaluates trust (and positional package
-     *         filters) against `declaredBy ?? packageName`, so a vendor-declared external
-     *         source is approved exactly when the declaring package itself would be —
-     *         unlike project `sources[]` entries, it is never implicit-trusted.
+     * @param list<non-empty-string> $declaredBy names of the installed Composer packages whose
+     *         `extra.skills.sources` produced this donor (several when they share one source
+     *         and ref); empty for every other origin. {@see \LLM\Skills\Sync\SyncPlanner}
+     *         evaluates trust (and positional package filters) against these names instead
+     *         of `packageName`, approving the donor when **any** declarer clears the gate —
+     *         so a vendor-declared external source is approved exactly when at least one
+     *         package that declared it would be. Unlike project `sources[]` entries, it is
+     *         never implicit-trusted.
      *
      * @psalm-mutation-free
      */
@@ -67,8 +69,22 @@ final readonly class VendorConfig
         public bool $implicitTrust = false,
         public ?array $skillFilter = null,
         public ?array $discoveredSkillDirs = null,
-        public ?string $declaredBy = null,
+        public array $declaredBy = [],
     ) {}
+
+    /**
+     * Names the planner judges this donor by: the declaring packages
+     * for a vendor-declared external source, the donor's own name
+     * otherwise. Always non-empty.
+     *
+     * @return non-empty-list<non-empty-string>
+     *
+     * @psalm-mutation-free
+     */
+    public function trustNames(): array
+    {
+        return $this->declaredBy === [] ? [$this->packageName] : $this->declaredBy;
+    }
 
     /**
      * Absolute path to the directory whose immediate subdirectories are skills.
@@ -131,16 +147,16 @@ final readonly class VendorConfig
     }
 
     /**
-     * Return a copy of this donor attributed to the vendor package that
-     * declared it in `extra.skills.sources`. The planner then evaluates
-     * trust and positional filters against the declaring package's name
-     * instead of the donor's own.
+     * Return a copy of this donor attributed to the vendor package(s)
+     * that declared it in `extra.skills.sources`. The planner then
+     * evaluates trust and positional filters against the declaring
+     * packages' names instead of the donor's own.
      *
-     * @param non-empty-string $declaredBy
+     * @param non-empty-list<non-empty-string> $declaredBy
      *
      * @psalm-mutation-free
      */
-    public function withDeclaredBy(string $declaredBy): self
+    public function withDeclaredBy(array $declaredBy): self
     {
         return new self(
             packageName: $this->packageName,
