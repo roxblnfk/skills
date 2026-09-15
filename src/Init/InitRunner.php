@@ -276,7 +276,12 @@ final readonly class InitRunner
                     '<info>[init]</info> detected inline extra.skills in composer.json: %s',
                     \implode(', ', $inlineKeys),
                 ));
-                if ($io->askConfirmation(
+                // Quick mode promises exactly one prompt — the write
+                // confirmation — so the keys the project already declares
+                // are carried over without asking. Keeping the settings
+                // that are in force is what a user confirming a proposal
+                // expects anyway; the summary shows them before the write.
+                if ($options->quick || $io->askConfirmation(
                     '<info>Import these as defaults?</info> [<comment>Y/n</comment>]: ',
                     true,
                 )) {
@@ -367,11 +372,16 @@ final readonly class InitRunner
                 \implode(', ', $layout->aliases),
             ));
         }
+        // One message covers every collision the probe reports — a
+        // directory (empty or not) and a link pointing elsewhere alike.
+        // What they have in common is the only thing that matters here:
+        // something is already there, and sync will not replace it.
         foreach ($layout->collisions as $collision) {
             $io->write(\sprintf(
-                '<comment>[init] %s holds its own files; not proposed as an alias. '
-                . 'Move its contents into %s and add the alias by hand to share them.</comment>',
+                '<comment>[init] %s already exists and is not %s; not proposed as an alias. '
+                . 'Point it at %s yourself, or remove it, to share the same skills.</comment>',
                 $collision,
+                $layout->target,
                 $layout->target,
             ));
         }

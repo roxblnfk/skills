@@ -596,6 +596,33 @@ final class InitRunnerTest
         Assert::same($skills['dependencies'], ['composer' => ['trusted' => ['myorg/*']]]);
     }
 
+    public function quickModeSpendsItsOnePromptOnTheWriteConfirmation(): void
+    {
+        // Quick mode promises a single question. The inline block it finds
+        // in composer.json is carried over without a second one — and the
+        // single answer below is the write confirmation, not the import.
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => ['skills' => ['target' => 'custom/skills']],
+        ]);
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(quick: true),
+        );
+
+        Assert::same($code, Command::SUCCESS);
+        Assert::false(
+            \str_contains($io->getOutput(), 'Import these as defaults?'),
+            'quick mode must not ask a second question',
+        );
+        Assert::same($this->readSkillsJson()['target'] ?? null, 'custom/skills');
+    }
+
     public function givenValuesReachTheStandaloneStub(): void
     {
         $code = (new InitRunner())->run(

@@ -260,7 +260,7 @@ final class StandaloneBinTest
             'a directory holding files must not be proposed as an alias. Got: ' . $combined,
         );
         Assert::true(
-            \str_contains($combined, 'holds its own files'),
+            \str_contains($combined, 'not proposed as an alias'),
             'the user must be told why the directory was left out. Got: ' . $combined,
         );
     }
@@ -275,6 +275,34 @@ final class StandaloneBinTest
 
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
         Assert::same($this->decodeSkillsJson()['aliases'] ?? null, ['.claude/skills']);
+    }
+
+    public function initSyncsOnceTheConfigIsWritten(): void
+    {
+        // The sync is what makes `init` leave the project with skills
+        // rather than with a file. Here there are no donors to copy, so
+        // what proves it ran is the sync's own standalone notice.
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init');
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \str_contains($combined, 'no donor providers are active'),
+            'init must run a sync after writing the config. Got: ' . $combined,
+        );
+    }
+
+    public function noSyncFlagWritesTheConfigAndStopsThere(): void
+    {
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init --no-sync');
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(\is_file($this->tmp . '/skills.json'), 'the config is still written');
+        Assert::false(
+            \str_contains($combined, 'no donor providers are active'),
+            '--no-sync must suppress the follow-up sync. Got: ' . $combined,
+        );
     }
 
     public function initWritesTheConfigValuesGivenOnTheCommandLine(): void

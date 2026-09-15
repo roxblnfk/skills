@@ -136,6 +136,29 @@ final class AgentWorkspaceProbeTest
         Assert::same($layout->collisions, ['.claude/skills']);
     }
 
+    public function linkedAgentDirectoryIsNotProposed(): void
+    {
+        // `.claude` is itself a link out of the project, so `.claude/skills`
+        // is in-project by name only: creating it writes into the external
+        // directory, and the planner's containment check is lexical and
+        // would not catch it. Nothing a user confirms blind may do that.
+        \mkdir($this->tmp . '/elsewhere', 0o777, true);
+        if (!Filesystem::makeDirLink($this->tmp . '/elsewhere', $this->tmp . '/.claude')) {
+            Assert::same(
+                $this->probe()->aliases,
+                [],
+                'links unavailable on this host — verifying the link-free layout proposes nothing',
+            );
+            return;
+        }
+
+        $layout = $this->probe();
+
+        Assert::same($layout->target, ProjectConfig::DEFAULT_TARGET);
+        Assert::same($layout->aliases, [], 'a linked agent directory must not become an alias');
+        Assert::same($layout->collisions, []);
+    }
+
     private function probe(): \LLM\Skills\Init\WorkspaceLayout
     {
         return (new AgentWorkspaceProbe())->probe(Path::create($this->tmp));

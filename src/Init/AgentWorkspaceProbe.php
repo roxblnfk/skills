@@ -128,11 +128,18 @@ final readonly class AgentWorkspaceProbe
         $resolved = $exists ? \realpath($absolute) : false;
         $real = $resolved === false || $resolved === '' ? null : $resolved;
 
+        // A linked `.claude` is an in-project path by name only: creating
+        // `.claude/skills` inside it writes wherever the link points, and
+        // the planner's containment check is lexical, so it would not
+        // notice. A proposal the user confirms blind must not be able to
+        // do that, so a linked parent counts as "not in use" here.
+        $agentDir = (string) $projectRoot->join(\dirname($dir));
+
         return [
             'exists' => $exists,
             'link' => $isLink ? $real : null,
             'real' => $real,
-            'agentDirExists' => \is_dir((string) $projectRoot->join(\dirname($dir))),
+            'agentDirExists' => \is_dir($agentDir) && !LinkGuard::isLink($agentDir),
         ];
     }
 }

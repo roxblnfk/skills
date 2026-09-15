@@ -16,13 +16,11 @@ use Composer\Script\ScriptEvents;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\InitOptions;
-use LLM\Skills\Config\Mapper\ExternalProjectConfigLoader;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
-use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
-use LLM\Skills\Info;
 use LLM\Skills\Init\InitRunner;
+use LLM\Skills\Init\SetupOffer;
 use LLM\Skills\Sync\SyncRunner;
 
 /**
@@ -201,23 +199,7 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
         RootPackageInterface $rootPackage,
         IOInterface $io,
     ): void {
-        if (!$io->isInteractive()) {
-            return;
-        }
-
-        // Our own repository is the one project where the plugin is
-        // installed but is not there to serve the root package.
-        if ($rootPackage->getName() === Info::PACKAGE_NAME) {
-            return;
-        }
-
-        if (\is_file((string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME))) {
-            return;
-        }
-
-        /** @var mixed $skills */
-        $skills = $rootPackage->getExtra()['skills'] ?? null;
-        if (\is_array($skills) && ProjectConfigMigrator::presentProjectKeys($skills) !== []) {
+        if (!$io->isInteractive() || !SetupOffer::isNeeded($projectRoot, $rootPackage)) {
             return;
         }
 
