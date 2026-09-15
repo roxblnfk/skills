@@ -39,17 +39,33 @@ Composer will prompt to allow the plugin during install — answer **y**. (For n
 setups, pre-allow with `"config": { "allow-plugins": { "llm/skills": true } }` in
 `composer.json`.)
 
-Then bootstrap your project's config — this is the one command to run first:
+That is the whole setup. On the next `composer install` / `update`, a project with no
+`skills.json` gets a proposed configuration built from the agent directories it already has
+(`.claude/`, `.cursor/`, …) and a single question to confirm it. Press **Enter** and the file
+is written and your skills are synced; answer **n** and nothing is written.
+
+To do it yourself, or to revisit the choices later:
 
 ```bash
-composer skills:init
+composer skills:init            # the full wizard: target, aliases, trust, auto-sync
+composer skills:init --quick    # take the detected layout, confirm once
+composer skills:init --force    # re-run over an existing skills.json
 ```
 
-An interactive wizard walks you through target dir, aliases, trusted vendors, and auto-sync,
-and writes a `skills.json` you commit alongside `composer.json`. See
+Any config value can also be passed up front — `--target`, `--alias`, `--trust`,
+`--auto-sync` / `--no-auto-sync`, `--discovery` / `--no-discovery`. In the wizard they arrive
+pre-filled at the prompt; with `--quick` (or in CI) they are simply written, which makes the
+whole setup one scriptable line:
+
+```bash
+composer skills:init --quick --target=.claude/skills --alias=.agents/skills --trust='acme/*'
+```
+
+Either way you end up with a `skills.json` you commit alongside `composer.json`, and the skills
+synced right after it is written (`--no-sync` skips that). See
 [Project configuration](#project-configuration) for the full reference. The plugin still works
-without it — defaults are sensible — but committing an explicit `skills.json` is what makes
-your skill setup reproducible across the team.
+without the file — defaults are sensible — but committing an explicit `skills.json` is what
+makes your skill setup reproducible across the team.
 
 Auto-sync after every `composer install` / `update` is **on by default**, so after `init` you
 get fresh skills with no further setup. To opt out, set `"auto-sync": false` in `skills.json`;
@@ -87,8 +103,10 @@ composer skills:add    <input> [options]          # alias: skills:a
 
 `skills:update` copies skills into the target directory. `skills:show` is read-only — it lists
 every donor, the per-skill sync status, and what is being skipped and why. `skills:init`
-bootstraps a [`skills.json`](#project-configuration) at the project root and (when
-`composer.json` carries legacy inline project keys) migrates them out. `skills:add` registers
+bootstraps a [`skills.json`](#project-configuration) at the project root, syncs once it is
+written, and (when `composer.json` carries legacy inline project keys) migrates them out. The
+plugin offers the same thing on its own — as a single confirmation — the first time it runs in
+a project that has no configuration. `skills:add` registers
 a donor that lives outside Composer (e.g. a GitHub repository) and immediately fetches its
 skills — see [Donor sources](#donor-sources).
 
@@ -98,7 +116,15 @@ skills — see [Donor sources](#donor-sources).
 | `--target=PATH`, `-t` | both   | Override the configured target directory for this run.                                                                                                             |
 | `--alias=PATH`        | update | Extra path mirrored at the target via a junction/symlink (repeatable). Passing `--alias` at all replaces the configured aliases entirely. See [Aliases](#aliases). |
 | `--trust=PATTERN`     | both   | Trust an extra pattern for this run (repeatable).                                                                                                                  |
-| `--discovery`         | both   | Include packages that ship `SKILL.md` files but do not declare `extra.skills` (see [Auto-discovery](#auto-discovery)).                                              |
+| `--discovery`         | both   | Include packages that ship `SKILL.md` files but do not declare `extra.skills` — on by default (see [Auto-discovery](#auto-discovery)).                              |
+| `--no-discovery`      | both   | The opposite: consider only packages that declare `extra.skills`.                                                                                                  |
+| `--quick`             | init   | Answer every question from the detected project layout; confirm once.                                                                                              |
+| `--no-sync`           | init   | Write the config without syncing afterwards.                                                                                                                       |
+| `--target=PATH`       | init   | Pre-fill the `target` answer. In the wizard it arrives at the prompt; with `--quick` it is written as-is.                                                          |
+| `--alias=PATH`        | init   | Pre-fill `aliases` (repeatable). Passing it at all replaces the detected list.                                                                                     |
+| `--trust=PATTERN`     | init   | Pre-fill `dependencies.composer.trusted` (repeatable).                                                                                                             |
+| `--auto-sync`, `--no-auto-sync` | init | Pre-fill `auto-sync`. Unrelated to `--no-sync`, which only skips the one sync `init` itself runs.                                                        |
+| `--discovery`, `--no-discovery` | init | Pre-fill `discovery`.                                                                                                                                    |
 | `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Donor sources](#donor-sources).                                                              |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
@@ -111,12 +137,15 @@ inside Composer it is reserved for `--working-dir`.
 composer skills:update                                   # sync everything that is trusted
 composer skills:update acme/skills-basic                  # sync one package (implicit trust)
 composer skills:update 'acme/*'                           # sync an entire vendor namespace
-composer skills:update --discovery                        # also include packages without extra.skills
+composer skills:update --no-discovery                     # only packages that declare extra.skills
 composer skills:update --alias=.claude/skills             # mirror target via a junction/symlink
 composer skills:update --from=github                      # only refresh remote GitHub donors
 composer skills:update --dry-run                          # preview, write nothing
 composer skills:show                                      # inspect: per-skill status, what is skipped
-composer skills:init                                      # create skills.json (migrating inline keys)
+composer skills:init                                      # create skills.json (migrating inline keys), then sync
+composer skills:init --quick                              # take the detected layout, confirm once
+composer skills:init --quick --target=.claude/skills \
+  --trust='acme/*' --no-auto-sync                         # scripted setup, no prompts
 composer skills:add acme/skills                           # register a GitHub donor and sync it (github is the default)
 composer skills:add acme/skills \
         --skill=code-review --skill=refactor              # narrow a donor to two skills
@@ -157,7 +186,8 @@ After `skills:update`, the consumer project gets:
 - `source` is relative to the package root.
 - Each immediate subdirectory of `source` is one skill, copied recursively.
 - Loose files at the root of `source` (e.g. `README.md`) are ignored.
-- A package without `extra.skills` is not a donor by default — see [Auto-discovery](#auto-discovery).
+- A package without `extra.skills` is still a donor if it ships `SKILL.md` files — see
+  [Auto-discovery](#auto-discovery).
 
 `source` also accepts a **list** of directories — useful for a monorepo published as a
 single package whose skills live per component:
@@ -239,7 +269,7 @@ always governed here, by the trust lists and the `vendor-sources` toggle.
   "$schema": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
   "target": ".agents/skills",
   "aliases": [".claude/skills", ".cursor/skills"],
-  "discovery": false,
+  "discovery": true,
   "auto-sync": true,
   "path-from-root": "packages/api",
 
@@ -258,7 +288,7 @@ always governed here, by the trust lists and the `vendor-sources` toggle.
 |-------------------|-------------|------------------|-----------------------------------------------------------------------------------------|
 | `target`          | string      | `.agents/skills` | Destination directory, relative to the project root.                                    |
 | `aliases`         | string[]    | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).          |
-| `discovery`       | bool        | `false`          | When `true`, auto-discovery is on by default (CLI overrides).                           |
+| `discovery`       | bool        | `true`           | Consider packages that ship skills without declaring `extra.skills`. Set to `false` to sync only what is declared (CLI overrides either way). |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
 | `dependencies`    | object      | `{}`             | Per-package-manager config: `<id>` → `bool` (walk toggle) or `{ enabled, trusted, trusted-replace }`. Ids: `composer` (walk default `true`), `npm`/`go` (future, default `false`). `trusted` extends the manager's trust list; `trusted-replace` makes it fully replace the built-in and direct-dependency trust. Deprecated aliases `trusted`, `trusted-replace`, `local` fold into this block. See [Trust](#trust) and [Donor sources](#donor-sources). |
@@ -630,11 +660,17 @@ For the full architectural rationale, the version-resolution cascade, the cache 
 ## Auto-discovery
 
 When a package does not declare `extra.skills` but ships `SKILL.md` files anyway, `llm/skills`
-can still pick up the skills inside. Opt in one of three ways:
+picks up the skills inside. This is **on by default** — a package shipping skills is taken at
+its word, and [trust](#trust) is what decides whether they are copied, exactly as for a
+declared donor.
 
-- `--discovery` flag on the command line (for a single run);
-- `"discovery": true` in `skills.json` (always on);
-- Name the package as a positional argument (implicit, per-package — see [Shortcuts](#shortcuts)).
+To sync only what packages declare explicitly, turn it off:
+
+- `--no-discovery` flag on the command line (for a single run);
+- `"discovery": false` in `skills.json` (always off).
+
+With discovery off, naming a package as a positional argument still opts that one package in
+(see [Shortcuts](#shortcuts)).
 
 ### How skills are found
 
@@ -676,7 +712,8 @@ acme/maintenance/              # recursive fallback (nothing in a well-known roo
 ```
 
 ```bash
-composer skills:update --discovery            # picks up every skill above
+composer skills:update                        # picks up every skill above
+composer skills:update --no-discovery         # picks up none of them
 composer skills:update acme/skills-undeclared # picks up auto-skill only (named ⇒ trust + discovery)
 ```
 

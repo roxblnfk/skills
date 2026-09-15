@@ -156,9 +156,16 @@ final class ProjectConfigMapperTest
         (new ProjectConfigMapper())->fromExtra(['skills' => ['trusted-replace' => 'yes']]);
     }
 
-    public function discoveryDefaultsToFalse(): void
+    public function discoveryDefaultsToTrue(): void
     {
         $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::same($cfg->discovery, true);
+    }
+
+    public function discoveryIsMappedWhenFalse(): void
+    {
+        $cfg = (new ProjectConfigMapper())->fromExtra(['skills' => ['discovery' => false]]);
 
         Assert::same($cfg->discovery, false);
     }

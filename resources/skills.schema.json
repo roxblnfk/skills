@@ -28,8 +28,8 @@
         },
         "discovery": {
             "type": "boolean",
-            "description": "When true, packages without an explicit extra.skills.source block are still considered as donors if they ship a top-level skills/ directory. CLI --discovery overrides this.",
-            "default": false
+            "description": "When true (default), packages without an explicit extra.skills.source block are still considered as donors if they ship a top-level skills/ directory. Such a donor still has to pass the same trust rules as a declared one. CLI --discovery / --no-discovery overrides this.",
+            "default": true
         },
         "auto-sync": {
             "type": "boolean",

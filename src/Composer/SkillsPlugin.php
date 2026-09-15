@@ -7,6 +7,7 @@ namespace LLM\Skills\Composer;
 use Composer\Composer;
 use Composer\EventDispatcher\EventSubscriberInterface;
 use Composer\IO\IOInterface;
+use Composer\Package\RootPackageInterface;
 use Composer\Plugin\Capability\CommandProvider as CommandProviderCapability;
 use Composer\Plugin\Capable;
 use Composer\Plugin\PluginInterface;
@@ -14,9 +15,12 @@ use Composer\Script\Event as ScriptEvent;
 use Composer\Script\ScriptEvents;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Config\InitOptions;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Discovery\Provider\DonorProviderBuilder;
+use LLM\Skills\Init\InitRunner;
+use LLM\Skills\Init\SetupOffer;
 use LLM\Skills\Sync\SyncRunner;
 
 /**
@@ -126,6 +130,9 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
         }
 
         $projectRoot = Path::create(\getcwd() ?: '.');
+
+        $this->offerQuickSetup($projectRoot, $this->composer->getPackage(), $this->io);
+
         try {
             $resolution = (new ProjectConfigMapper())->forProject(
                 $projectRoot,
@@ -168,5 +175,36 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
             $this->io,
             $options,
         );
+    }
+
+    /**
+     * Offer the quick `skills:init` to a project that has never been
+     * configured — no `skills.json` and no project keys under inline
+     * `extra.skills`. Installing the plugin is the moment the user
+     * expects to be set up, and asking here saves them from discovering
+     * `skills:init` on their own.
+     *
+     * Runs before the config is resolved, so a `skills.json` written by
+     * the wizard takes effect on this very run.
+     *
+     * Two things keep the offer from becoming an ambush: it is skipped
+     * whenever the IO has no one to answer it (CI, `--no-interaction`),
+     * and the quick wizard asks a single yes/no rather than walking the
+     * full questionnaire. Declining writes nothing — the project stays
+     * on the built-in defaults, and the offer comes back next time,
+     * which is the only honest state for "not configured yet".
+     */
+    private function offerQuickSetup(
+        Path $projectRoot,
+        RootPackageInterface $rootPackage,
+        IOInterface $io,
+    ): void {
+        if (!$io->isInteractive() || !SetupOffer::isNeeded($projectRoot, $rootPackage)) {
+            return;
+        }
+
+        $io->write('<info>[llm/skills] no configuration found — proposing one.</info>');
+
+        (new InitRunner())->run($projectRoot, $io, new InitOptions(quick: true));
     }
 }

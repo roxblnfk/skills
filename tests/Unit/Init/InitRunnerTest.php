@@ -7,6 +7,7 @@ namespace LLM\Skills\Tests\Unit\Init;
 use Composer\IO\BufferIO;
 use Internal\Path;
 use LLM\Skills\Config\InitOptions;
+use LLM\Skills\Config\InitPresets;
 use LLM\Skills\Init\InitRunner;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Symfony\Component\Console\Command\Command;
@@ -561,6 +562,109 @@ final class InitRunnerTest
             flags: \JSON_THROW_ON_ERROR,
         );
         return $decoded;
+    }
+
+    public function givenValuesAreLayeredOntoTheMigratedConfig(): void
+    {
+        // The migrator writes the file from the inline block alone, so the
+        // command-line values have to be applied after it — otherwise
+        // `--target` would silently do nothing for exactly the projects
+        // that are migrating.
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => [
+                'skills' => [
+                    'target' => 'custom/skills',
+                    'trusted' => ['acme/*'],
+                ],
+            ],
+        ]);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new InitOptions(presets: new InitPresets(
+                target: '.claude/skills',
+                trusted: ['myorg/*'],
+            )),
+        );
+
+        Assert::same($code, Command::SUCCESS);
+
+        $skills = $this->readSkillsJson();
+        Assert::same($skills['target'], '.claude/skills');
+        Assert::same($skills['dependencies'], ['composer' => ['trusted' => ['myorg/*']]]);
+    }
+
+    public function quickModeSpendsItsOnePromptOnTheWriteConfirmation(): void
+    {
+        // Quick mode promises a single question. The inline block it finds
+        // in composer.json is carried over without a second one — and the
+        // single answer below is the write confirmation, not the import.
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => ['skills' => ['target' => 'custom/skills']],
+        ]);
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(quick: true),
+        );
+
+        Assert::same($code, Command::SUCCESS);
+        Assert::false(
+            \str_contains($io->getOutput(), 'Import these as defaults?'),
+            'quick mode must not ask a second question',
+        );
+        Assert::same($this->readSkillsJson()['target'] ?? null, 'custom/skills');
+    }
+
+    public function givenValuesReachTheStandaloneStub(): void
+    {
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new InitOptions(presets: new InitPresets(
+                target: '.claude/skills',
+                aliases: ['.agents/skills'],
+                discovery: false,
+            )),
+        );
+
+        Assert::same($code, Command::SUCCESS);
+
+        $skills = $this->readSkillsJson();
+        Assert::same($skills['target'], '.claude/skills');
+        Assert::same($skills['aliases'], ['.agents/skills']);
+        Assert::same($skills['discovery'], false);
+        // Canonical PROJECT_KEYS order, regardless of how the values arrived.
+        Assert::same(
+            \array_keys($skills),
+            ['$schema', 'target', 'aliases', 'dependencies', 'discovery', 'sources'],
+        );
+    }
+
+    public function anAliasEqualToTheResolvedTargetIsDroppedFromTheStub(): void
+    {
+        // Nothing rejects this pair at the CLI when the target came from
+        // somewhere else, and a config carrying it would not load.
+        $io = new BufferIO();
+        $code = (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(presets: new InitPresets(aliases: ['.agents/skills'])),
+        );
+
+        Assert::same($code, Command::SUCCESS);
+        Assert::false(
+            \array_key_exists('aliases', $this->readSkillsJson()),
+            '.agents/skills is the default target and cannot also be an alias',
+        );
+        Assert::true(\str_contains($io->getOutput(), 'dropped'));
     }
 
     /**

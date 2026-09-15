@@ -249,7 +249,7 @@ final readonly class ProjectConfigMapper
 
         $aliases = $this->mapAliases($skills['aliases'] ?? [], $target, $prefix);
 
-        $discovery = $skills['discovery'] ?? false;
+        $discovery = $skills['discovery'] ?? true;
         if (!\is_bool($discovery)) {
             throw new MalformedProjectConfig(
                 self::field($prefix, 'discovery') . ' must be a boolean',

@@ -136,13 +136,18 @@ final class SkillsSyncTest
         Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro', 'mono/skills-repo'],
+        'discovery' => false,
+    ])]
     public function autoDiscoverySyncsProjectTrustedAndBuiltinTrustedSkills(): void
     {
         // internal/path declares no extra.skills; acme/skills-broken has malformed
-        // extra; clash/skills-conflict and evil/payload are untrusted. The default
-        // sync yields: the four skills from acme/* (project trust), the one skill
-        // from spiral/skills-demo (built-in `spiral/*` trust), and the two skills
-        // from mono/skills-repo (project trust).
+        // extra; clash/skills-conflict and evil/payload are untrusted. Discovery is
+        // off so only declared donors count, and the sync yields: the four skills
+        // from acme/* (project trust), the one skill from spiral/skills-demo
+        // (built-in `spiral/*` trust), and the two skills from mono/skills-repo
+        // (project trust).
         $this->runSync();
 
         $entries = $this->listTargetEntries();
@@ -332,7 +337,7 @@ final class SkillsSyncTest
         Assert::false(\is_dir(Info::PROJECT_DIR . '/config-target'), 'project config target must be ignored');
     }
 
-    #[WithSandboxExtras(['trusted' => ['evil/*']])]
+    #[WithSandboxExtras(['trusted' => ['evil/*'], 'discovery' => false])]
     public function wildcardPatternInProjectTrustedAllowsThatVendor(): void
     {
         // `extra.skills.trusted: ["evil/*"]` is the project's only explicit
@@ -417,7 +422,7 @@ final class SkillsSyncTest
 
     // ── trusted-replace ─────────────────────────────────────────────────────
 
-    #[WithSandboxExtras(['trusted' => []])]
+    #[WithSandboxExtras(['trusted' => [], 'discovery' => false])]
     public function builtinTrustedListIsActiveWhenReplaceIsFalse(): void
     {
         // Project trust is explicitly empty. With the default
@@ -617,21 +622,34 @@ final class SkillsSyncTest
 
     // ── --discovery ─────────────────────────────────────────────────────────
 
-    public function withoutDiscoveryFlagUndeclaredSkillsAreNotSynced(): void
+    public function undeclaredSkillsFromATrustedPackageSyncByDefault(): void
     {
         // acme/skills-undeclared ships a skills/auto-skill but no extra.skills.
-        // Without --discovery, the auto-skill must NOT be copied.
-        $this->runSync();
+        // Discovery is on by default, so trusting the package is all it takes.
+        $process = $this->runSync('--trust=acme/skills-undeclared');
 
-        Assert::false(
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
             \is_file(self::TARGET_DIR . '/auto-skill/SKILL.md'),
-            'auto-skill must not appear without --discovery',
+            'auto-skill must be synced without any discovery flag. stderr: ' . $process->getErrorOutput(),
         );
     }
 
-    public function withoutDiscoveryFlagOutputIncludesHintWhenCandidatesExist(): void
+    public function noDiscoveryFlagKeepsUndeclaredSkillsOut(): void
     {
-        $process = $this->runSync();
+        // `--no-discovery` is the opt-out: even a trusted package's
+        // undeclared skills stay put.
+        $this->runSync('--no-discovery', '--trust=acme/skills-undeclared');
+
+        Assert::false(
+            \is_file(self::TARGET_DIR . '/auto-skill/SKILL.md'),
+            'auto-skill must not appear under --no-discovery',
+        );
+    }
+
+    public function noDiscoveryFlagOutputIncludesHintWhenCandidatesExist(): void
+    {
+        $process = $this->runSync('--no-discovery');
         $combined = $process->getOutput() . $process->getErrorOutput();
 
         Assert::true(
@@ -693,11 +711,11 @@ final class SkillsSyncTest
         );
     }
 
-    public function withoutDiscoveryRecursivelyDiscoverableSkillsAreNotSynced(): void
+    public function noDiscoveryFlagKeepsRecursivelyDiscoverableSkillsOut(): void
     {
-        // Same opt-in gate as the flat `skills/` case: nothing from
-        // nested/skills-tree lands unless --discovery is on.
-        $this->runSync();
+        // Same opt-out gate as the flat `skills/` case: nothing from
+        // nested/skills-tree lands once --no-discovery is passed.
+        $this->runSync('--no-discovery', '--trust=nested/skills-tree');
 
         Assert::false(\is_file(self::TARGET_DIR . '/hidden-claude/SKILL.md'));
         Assert::false(\is_file(self::TARGET_DIR . '/hidden-catalog/SKILL.md'));

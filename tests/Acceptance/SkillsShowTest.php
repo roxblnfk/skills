@@ -337,23 +337,23 @@ final class SkillsShowTest
 
     // ── --discovery ─────────────────────────────────────────────────────────
 
-    public function withoutDiscoveryFlagUndeclaredDonorIsAbsentFromMainListing(): void
+    public function noDiscoveryFlagKeepsUndeclaredDonorOutOfMainListing(): void
     {
-        $process = $this->runShow();
+        $process = $this->runShow('--no-discovery');
         $out = $process->getOutput();
 
         Assert::false(
             \str_contains($out, 'auto-skill'),
-            'auto-skill must not appear in show without --discovery. Got: ' . $out,
+            'auto-skill must not appear in show under --no-discovery. Got: ' . $out,
         );
     }
 
-    public function withoutDiscoveryFlagUndeclaredDonorIsListedInSkippedAsNotDeclared(): void
+    public function noDiscoveryFlagListsUndeclaredDonorInSkippedAsNotDeclared(): void
     {
         // Even though the skill itself is hidden, the package name should
         // still surface under Skipped with reason `not-declared` so the user
         // sees what they would be opting in to.
-        $process = $this->runShow();
+        $process = $this->runShow('--no-discovery');
         $out = $process->getOutput();
 
         Assert::true(\str_contains($out, 'Skipped:'));
@@ -367,9 +367,9 @@ final class SkillsShowTest
         );
     }
 
-    public function withoutDiscoveryFlagOutputHintsRerunWithDiscovery(): void
+    public function noDiscoveryFlagOutputHintsRerunWithDiscovery(): void
     {
-        $process = $this->runShow();
+        $process = $this->runShow('--no-discovery');
         $out = $process->getOutput();
 
         Assert::true(

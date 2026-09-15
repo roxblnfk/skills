@@ -32,8 +32,10 @@ final readonly class ProjectConfig
      *         resolved path must stay inside that root
      * @param TrustedVendors $trusted patterns from project `extra.skills.trusted`
      * @param bool $trustedReplace when true, skip the built-in trusted list entirely
-     * @param bool $discovery when true, treat installed packages without `extra.skills` as
-     *         potential donors if they ship a `skills/` directory; CLI `--discovery` overrides this
+     * @param bool $discovery when true (default), treat installed packages without
+     *         `extra.skills` as potential donors if they ship a `skills/` directory. Such a
+     *         donor still has to pass the same trust rules as a declared one. Set to `false`,
+     *         or pass `--no-discovery`, to sync only what packages declare explicitly
      * @param list<non-empty-string> $aliases extra paths that should be created as junctions
      *         (Windows) or symbolic links (POSIX) pointing at the resolved `$target`. The target
      *         itself is the only place skills are physically written; aliases are mirrors. Empty
@@ -75,7 +77,7 @@ final readonly class ProjectConfig
         public string $target,
         public TrustedVendors $trusted,
         public bool $trustedReplace,
-        public bool $discovery = false,
+        public bool $discovery = true,
         public array $aliases = [],
         public bool $autoSync = true,
         public ?string $pathFromRoot = null,
@@ -97,7 +99,7 @@ final readonly class ProjectConfig
             target: self::DEFAULT_TARGET,
             trusted: TrustedVendors::empty(),
             trustedReplace: false,
-            discovery: false,
+            discovery: true,
             aliases: [],
             autoSync: true,
             pathFromRoot: null,

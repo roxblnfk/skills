@@ -458,8 +458,8 @@ final readonly class SyncRunner
 
         if ($undeclaredCandidates !== []) {
             $io->write(\sprintf(
-                '<comment>[hint] %d package(s) ship undeclared skills. '
-                . 'Rerun with --discovery (-d) to include them, or set extra.skills.discovery: true.</comment>',
+                '<comment>[hint] %d package(s) ship undeclared skills but discovery is off. '
+                . 'Rerun with --discovery (-d) to include them, or set discovery: true.</comment>',
                 \count($undeclaredCandidates),
             ));
         }
