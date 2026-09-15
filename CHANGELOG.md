@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.0](https://github.com/roxblnfk/skills/compare/1.12.0...1.13.0) (2026-09-15)
+
+
+### Features
+
+* **init:** add `--quick` and a flag for every config value ([2181d48](https://github.com/roxblnfk/skills/commit/2181d48c50d847fd26b3bb6ec47405d2d2cfed85))
+* offer a configuration to a project that has none ([#43](https://github.com/roxblnfk/skills/issues/43)) ([2181d48](https://github.com/roxblnfk/skills/commit/2181d48c50d847fd26b3bb6ec47405d2d2cfed85))
+
 ## [1.12.0](https://github.com/roxblnfk/skills/compare/1.11.1...1.12.0) (2026-09-03)
 
 
