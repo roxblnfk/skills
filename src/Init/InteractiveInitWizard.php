@@ -19,13 +19,21 @@ use LLM\Skills\Config\ProjectConfig;
  * this class and use the silent migrate/stub flow in
  * {@see InitRunner}.
  *
- * Defaults come from one of three sources, in order:
+ * Quick mode (`--quick`) runs the same assembly without the questions:
+ * every knob takes its default, and the only prompt left is the
+ * confirmation at the summary. It is what the plugin offers by itself
+ * when it finds an unconfigured project, where a six-question wizard in
+ * the middle of `composer update` would be an ambush.
+ *
+ * Defaults come from one of four sources, in order:
  *
  * 1. Existing `skills.json` (`--force` re-runs surface current
  *    values).
  * 2. Inline `extra.skills` in `composer.json`, when the user
  *    confirms "import current settings" at the first prompt.
- * 3. Built-in defaults from {@see ProjectConfig::default()}.
+ * 3. The agent directories already present in the project, as reported
+ *    by {@see AgentWorkspaceProbe}.
+ * 4. Built-in defaults from {@see ProjectConfig::default()}.
  *
  * The wizard returns the resolved set of project keys ready to be
  * written as `skills.json`; the caller (InitRunner) handles the
@@ -55,28 +63,41 @@ final readonly class InteractiveInitWizard
      * @param array<string, mixed> $defaults pre-resolved defaults per
      *        {@see ProjectConfigMapper::PROJECT_KEYS}. Keys not in
      *        the array default to {@see ProjectConfig::default()}.
+     * @param bool $quick take every answer from `$defaults` without prompting
+     *        and go straight to the summary and its single confirmation
      *
      * @return array<string, mixed>|null
      */
-    public function run(IOInterface $io, array $defaults): ?array
+    public function run(IOInterface $io, array $defaults, bool $quick = false): ?array
     {
         $io->write('');
         $io->write('<info>=====================================</info>');
-        $io->write('<info>  skills.json — interactive setup    </info>');
+        $io->write($quick
+            ? '<info>  skills.json — quick setup           </info>'
+            : '<info>  skills.json — interactive setup    </info>');
         $io->write('<info>=====================================</info>');
         $io->write('');
-        $io->write(
-            'Press <comment>Enter</comment> to accept the default in [brackets]. '
-            . 'Ctrl+C aborts.',
-        );
+        $io->write($quick
+            ? 'Every value below was picked for you. Confirm to write them, '
+                . 'or answer <comment>n</comment> and run '
+                . '<comment>skills:init</comment> to set them one by one.'
+            : 'Press <comment>Enter</comment> to accept the default in [brackets]. '
+                . 'Ctrl+C aborts.');
         $io->write('');
 
-        $target = $this->askTarget($io, $defaults);
-        $aliases = $this->askAliases($io, $defaults, $target);
-        $trusted = $this->askTrusted($io, $defaults);
-        $trustedReplace = $this->askTrustedReplace($io, $defaults);
-        $discovery = $this->askDiscovery($io, $defaults);
-        $autoSync = $this->askAutoSync($io, $defaults);
+        $target = $quick ? $this->resolveTarget($defaults) : $this->askTarget($io, $defaults);
+        $aliases = $quick
+            ? $this->cleanAliases($io, $this->resolveAliases($defaults), $target)
+            : $this->askAliases($io, $defaults, $target);
+        $trusted = $quick ? $this->resolveTrusted($defaults) : $this->askTrusted($io, $defaults);
+        $trustedReplace = $this->resolveTrustedReplace($defaults);
+        // Replacing the trust list only means something when there is a list
+        // to replace it with; asking about it next to an empty `trusted`
+        // spends a question on a no-op.
+        if (!$quick && $trusted !== []) {
+            $trustedReplace = $this->askTrustedReplace($io, $defaults);
+        }
+        $autoSync = $quick ? $this->resolveAutoSync($defaults) : $this->askAutoSync($io, $defaults);
 
         // Seed from the (already normalised) defaults so every key the
         // wizard does NOT prompt for — `sources`, `path-from-root`, other
@@ -107,11 +128,6 @@ final readonly class InteractiveInitWizard
         // from scratch.
         $this->applyComposerTrust($result, $trusted, $trustedReplace);
 
-        if ($discovery) {
-            $result['discovery'] = true;
-        } else {
-            unset($result['discovery']);
-        }
         // auto-sync's default is `true`; only emit the key when the user
         // opted out, otherwise let the default carry it.
         if (!$autoSync) {
@@ -132,6 +148,41 @@ final readonly class InteractiveInitWizard
         }
 
         return $result;
+    }
+
+    /**
+     * Drop aliases that cannot stand as one: an alias equal to the target
+     * would have sync link a directory onto itself, and a duplicate would
+     * have it create the same link twice. Comparison is lexical — a
+     * separator-only or trailing-slash difference is the same path.
+     *
+     * @param list<non-empty-string> $aliases
+     * @param non-empty-string $target
+     *
+     * @return list<non-empty-string>
+     */
+    public function cleanAliases(IOInterface $io, array $aliases, string $target): array
+    {
+        $clean = [];
+        $seen = [];
+        $targetNorm = \rtrim(\str_replace('\\', '/', $target), '/');
+        foreach ($aliases as $alias) {
+            $norm = \rtrim(\str_replace('\\', '/', $alias), '/');
+            if ($norm === $targetNorm) {
+                $io->write(\sprintf(
+                    '  <comment>(dropped: %s equals target)</comment>',
+                    $alias,
+                ));
+                continue;
+            }
+            if (isset($seen[$norm])) {
+                continue;
+            }
+            $seen[$norm] = true;
+            $clean[] = $alias;
+        }
+
+        return $clean;
     }
 
     /**
@@ -344,16 +395,29 @@ final readonly class InteractiveInitWizard
      * @param array<string, mixed> $defaults
      *
      * @return non-empty-string
+     *
+     * @psalm-pure
      */
-    private function askTarget(IOInterface $io, array $defaults): string
+    private function resolveTarget(array $defaults): string
     {
         /** @var mixed $rawDefault */
         $rawDefault = $defaults['target'] ?? null;
-        $default = \is_string($rawDefault) && $rawDefault !== ''
+
+        return \is_string($rawDefault) && $rawDefault !== ''
             ? $rawDefault
             : ProjectConfig::DEFAULT_TARGET;
+    }
 
-        $io->write('<info>1/6  target</info> — destination directory for synced skills,');
+    /**
+     * @param array<string, mixed> $defaults
+     *
+     * @return non-empty-string
+     */
+    private function askTarget(IOInterface $io, array $defaults): string
+    {
+        $default = $this->resolveTarget($defaults);
+
+        $io->write('<info>1/4  target</info> — destination directory for synced skills,');
         $io->write('     relative to the project root. Tool-agnostic by default so');
         $io->write('     multiple agents can share it; redirect to .claude/skills,');
         $io->write('     .cursor/skills, etc. for single-agent projects.');
@@ -367,6 +431,31 @@ final readonly class InteractiveInitWizard
     }
 
     /**
+     * @param array<string, mixed> $defaults
+     *
+     * @return list<non-empty-string>
+     *
+     * @psalm-pure
+     */
+    private function resolveAliases(array $defaults): array
+    {
+        $current = [];
+        /** @var mixed $rawAliases */
+        $rawAliases = $defaults['aliases'] ?? null;
+        if (\is_array($rawAliases)) {
+            /** @var mixed $value */
+            foreach ($rawAliases as $value) {
+                if (\is_string($value) && $value !== '') {
+                    /** @var non-empty-string $value */
+                    $current[] = $value;
+                }
+            }
+        }
+
+        return $current;
+    }
+
+    /**
      * Numbered selection plus free-form CSV. Accepts mixed input like
      * `1,3` or `1-3` or `2,custom/path`.
      *
@@ -377,20 +466,9 @@ final readonly class InteractiveInitWizard
      */
     private function askAliases(IOInterface $io, array $defaults, string $target): array
     {
-        $currentAliases = [];
-        /** @var mixed $rawAliases */
-        $rawAliases = $defaults['aliases'] ?? null;
-        if (\is_array($rawAliases)) {
-            /** @var mixed $value */
-            foreach ($rawAliases as $value) {
-                if (\is_string($value) && $value !== '') {
-                    /** @var non-empty-string $value */
-                    $currentAliases[] = $value;
-                }
-            }
-        }
+        $currentAliases = $this->resolveAliases($defaults);
 
-        $io->write('<info>2/6  aliases</info> — extra paths that mirror the target via');
+        $io->write('<info>2/4  aliases</info> — extra paths that mirror the target via');
         $io->write('     symlink (POSIX) or junction (Windows). Reads through any alias');
         $io->write('     see the same files; only the target is physically written.');
         $io->write('     Pick by number, range (1-3), and/or type custom paths.');
@@ -413,27 +491,7 @@ final readonly class InteractiveInitWizard
 
         $parsed = self::parseAliasInput(\is_string($answer) ? $answer : $defaultPrompt, $currentAliases);
 
-        // Validate against target. Re-prompt would be nicer; for now,
-        // drop the offending entry with a notice and continue.
-        $clean = [];
-        $seen = [];
-        $targetNorm = \rtrim(\str_replace('\\', '/', $target), '/');
-        foreach ($parsed as $alias) {
-            $norm = \rtrim(\str_replace('\\', '/', $alias), '/');
-            if ($norm === $targetNorm) {
-                $io->write(\sprintf(
-                    '  <comment>(dropped: %s equals target)</comment>',
-                    $alias,
-                ));
-                continue;
-            }
-            if (isset($seen[$norm])) {
-                continue;
-            }
-            $seen[$norm] = true;
-            $clean[] = $alias;
-        }
-
+        $clean = $this->cleanAliases($io, $parsed, $target);
         $io->write('');
 
         return $clean;
@@ -443,8 +501,10 @@ final readonly class InteractiveInitWizard
      * @param array<string, mixed> $defaults
      *
      * @return list<non-empty-string>
+     *
+     * @psalm-pure
      */
-    private function askTrusted(IOInterface $io, array $defaults): array
+    private function resolveTrusted(array $defaults): array
     {
         $current = [];
         /** @var mixed $rawTrusted */
@@ -459,7 +519,19 @@ final readonly class InteractiveInitWizard
             }
         }
 
-        $io->write('<info>3/6  trusted</info> — packages allowed to ship skills into this');
+        return $current;
+    }
+
+    /**
+     * @param array<string, mixed> $defaults
+     *
+     * @return list<non-empty-string>
+     */
+    private function askTrusted(IOInterface $io, array $defaults): array
+    {
+        $current = $this->resolveTrusted($defaults);
+
+        $io->write('<info>3/4  trusted</info> — packages allowed to ship skills into this');
         $io->write('     project. Patterns: <comment>vendor/package</comment> (exact) or');
         $io->write('     <comment>vendor/*</comment> (whole vendor). Built-in trust and direct');
         $io->write('     dependencies are implicitly trusted — only list what those');
@@ -504,13 +576,23 @@ final readonly class InteractiveInitWizard
 
     /**
      * @param array<string, mixed> $defaults
+     *
+     * @psalm-pure
+     */
+    private function resolveTrustedReplace(array $defaults): bool
+    {
+        return (bool) (self::composerDependencyDefault($defaults)['trusted-replace'] ?? false);
+    }
+
+    /**
+     * @param array<string, mixed> $defaults
      */
     private function askTrustedReplace(IOInterface $io, array $defaults): bool
     {
-        $default = (bool) (self::composerDependencyDefault($defaults)['trusted-replace'] ?? false);
+        $default = $this->resolveTrustedReplace($defaults);
 
-        $io->write('<info>4/6  trusted-replace</info> — when <comment>true</comment>, the project trust');
-        $io->write('     list <comment>replaces</comment> both the built-in trusted vendors and the');
+        $io->write('     <info>trusted-replace</info> — when <comment>true</comment>, the list above');
+        $io->write('     <comment>replaces</comment> both the built-in trusted vendors and the');
         $io->write('     implicit direct-dependency trust. Use this for "explicit trust');
         $io->write('     only" mode.');
         $bool = $io->askConfirmation(
@@ -527,26 +609,15 @@ final readonly class InteractiveInitWizard
 
     /**
      * @param array<string, mixed> $defaults
+     *
+     * @psalm-pure
      */
-    private function askDiscovery(IOInterface $io, array $defaults): bool
+    private function resolveAutoSync(array $defaults): bool
     {
-        $default = (bool) ($defaults['discovery'] ?? false);
-
-        $io->write('<info>5/6  discovery</info> — when <comment>true</comment>, packages without an');
-        $io->write('     <comment>extra.skills</comment> block are still considered as donors if');
-        $io->write('     they ship a top-level <comment>skills/</comment> directory. Useful for');
-        $io->write('     ecosystems where shipping skills is conventional but not yet');
-        $io->write('     declared.');
-        $bool = $io->askConfirmation(
-            \sprintf(
-                '  <info>discovery</info> [<comment>%s</comment>]: ',
-                $default ? 'Y/n' : 'y/N',
-            ),
-            $default,
-        );
-        $io->write('');
-
-        return $bool;
+        // Default `true`: most projects want the post-install/update
+        // hook to keep skills fresh without ceremony. Users with
+        // sensitive CI policies can flip it off here.
+        return (bool) ($defaults['auto-sync'] ?? true);
     }
 
     /**
@@ -554,12 +625,9 @@ final readonly class InteractiveInitWizard
      */
     private function askAutoSync(IOInterface $io, array $defaults): bool
     {
-        // Default `true`: most projects want the post-install/update
-        // hook to keep skills fresh without ceremony. Users with
-        // sensitive CI policies can flip it off here.
-        $default = (bool) ($defaults['auto-sync'] ?? true);
+        $default = $this->resolveAutoSync($defaults);
 
-        $io->write('<info>6/6  auto-sync</info> — when <comment>true</comment> (default), <comment>skills:update</comment> runs');
+        $io->write('<info>4/4  auto-sync</info> — when <comment>true</comment> (default), <comment>skills:update</comment> runs');
         $io->write('     automatically after every <comment>composer install</comment> /');
         $io->write('     <comment>composer update</comment>. Suppressed by <comment>--no-scripts</comment>.');
         $bool = $io->askConfirmation(

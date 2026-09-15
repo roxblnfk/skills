@@ -27,9 +27,7 @@ final class InteractiveInitWizardTest
         $io = $this->ioWithAnswers([
             '',  // target (default .agents/skills)
             '',  // aliases (default 'none')
-            '',  // trusted (default '<none>')
-            '',  // trusted-replace (default no)
-            '',  // discovery (default no)
+            '',  // trusted (default '<none>' — an empty list skips trusted-replace)
             '',  // auto-sync (default yes — flipped on; omitted from result)
             'yes', // confirm write
         ]);
@@ -43,8 +41,6 @@ final class InteractiveInitWizardTest
     {
         $io = $this->ioWithAnswers([
             'custom/skills', // target
-            '',
-            '',
             '',
             '',
             '',
@@ -68,8 +64,6 @@ final class InteractiveInitWizardTest
             '1,3',
             '',
             '',
-            '',
-            '',
             'yes',
         ]);
 
@@ -88,8 +82,6 @@ final class InteractiveInitWizardTest
         $io = $this->ioWithAnswers([
             'custom/skills',
             '1-3',
-            '',
-            '',
             '',
             '',
             'yes',
@@ -112,8 +104,6 @@ final class InteractiveInitWizardTest
             '1,custom/path,2',
             '',
             '',
-            '',
-            '',
             'yes',
         ]);
 
@@ -133,8 +123,6 @@ final class InteractiveInitWizardTest
         $io = $this->ioWithAnswers([
             '',          // target = .agents/skills (default)
             '1,2,3',     // aliases: .claude, .cursor, .agents
-            '',
-            '',
             '',
             '',
             'yes',
@@ -163,8 +151,6 @@ final class InteractiveInitWizardTest
             'none',
             '',
             '',
-            '',
-            '',
             'yes',
         ]);
 
@@ -184,9 +170,8 @@ final class InteractiveInitWizardTest
             '',
             '',
             'acme/*,vendor/pkg',
-            '',
-            '',
-            '',
+            '',    // trusted-replace
+            '',    // auto-sync
             'yes',
         ]);
 
@@ -211,10 +196,8 @@ final class InteractiveInitWizardTest
         $io = $this->ioWithAnswers([
             '',         // target
             '',         // aliases
-            '<none>',   // trusted → clear
-            '',
-            '',
-            '',
+            '<none>',   // trusted → clear; an empty list skips trusted-replace
+            '',         // auto-sync
             'yes',
         ]);
 
@@ -231,26 +214,25 @@ final class InteractiveInitWizardTest
     public function booleanPromptsCapturedCorrectly(): void
     {
         // Only non-default values land in the result map (defaults are
-        // implicit). trusted-replace / discovery default to `false` →
-        // answering "yes" inverts them and they appear. auto-sync
-        // defaults to `true` → answering "no" inverts it and the
-        // key appears with `false`.
+        // implicit). trusted-replace defaults to `false` → answering
+        // "yes" inverts it and it appears. auto-sync defaults to `true`
+        // → answering "no" inverts it and the key appears with `false`.
         $io = $this->ioWithAnswers([
             '',
             '',
-            '',
-            'yes',  // trusted-replace → non-default true
-            'yes',  // discovery       → non-default true
-            'no',   // auto-sync       → non-default false
-            'yes',  // confirm write
+            'acme/*', // trusted — a list is what makes replacing one a question
+            'yes',    // trusted-replace → non-default true
+            'no',     // auto-sync       → non-default false
+            'yes',    // confirm write
         ]);
 
         $result = (new InteractiveInitWizard())->run($io, []);
 
-        // trusted-replace lands under `dependencies.composer`; with no
-        // trusted patterns the composer object carries it alone.
-        Assert::same($result['dependencies'] ?? null, ['composer' => ['trusted-replace' => true]]);
-        Assert::same($result['discovery'] ?? null, true);
+        // Both trust answers land under `dependencies.composer`.
+        Assert::same(
+            $result['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/*'], 'trusted-replace' => true]],
+        );
         Assert::same($result['auto-sync'] ?? null, false);
     }
 
@@ -259,7 +241,7 @@ final class InteractiveInitWizardTest
         // Accepting the new default (true) does not produce an
         // `auto-sync` key — the default carries the value.
         $io = $this->ioWithAnswers([
-            '', '', '', '', '',
+            '', '', '',
             '',     // auto-sync: accept default `true`
             'yes',
         ]);
@@ -282,8 +264,6 @@ final class InteractiveInitWizardTest
             '',
             '',
             '',
-            '',
-            '',
             'no',
         ]);
 
@@ -302,9 +282,8 @@ final class InteractiveInitWizardTest
             '',     // target → keep custom/skills
             '',     // aliases → keep claude+cursor
             '',     // trusted → keep
-            '',
-            '',
-            '',
+            '',     // trusted-replace
+            '',     // auto-sync
             'yes',
         ]);
 
@@ -323,7 +302,7 @@ final class InteractiveInitWizardTest
     public function preservesUnpromptedKeysAndMergesTrust(): void
     {
         // --force over a rich existing skills.json: the wizard prompts for
-        // only six knobs, but everything else in the file — `sources`,
+        // a handful of knobs, but everything else in the file — `sources`,
         // `path-from-root`, a sibling `npm` block, and composer's explicit
         // `enabled: false` — must survive. Enter through every prompt: the
         // surfaced trusted list is kept and lands under dependencies.composer.
@@ -332,7 +311,6 @@ final class InteractiveInitWizardTest
             '',    // aliases → keep .claude/skills
             '',    // trusted → keep acme/*
             '',    // trusted-replace → keep default (false)
-            '',    // discovery → keep default (false)
             '',    // auto-sync → keep default (true)
             'yes', // confirm write
         ]);
@@ -379,7 +357,6 @@ final class InteractiveInitWizardTest
             '',              // aliases
             'acme/*',        // trusted → add a pattern
             '',              // trusted-replace
-            '',              // discovery
             '',              // auto-sync
             'yes',
         ]);
@@ -392,6 +369,42 @@ final class InteractiveInitWizardTest
             $result['dependencies'] ?? null,
             ['composer' => ['enabled' => false, 'trusted' => ['acme/*']]],
         );
+    }
+
+    public function quickModeAsksNothingButTheConfirmation(): void
+    {
+        // A single "yes" carries the whole run: no question is asked, and
+        // the detected defaults land verbatim.
+        $io = $this->ioWithAnswers(['yes']);
+
+        $result = (new InteractiveInitWizard())->run($io, ['aliases' => ['.claude/skills']], quick: true);
+
+        Assert::same($result, ['aliases' => ['.claude/skills']]);
+    }
+
+    public function quickModeDeclineAbortsWithoutAResult(): void
+    {
+        $io = $this->ioWithAnswers(['no']);
+
+        $result = (new InteractiveInitWizard())->run($io, ['aliases' => ['.claude/skills']], quick: true);
+
+        Assert::null($result);
+        Assert::true(\str_contains($io->getOutput(), 'aborted'));
+    }
+
+    public function quickModeStillDropsAnAliasEqualToTheTarget(): void
+    {
+        // Defaults reaching quick mode are not user input, but they can
+        // still carry the one combination the mapper rejects.
+        $io = $this->ioWithAnswers(['yes']);
+
+        $result = (new InteractiveInitWizard())->run(
+            $io,
+            ['aliases' => ['.agents/skills', '.claude/skills']],
+            quick: true,
+        );
+
+        Assert::same($result['aliases'] ?? null, ['.claude/skills']);
     }
 
     /**

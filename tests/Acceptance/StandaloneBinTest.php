@@ -226,4 +226,134 @@ final class StandaloneBinTest
             'standalone init writes a stub with the dependencies + sources knobs visible',
         );
     }
+
+    public function initProposesTheAgentDirectoriesTheProjectAlreadyUses(): void
+    {
+        // `.claude` and `.cursor` exist, so the project already works with
+        // both agents; init wires them to the shared target instead of
+        // making the user type the paths.
+        \mkdir($this->tmp . '/.claude', 0o777, true);
+        \mkdir($this->tmp . '/.cursor', 0o777, true);
+
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same(
+            $this->decodeSkillsJson()['aliases'] ?? null,
+            ['.claude/skills', '.cursor/skills'],
+        );
+    }
+
+    public function initLeavesAnAgentDirectoryThatHoldsItsOwnSkillsAlone(): void
+    {
+        // `.claude/skills` already holds files, so it cannot become a link.
+        // It must be reported rather than written into the config.
+        \mkdir($this->tmp . '/.claude/skills/greeting', 0o777, true);
+        \file_put_contents($this->tmp . '/.claude/skills/greeting/SKILL.md', '# greeting');
+
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init');
+        $combined = $process->getOutput() . $process->getErrorOutput();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(
+            \array_key_exists('aliases', $this->decodeSkillsJson()),
+            'a directory holding files must not be proposed as an alias. Got: ' . $combined,
+        );
+        Assert::true(
+            \str_contains($combined, 'holds its own files'),
+            'the user must be told why the directory was left out. Got: ' . $combined,
+        );
+    }
+
+    public function quickInitWritesTheDetectedLayout(): void
+    {
+        // `--quick` answers every question from the layout and confirms with
+        // a single prompt; without a TTY the confirmation takes its default.
+        \mkdir($this->tmp . '/.claude', 0o777, true);
+
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init --quick');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same($this->decodeSkillsJson()['aliases'] ?? null, ['.claude/skills']);
+    }
+
+    public function initWritesTheConfigValuesGivenOnTheCommandLine(): void
+    {
+        // The scripted setup: one invocation, no prompts, every knob
+        // decided by the caller.
+        $process = BinSkillsRunner::run(
+            Path::create($this->tmp),
+            'init --quick --target=.claude/skills --alias=.agents/skills '
+            . "--trust=acme/* --trust=myorg/pkg --no-auto-sync --no-discovery",
+        );
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+
+        $config = $this->decodeSkillsJson();
+        Assert::same($config['target'] ?? null, '.claude/skills');
+        Assert::same($config['aliases'] ?? null, ['.agents/skills']);
+        Assert::same($config['auto-sync'] ?? null, false);
+        Assert::same($config['discovery'] ?? null, false);
+        // The stub's short `"composer": true` toggle grows into the object
+        // form to carry the trust list; `enabled` stays unwritten because
+        // enabled is what composer already defaults to.
+        Assert::same(
+            $config['dependencies'] ?? null,
+            ['composer' => ['trusted' => ['acme/*', 'myorg/pkg']]],
+        );
+    }
+
+    public function givenValuesWinOverTheDetectedLayout(): void
+    {
+        // `.cursor` is in use, so detection would propose it as an alias.
+        // An explicit `--alias` is the user overruling that.
+        \mkdir($this->tmp . '/.cursor', 0o777, true);
+
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init --alias=.claude/skills');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same($this->decodeSkillsJson()['aliases'] ?? null, ['.claude/skills']);
+    }
+
+    public function anAliasEqualToTheTargetIsRefusedBeforeAnythingIsWritten(): void
+    {
+        // Sync would be asked to link a directory onto itself, and the
+        // mapper refuses to load the result — better to hear it now.
+        $process = BinSkillsRunner::run(
+            Path::create($this->tmp),
+            'init --target=.claude/skills --alias=.claude/skills',
+        );
+
+        Assert::same($process->getExitCode(), 2, 'an invalid CLI shape must exit INVALID');
+        Assert::false(
+            \is_file($this->tmp . '/skills.json'),
+            'nothing must be written when the arguments contradict each other',
+        );
+    }
+
+    public function contradictoryBooleanFlagsAreRefused(): void
+    {
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'init --discovery --no-discovery');
+
+        Assert::same($process->getExitCode(), 2);
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'contradict'),
+            'the user must be told which flags disagree. Got: ' . $process->getErrorOutput(),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeSkillsJson(): array
+    {
+        /** @var array<string, mixed> $decoded */
+        $decoded = \json_decode(
+            (string) \file_get_contents($this->tmp . '/skills.json'),
+            true,
+            flags: \JSON_THROW_ON_ERROR,
+        );
+
+        return $decoded;
+    }
 }

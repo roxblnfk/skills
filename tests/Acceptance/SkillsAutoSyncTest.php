@@ -128,6 +128,22 @@ final class SkillsAutoSyncTest
         );
     }
 
+    #[WithSandboxExtras([])]
+    public function unconfiguredProjectIsNotSetUpBehindTheUsersBack(): void
+    {
+        // The plugin offers a quick `skills:init` to a project with no
+        // configuration — but only when there is someone to answer. A
+        // non-interactive run (CI, `--no-interaction`) must write no
+        // config file at all.
+        $process = $this->runScript('post-install-cmd');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(
+            \is_file(Info::PROJECT_DIR . '/skills.json'),
+            'a non-interactive run must not write a config the user never confirmed',
+        );
+    }
+
     private function runScript(string $event): Process
     {
         return ComposerRunner::run(

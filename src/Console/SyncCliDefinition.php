@@ -83,8 +83,16 @@ final class SyncCliDefinition
                 'discovery',
                 $discoveryShortFlag ? 'd' : null,
                 InputOption::VALUE_NONE,
-                'Also include packages that do not declare extra.skills but ship a skills/ '
-                . 'directory. Overrides extra.skills.discovery.',
+                'Include packages that do not declare extra.skills but ship a skills/ '
+                . 'directory. On by default; this flag forces it on for a project that '
+                . 'turned it off.',
+            )
+            ->addOption(
+                'no-discovery',
+                null,
+                InputOption::VALUE_NONE,
+                'Consider only packages that declare extra.skills. Overrides the '
+                . 'discovery setting for this run.',
             )
             ->addOption(
                 'from',
@@ -120,7 +128,7 @@ final class SyncCliDefinition
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
             dryRun: (bool) $input->getOption('dry-run'),
-            discovery: $input->getOption('discovery') === true ? true : null,
+            discovery: self::discoveryOverride($input),
             aliasOverrides: $aliasOverrides,
             fromFilter: $fromFilter,
         );
@@ -179,5 +187,20 @@ final class SyncCliDefinition
         }
 
         return $out;
+    }
+
+    /**
+     * `--discovery` / `--no-discovery` as a tri-state: `true` / `false`
+     * force the setting for this run, `null` defers to the project
+     * config. Passing both makes the negative win — the safer of the two
+     * is the one that syncs less.
+     */
+    private static function discoveryOverride(InputInterface $input): ?bool
+    {
+        if ($input->getOption('no-discovery') === true) {
+            return false;
+        }
+
+        return $input->getOption('discovery') === true ? true : null;
     }
 }

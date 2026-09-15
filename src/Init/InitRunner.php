@@ -8,9 +8,11 @@ use Composer\IO\IOInterface;
 use Composer\Json\JsonManipulator;
 use Internal\Path;
 use LLM\Skills\Config\InitOptions;
+use LLM\Skills\Config\InitPresets;
 use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
+use LLM\Skills\Config\ProjectConfig;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -34,6 +36,13 @@ use Symfony\Component\Console\Command\Command;
  * The migrator handles the composer-attached refusal logic
  * implicitly (skills.json already exists → no-op); InitRunner adds
  * the user-facing refusal-without-force semantics on top.
+ *
+ * A project with nothing to inherit from does not start at the built-in
+ * defaults: {@see AgentWorkspaceProbe} reads the agent directories that
+ * are already on disk, and those become the proposed target and aliases.
+ * That is what makes `--quick` — and the offer the plugin makes on its
+ * own after `composer install` — worth confirming in one keystroke
+ * instead of answering a questionnaire.
  */
 final readonly class InitRunner
 {
@@ -50,10 +59,20 @@ final readonly class InitRunner
     public function __construct(
         private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
         private InteractiveInitWizard $wizard = new InteractiveInitWizard(),
+        private AgentWorkspaceProbe $probe = new AgentWorkspaceProbe(),
     ) {}
 
-    public function run(Path $projectRoot, IOInterface $io, InitOptions $options): int
-    {
+    /**
+     * @param \Closure():void|null $onConfigWritten called once the canonical `skills.json`
+     *        is in place, so an entrypoint can follow up with a sync. Never called for a
+     *        non-canonical `--path` (nothing reads that file) nor when the user aborts
+     */
+    public function run(
+        Path $projectRoot,
+        IOInterface $io,
+        InitOptions $options,
+        ?\Closure $onConfigWritten = null,
+    ): int {
         $target = $this->resolveTargetPath($projectRoot, $options->path);
         if ($target === null) {
             $io->writeError(\sprintf(
@@ -114,19 +133,22 @@ final readonly class InitRunner
         // `skills:init` is the command users run on purpose — it exists
         // precisely because they want to think about their config. In
         // interactive mode, walk them through the wizard with sensible
-        // defaults. CI / `--no-interaction` keeps the silent flow.
-        if ($io->isInteractive() && $options->path === 'skills.json') {
+        // defaults; `--quick` takes the same path with the questions
+        // answered from the detected layout. CI / `--no-interaction`
+        // keeps the silent flow.
+        if (($io->isInteractive() || $options->quick) && $options->path === 'skills.json') {
             return $this->runInteractive(
                 $projectRoot,
                 $io,
                 $options,
                 $target,
                 \is_file($composerJsonPath) ? $composerJsonPath : null,
+                $onConfigWritten,
             );
         }
 
         if (!\is_file($composerJsonPath)) {
-            return $this->runStandalone($io, $options, $target);
+            return $this->runStandalone($projectRoot, $io, $options, $target, $onConfigWritten);
         }
 
         // Canonical migration path. Non-default `--path` requires
@@ -156,7 +178,7 @@ final readonly class InitRunner
                 // migrate. Either way, ensure a stub exists so the
                 // user can start adding things.
                 if (!\is_file($target)) {
-                    if (!$this->writeStub($target, $io)) {
+                    if (!$this->writeStub($projectRoot, $target, $io, $options->presets)) {
                         return Command::FAILURE;
                     }
                     $io->write(\sprintf(
@@ -165,9 +187,16 @@ final readonly class InitRunner
                     ));
                     $io->write('<info>[init]</info> note: skills:update will read project config from skills.json');
                 }
+                $onConfigWritten?->__invoke();
                 return Command::SUCCESS;
 
             case MigrationStatus::Migrated:
+                // The migrator writes the file from the inline block alone;
+                // command-line values are layered on afterwards so they win
+                // over what composer.json happened to carry.
+                if (!$this->applyPresetsToFile($target, $options->presets, $io)) {
+                    return Command::FAILURE;
+                }
                 $io->write(\sprintf(
                     '<info>[init]</info> created %s (migrated: %s)',
                     $options->path,
@@ -177,6 +206,7 @@ final readonly class InitRunner
                     '<info>[init]</info> composer.json updated: removed migrated project keys from extra.skills',
                 );
                 $io->write('<info>[init]</info> note: skills:update will read project config from skills.json');
+                $onConfigWritten?->__invoke();
                 return Command::SUCCESS;
         }
     }
@@ -206,6 +236,7 @@ final readonly class InitRunner
         InitOptions $options,
         string $target,
         ?string $composerJsonPath,
+        ?\Closure $onConfigWritten = null,
     ): int {
         $defaults = [];
 
@@ -254,7 +285,17 @@ final readonly class InitRunner
             }
         }
 
-        $resolved = $this->wizard->run($io, $defaults);
+        // A project with no config of its own gets the layout it already
+        // has on disk instead of the built-in defaults — the common case
+        // for `--quick`, where nobody is there to type the paths in.
+        if ($defaults === []) {
+            $defaults = $this->detectedDefaults($projectRoot, $io);
+        }
+
+        // Values given on the command line have the last word over both.
+        $defaults = $options->presets->apply($defaults);
+
+        $resolved = $this->wizard->run($io, $defaults, $options->quick);
         if ($resolved === null) {
             return Command::SUCCESS;
         }
@@ -286,7 +327,126 @@ final readonly class InitRunner
         $io->write(\sprintf('<info>[init]</info> wrote %s', $options->path));
         $io->write('<info>[init]</info> done.');
 
+        $onConfigWritten?->__invoke();
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * Project keys derived from the agent directories already present in
+     * the project, for a project that has no configuration to inherit
+     * from. Only values that differ from the built-in defaults are
+     * returned, so a project with nothing on disk still produces the same
+     * minimal `skills.json` it always did.
+     *
+     * Directories that cannot become aliases are reported rather than
+     * proposed: sync refuses to replace a real directory with a link, so
+     * emitting one would only produce a failing run later.
+     *
+     * @return array<string, mixed>
+     */
+    private function detectedDefaults(Path $projectRoot, IOInterface $io): array
+    {
+        $layout = $this->probe->probe($projectRoot);
+        if (!$layout->detected) {
+            return [];
+        }
+
+        $defaults = [];
+        if ($layout->target !== ProjectConfig::DEFAULT_TARGET) {
+            $defaults['target'] = $layout->target;
+            $io->write(\sprintf(
+                '<info>[init]</info> detected existing skills directory: %s',
+                $layout->target,
+            ));
+        }
+        if ($layout->aliases !== []) {
+            $defaults['aliases'] = $layout->aliases;
+            $io->write(\sprintf(
+                '<info>[init]</info> detected agent directories: %s',
+                \implode(', ', $layout->aliases),
+            ));
+        }
+        foreach ($layout->collisions as $collision) {
+            $io->write(\sprintf(
+                '<comment>[init] %s holds its own files; not proposed as an alias. '
+                . 'Move its contents into %s and add the alias by hand to share them.</comment>',
+                $collision,
+                $layout->target,
+            ));
+        }
+
+        return $defaults;
+    }
+
+    /**
+     * Layer the command-line values onto a `skills.json` that something
+     * else just wrote — the migrator, which only knows about the inline
+     * block it moved. A no-op when nothing was passed, so the common
+     * migration keeps writing exactly the bytes it always did.
+     *
+     * @param non-empty-string $file
+     */
+    private function applyPresetsToFile(string $file, InitPresets $presets, IOInterface $io): bool
+    {
+        if ($presets->isEmpty()) {
+            return true;
+        }
+
+        $migrated = $this->readJsonObject($file, $io, 'skills.json');
+        if ($migrated === null) {
+            return false;
+        }
+        unset($migrated['$schema']);
+
+        $values = $this->dropSelfAlias($presets->apply($migrated), $io);
+        $content = ProjectConfigMigrator::renderSkillsJson($this->orderedProjectKeys($values));
+        if (\file_put_contents($file, $content) === false) {
+            $io->writeError(\sprintf('<error>[llm/skills] failed to write %s</error>', $file));
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Drop an alias that turned out to be the target itself — the mapper
+     * refuses to load that pair, and the silent path into it is a preset
+     * alias meeting a target the detected layout chose.
+     *
+     * @param array<string, mixed> $values
+     *
+     * @return array<string, mixed>
+     */
+    private function dropSelfAlias(array $values, IOInterface $io): array
+    {
+        /** @var mixed $rawAliases */
+        $rawAliases = $values['aliases'] ?? null;
+        if (!\is_array($rawAliases) || $rawAliases === []) {
+            return $values;
+        }
+
+        $aliases = [];
+        /** @var mixed $alias */
+        foreach ($rawAliases as $alias) {
+            if (\is_string($alias) && $alias !== '') {
+                /** @var non-empty-string $alias */
+                $aliases[] = $alias;
+            }
+        }
+
+        /** @var mixed $rawTarget */
+        $rawTarget = $values['target'] ?? null;
+        $target = \is_string($rawTarget) && $rawTarget !== '' ? $rawTarget : ProjectConfig::DEFAULT_TARGET;
+
+        $clean = $this->wizard->cleanAliases($io, $aliases, $target);
+        if ($clean === []) {
+            unset($values['aliases']);
+        } else {
+            $values['aliases'] = $clean;
+        }
+
+        return $values;
     }
 
     /**
@@ -441,9 +601,14 @@ final readonly class InitRunner
     /**
      * @param non-empty-string $target
      */
-    private function runStandalone(IOInterface $io, InitOptions $options, string $target): int
-    {
-        if (!$this->writeStub($target, $io)) {
+    private function runStandalone(
+        Path $projectRoot,
+        IOInterface $io,
+        InitOptions $options,
+        string $target,
+        ?\Closure $onConfigWritten = null,
+    ): int {
+        if (!$this->writeStub($projectRoot, $target, $io, $options->presets)) {
             return Command::FAILURE;
         }
 
@@ -459,6 +624,10 @@ final readonly class InitRunner
         }
 
         $this->maybeWarnNonDefaultPath($io, $options->path);
+
+        if ($options->path === 'skills.json') {
+            $onConfigWritten?->__invoke();
+        }
 
         return Command::SUCCESS;
     }
@@ -518,6 +687,9 @@ final readonly class InitRunner
             if ($options->force && \is_file($target)) {
                 @\unlink($target);
             }
+            if (!$this->applyPresetsToFile($canonical, $options->presets, $io)) {
+                return Command::FAILURE;
+            }
             if (!@\rename($canonical, $target)) {
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] failed to relocate skills.json to %s</error>',
@@ -540,7 +712,7 @@ final readonly class InitRunner
             if (!$canonicalExisted && \is_file($canonical)) {
                 @\unlink($canonical);
             }
-            if (!$this->writeStub($target, $io)) {
+            if (!$this->writeStub($projectRoot, $target, $io, $options->presets)) {
                 return Command::FAILURE;
             }
             $io->write(\sprintf(
@@ -557,7 +729,7 @@ final readonly class InitRunner
     /**
      * @param non-empty-string $target
      */
-    private function writeStub(string $target, IOInterface $io): bool
+    private function writeStub(Path $projectRoot, string $target, IOInterface $io, InitPresets $presets): bool
     {
         $dir = \dirname($target);
         if (!\is_dir($dir) && !@\mkdir($dir, 0o777, true) && !\is_dir($dir)) {
@@ -572,11 +744,15 @@ final readonly class InitRunner
         // knobs visible so users discover them without reading docs.
         // `dependencies.composer: true` is also the default, but we emit
         // it explicitly — hiding it would make the npm / go toggles seem
-        // surprise-feature-y when they arrive.
-        $content = ProjectConfigMigrator::renderSkillsJson([
+        // surprise-feature-y when they arrive. `target` and `aliases`
+        // come from the command line, or from the detected layout, and
+        // stay absent when neither has anything to say.
+        $values = $this->dropSelfAlias($presets->apply([
+            ...$this->detectedDefaults($projectRoot, $io),
             'dependencies' => ['composer' => true],
             'sources' => [],
-        ]);
+        ]), $io);
+        $content = ProjectConfigMigrator::renderSkillsJson($this->orderedProjectKeys($values));
         if (\file_put_contents($target, $content) === false) {
             $io->writeError(\sprintf(
                 '<error>[llm/skills] failed to write %s</error>',
