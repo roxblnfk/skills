@@ -24,6 +24,13 @@ use LLM\Skills\Discovery\Skill;
  *                    left the contents below uncopied. Surfaced alongside the
  *                    skipped links so a truncated tree is never silent; empty
  *                    on a normal, shallow copy.
+ * - `removed`      — names of installed skills deleted by the purge phase
+ *                    (or that *would* have been deleted, in dry-run mode);
+ *                    empty unless the caller passed a purge list.
+ * - `removalFailures` — names the purge phase could not fully delete. The copy
+ *                    still ran over them, so their content is a merge of the
+ *                    leftovers and the donor — a silent partial wipe would
+ *                    look exactly like a successful clean install.
  *
  * Discovery-time warnings (missing source dir, malformed extra, etc.) are
  * **not** part of this report — they happen earlier in the pipeline and
@@ -38,6 +45,8 @@ final readonly class SyncReport
      * @param list<SkillConflict> $conflicts
      * @param list<string> $skippedLinks
      * @param list<string> $truncatedDirs
+     * @param list<non-empty-string> $removed
+     * @param list<non-empty-string> $removalFailures
      *
      * @psalm-mutation-free
      */
@@ -46,6 +55,8 @@ final readonly class SyncReport
         public array $conflicts,
         public array $skippedLinks = [],
         public array $truncatedDirs = [],
+        public array $removed = [],
+        public array $removalFailures = [],
     ) {}
 
     /**

@@ -35,6 +35,8 @@ final readonly class SyncOptions
      *         the runner keeps only donors whose {@see VendorConfig::$provenance} matches
      *         this id. The vocabulary is shared with `skills.json` `dependencies.{id}` and
      *         `sources[].from`.
+     * @param bool $clean `--clean`: delete installed skills before copying instead of merging
+     *         into them. {@see isScoped()} narrows what a scoped run is allowed to delete.
      *
      * @psalm-mutation-free
      */
@@ -48,6 +50,7 @@ final readonly class SyncOptions
         public ?array $aliasOverrides = null,
         public bool $autoMigrate = true,
         public ?string $fromFilter = null,
+        public bool $clean = false,
     ) {}
 
     /**
@@ -75,6 +78,19 @@ final readonly class SyncOptions
     public function hasPackageFilters(): bool
     {
         return $this->packageFilters !== [];
+    }
+
+    /**
+     * `true` when this run only considers part of the donor set — a positional
+     * package pattern or `--from`. Such a run cannot see the donors it filtered
+     * out, so {@see \LLM\Skills\Sync\PurgePlanner} restricts `--clean` to skills
+     * it is about to write back.
+     *
+     * @psalm-mutation-free
+     */
+    public function isScoped(): bool
+    {
+        return $this->packageFilters !== [] || $this->fromFilter !== null;
     }
 
     /**

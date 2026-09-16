@@ -5,20 +5,28 @@ declare(strict_types=1);
 namespace LLM\Skills\Sync;
 
 use Internal\Path;
+use LLM\Skills\Discovery\InstalledSkill;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Filesystem\LinkGuard;
+use LLM\Skills\Filesystem\TreeRemover;
 
 /**
  * Writes a curated list of skills into a target directory.
  *
  * Discovery is no longer the engine's job — callers pass already
  * enumerated {@see Skill}s (typically from
- * {@see \LLM\Skills\Discovery\SkillEnumerator}). The engine is two
+ * {@see \LLM\Skills\Discovery\SkillEnumerator}). The engine is three
  * phases:
  *
  *   1. Validate — detect skill-name collisions. Reported as
  *      {@see SkillConflict}s; sync aborts before any write.
- *   2. Copy     — recursive, non-destructive merge per skill.
+ *   2. Purge    — delete the installed skills the caller listed (empty
+ *      for a plain run; populated under `--clean`).
+ *   3. Copy     — recursive, non-destructive merge per skill.
+ *
+ * Validation runs before the purge so a name collision — or a target
+ * whose donors could not be enumerated — leaves the existing target
+ * intact instead of emptying it with nothing to put back.
  *
  * Both Composer/Trust resolution and filesystem enumeration happen
  * **before** the engine. The engine is pure write logic plus conflict
@@ -36,21 +44,41 @@ final readonly class SyncEngine
     private const MAX_COPY_DEPTH = 32;
 
     /**
+     * @psalm-mutation-free
+     */
+    public function __construct(
+        private TreeRemover $remover = new TreeRemover(),
+    ) {}
+
+    /**
      * @param list<Skill> $skills the skills to write (post-trust, post-enumeration)
      * @param Path $target absolute destination directory; created if missing
      * @param bool $dryRun when `true`, do everything except writing files — conflict detection still runs,
-     *        and the returned report's `copied` list still names the skills that *would* have been written.
+     *        and the returned report's `copied` / `removed` lists still name the skills that *would*
+     *        have been written and deleted.
+     * @param list<InstalledSkill> $purge installed skills to delete before copying; `[]` leaves the
+     *        target's existing content in place, which is the default non-destructive merge
      */
-    public function sync(array $skills, Path $target, bool $dryRun = false): SyncReport
+    public function sync(array $skills, Path $target, bool $dryRun = false, array $purge = []): SyncReport
     {
         $conflicts = $this->detectConflicts($skills);
         if ($conflicts !== []) {
             return new SyncReport(copied: [], conflicts: $conflicts);
         }
 
+        $removed = [];
+        $removalFailures = [];
         $skippedLinks = [];
         $truncatedDirs = [];
         if (!$dryRun) {
+            foreach ($purge as $installed) {
+                if ($this->remover->remove((string) $installed->dir)) {
+                    $removed[] = $installed->name;
+                } else {
+                    $removalFailures[] = $installed->name;
+                }
+            }
+
             foreach ($skills as $skill) {
                 $this->copyTree(
                     (string) $skill->sourceDir,
@@ -60,6 +88,8 @@ final readonly class SyncEngine
                     $truncatedDirs,
                 );
             }
+        } else {
+            $removed = \array_map(static fn(InstalledSkill $s): string => $s->name, $purge);
         }
 
         return new SyncReport(
@@ -67,6 +97,8 @@ final readonly class SyncEngine
             conflicts: [],
             skippedLinks: $skippedLinks,
             truncatedDirs: $truncatedDirs,
+            removed: $removed,
+            removalFailures: $removalFailures,
         );
     }
 
