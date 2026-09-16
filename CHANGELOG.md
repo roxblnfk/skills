@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/roxblnfk/skills/compare/1.13.0...1.14.0) (2026-09-16)
+
+
+### Features
+
+* `--clean` reinstalls skills instead of merging into them ([#45](https://github.com/roxblnfk/skills/issues/45)) ([1c8a1e4](https://github.com/roxblnfk/skills/commit/1c8a1e43351e32d5a7ea660dad959a6fc650ff29))
+
 ## [1.13.0](https://github.com/roxblnfk/skills/compare/1.12.0...1.13.0) (2026-09-15)
 
 
