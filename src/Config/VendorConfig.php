@@ -19,6 +19,8 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  * Malformed donor configs do **not** abort sync; the mapper throws
  * {@see \LLM\Skills\Config\Exception\MalformedVendorConfig} and the command
  * skips the offending package with a `-v` warning.
+ *
+ * @psalm-immutable
  */
 final readonly class VendorConfig
 {
@@ -88,6 +90,8 @@ final readonly class VendorConfig
 
     /**
      * Absolute path to the directory whose immediate subdirectories are skills.
+     *
+     * @psalm-mutation-free
      */
     public function sourcePath(): Path
     {

@@ -80,6 +80,15 @@ final class SyncCliDefinition
                 'Print what would happen without touching the filesystem.',
             )
             ->addOption(
+                'clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Delete installed skills before copying instead of merging into them, so '
+                . 'files dropped by a donor do not linger. Without a package filter every '
+                . 'skill directory in the target is wiped, including ones you wrote by hand; '
+                . 'with a filter only the skills this run reinstalls are.',
+            )
+            ->addOption(
                 'discovery',
                 $discoveryShortFlag ? 'd' : null,
                 InputOption::VALUE_NONE,
@@ -131,6 +140,7 @@ final class SyncCliDefinition
             discovery: self::discoveryOverride($input),
             aliasOverrides: $aliasOverrides,
             fromFilter: $fromFilter,
+            clean: (bool) $input->getOption('clean'),
         );
     }
 

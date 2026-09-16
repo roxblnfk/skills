@@ -16,14 +16,19 @@ use Internal\Path;
  * subfolders the user may have placed under the target dir.
  *
  * Used by the `show` command to mark each donor-side skill as `[✓]`
- * (already installed) or `[ ]` (would be written on next sync).
+ * (already installed) or `[ ]` (would be written on next sync), and by
+ * `skills:update --clean` to decide what to delete.
  */
 final readonly class InstalledSkillScanner
 {
     /**
-     * @return list<InstalledSkill> empty when `$target` does not exist
+     * @return list<InstalledSkill>|null empty list when `$target` does not
+     *         exist or holds no skills; `null` when the directory is there but
+     *         could not be read. The two are kept apart because a caller that
+     *         deletes what this returns would otherwise read an unreadable
+     *         target as an empty one and report a wipe that never happened.
      */
-    public function scan(Path $target): array
+    public function scan(Path $target): ?array
     {
         $base = (string) $target;
         if (!\is_dir($base)) {
@@ -32,7 +37,7 @@ final readonly class InstalledSkillScanner
 
         $entries = \scandir($base);
         if ($entries === false) {
-            return [];
+            return null;
         }
 
         $result = [];

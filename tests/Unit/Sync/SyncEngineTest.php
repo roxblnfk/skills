@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Sync;
 
 use Internal\Path;
+use LLM\Skills\Discovery\InstalledSkill;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Sync\SyncEngine;
 use LLM\Skills\Tests\Testo\Filesystem;
@@ -226,6 +227,80 @@ final class SyncEngineTest
         Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'pre-existing content');
     }
 
+    // ── purge phase ─────────────────────────────────────────────────────────
+
+    public function purgeDropsFilesTheDonorNoLongerShips(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version']);
+        $installed = $this->installTarget('greeting', [
+            'SKILL.md' => 'old version',
+            'dropped.md' => 'no longer shipped',
+        ]);
+
+        $report = (new SyncEngine())->sync([$skill], $this->target(), purge: [$installed]);
+
+        Assert::same($report->removed, ['greeting']);
+        Assert::same($report->removalFailures, []);
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'donor version');
+        Assert::false(
+            \is_file($this->targetPath('greeting/dropped.md')),
+            'a file the donor dropped must not survive the purge',
+        );
+    }
+
+    public function purgeRemovesASkillNoDonorWritesBack(): void
+    {
+        $orphan = $this->installTarget('orphan', ['SKILL.md' => '# Orphan']);
+
+        $report = (new SyncEngine())->sync([], $this->target(), purge: [$orphan]);
+
+        Assert::same($report->removed, ['orphan']);
+        Assert::false(\is_dir($this->targetPath('orphan')));
+    }
+
+    public function conflictAbortLeavesTheTargetIntactDespiteAPurgeList(): void
+    {
+        // Validation runs first for exactly this case: the collision means
+        // nothing can be written, so nothing may be deleted either.
+        $a = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => '# A']);
+        $b = $this->makeSkill('acme/pro', 'greeting', ['SKILL.md' => '# B']);
+        $installed = $this->installTarget('greeting', ['SKILL.md' => 'pre-existing']);
+
+        $report = (new SyncEngine())->sync([$a, $b], $this->target(), purge: [$installed]);
+
+        Assert::true($report->hasConflicts());
+        Assert::same($report->removed, []);
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'pre-existing');
+    }
+
+    public function dryRunReportsThePurgeWithoutDeletingAnything(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version']);
+        $installed = $this->installTarget('greeting', ['SKILL.md' => 'pre-existing']);
+
+        $report = (new SyncEngine())->sync(
+            [$skill],
+            $this->target(),
+            dryRun: true,
+            purge: [$installed],
+        );
+
+        Assert::same($report->removed, ['greeting']);
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'pre-existing');
+    }
+
+    public function emptyPurgeListKeepsTheMergeNonDestructive(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version']);
+        $this->installTarget('greeting', ['SKILL.md' => 'old', 'notes.md' => 'user notes']);
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same($report->removed, []);
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'donor version');
+        Assert::true(\is_file($this->targetPath('greeting/notes.md')));
+    }
+
     public function skipsSymlinkedDirectoriesAndFilesAndReportsThem(): void
     {
         // Security: a link inside a donor could point at a large or sensitive
@@ -358,6 +433,31 @@ final class SyncEngineTest
             sourceDir: Path::create($skillDir),
             packageName: $packageName,
         );
+    }
+
+    /**
+     * Lay out a skill directly under `<tmp>/target/` as if a previous sync had
+     * written it, and return the {@see InstalledSkill} a scanner would produce
+     * for it.
+     *
+     * @param non-empty-string $skillName
+     * @param array<non-empty-string, string> $files map of relative path → file contents
+     */
+    private function installTarget(string $skillName, array $files): InstalledSkill
+    {
+        $dir = $this->tmp . '/target/' . $skillName;
+        \mkdir($dir, 0o777, true);
+
+        foreach ($files as $rel => $contents) {
+            $full = $dir . '/' . $rel;
+            $parent = \dirname($full);
+            if (!\is_dir($parent)) {
+                \mkdir($parent, 0o777, true);
+            }
+            \file_put_contents($full, $contents);
+        }
+
+        return new InstalledSkill(name: $skillName, dir: Path::create($dir));
     }
 
     private function target(): Path

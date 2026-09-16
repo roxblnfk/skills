@@ -48,6 +48,8 @@ use LLM\Skills\Config\VendorConfig;
  *   `true`, since that flag asks for explicit-only trust.
  * - Without positional filters, every other donor must clear the effective
  *   trust list (built-in ∪ project ∪ `--trust` ∪ direct deps).
+ *
+ * @psalm-immutable
  */
 final readonly class SyncPlanner
 {
@@ -56,6 +58,8 @@ final readonly class SyncPlanner
      * @param list<non-empty-string> $directDependencies package names declared in the consumer's
      *         root `require` and `require-dev`. Implicitly trusted unless
      *         {@see ProjectConfig::$trustedReplace} is `true`.
+     *
+     * @psalm-mutation-free
      */
     public function plan(
         array $donors,
@@ -141,6 +145,8 @@ final readonly class SyncPlanner
      * `$resolved`'s parents comparing each with {@see self::pathsEqual()}, so
      * containment is literal (no glob), case-insensitive on Windows, and
      * works regardless of how {@see Path} renders the filesystem root.
+     *
+     * @psalm-mutation-free
      */
     private static function isWithin(Path $resolved, Path $root): bool
     {
@@ -217,6 +223,8 @@ final readonly class SyncPlanner
      *        the user can locate the offending entry in their config
      *
      * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
      */
     private function assertWithinProject(
         Path $resolved,
@@ -337,6 +345,8 @@ final readonly class SyncPlanner
      * silently anchoring writes to an unintended ancestor.
      *
      * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
      */
     private function resolveContainmentRoot(ProjectConfig $project, Path $projectRoot): Path
     {
@@ -363,6 +373,11 @@ final readonly class SyncPlanner
         return $root;
     }
 
+    /**
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
     private function resolveTarget(
         ProjectConfig $project,
         SyncOptions $options,
@@ -389,6 +404,8 @@ final readonly class SyncPlanner
      * @return list<Path>
      *
      * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
      */
     private function resolveAliases(
         ProjectConfig $project,
@@ -435,6 +452,8 @@ final readonly class SyncPlanner
 
     /**
      * @param non-empty-string $raw
+     *
+     * @psalm-mutation-free
      */
     private function resolvePath(string $raw, Path $root): Path
     {

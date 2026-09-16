@@ -105,7 +105,10 @@ final readonly class InspectionBuilder
         $conflictReport = $this->engine->sync($approvedSkills, $plan->target, dryRun: true);
         $conflictMap = $this->indexConflicts($conflictReport->conflicts);
 
-        $installed = $this->installedScanner->scan($plan->target);
+        // An unreadable target is reported as nothing installed: `show` only
+        // marks skills `[✓]` / `[ ]`, so the worst it costs is an optimistic
+        // "would be written" row, not a destructive decision.
+        $installed = $this->installedScanner->scan($plan->target) ?? [];
         $installedByName = $this->indexInstalledByName($installed);
 
         $donorInspections = $this->buildDonorInspections(
@@ -315,7 +318,7 @@ final readonly class InspectionBuilder
      * be several per package (one per container); a skill belongs to the row
      * whose explicit directory list contains its source directory.
      *
-     * @psalm-mutation-free
+     * @psalm-pure
      */
     private function skillBelongsToDonor(Skill $skill, VendorConfig $donor): bool
     {

@@ -100,6 +100,29 @@ final class SkillEnumeratorTest
         Assert::same($result->skills[0]->packageName, 'acme/good');
     }
 
+    public function aDonorWithNoSourceDirectoryIsNamedInDroppedDonors(): void
+    {
+        // The typed half of the warning: a caller that deletes before writing
+        // has to know a donor's skills are missing from the result, not merely
+        // print that they are.
+        $packageRoot = $this->tmp . '/vendor/acme/broken';
+        \mkdir($packageRoot, 0o777, true);
+        $broken = new VendorConfig('acme/broken', Path::create($packageRoot), 'src');
+
+        $good = $this->makeDonor('acme/good', 'src', ['refactor/SKILL.md' => '# OK']);
+
+        $result = (new SkillEnumerator())->enumerate([$broken, $good]);
+
+        Assert::same($result->droppedDonors, ['acme/broken']);
+    }
+
+    public function aFullyEnumeratedRunDropsNoDonors(): void
+    {
+        $donor = $this->makeDonor('acme/good', 'src', ['refactor/SKILL.md' => '# OK']);
+
+        Assert::same((new SkillEnumerator())->enumerate([$donor])->droppedDonors, []);
+    }
+
     public function skillFilterKeepsOnlyTheAllowlistedSkills(): void
     {
         $donor = $this->makeDonor('acme/multi', 'src', [

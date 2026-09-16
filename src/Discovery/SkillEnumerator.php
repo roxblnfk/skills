@@ -41,6 +41,7 @@ final readonly class SkillEnumerator
     {
         $skills = [];
         $warnings = [];
+        $droppedDonors = [];
 
         // Allowlist bookkeeping spans donor rows: a multi-source donor
         // arrives as several rows sharing one package name, and a
@@ -65,6 +66,7 @@ final readonly class SkillEnumerator
                         $donor->packageName,
                         $donor->source,
                     );
+                    $droppedDonors[] = $donor->packageName;
                     continue;
                 }
 
@@ -75,6 +77,7 @@ final readonly class SkillEnumerator
                         $donor->packageName,
                         $donor->source,
                     );
+                    $droppedDonors[] = $donor->packageName;
                     continue;
                 }
 
@@ -132,7 +135,11 @@ final readonly class SkillEnumerator
             }
         }
 
-        return new SkillEnumerationResult(skills: $skills, warnings: $warnings);
+        return new SkillEnumerationResult(
+            skills: $skills,
+            warnings: $warnings,
+            droppedDonors: \array_values(\array_unique($droppedDonors)),
+        );
     }
 
     /**

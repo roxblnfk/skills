@@ -15,6 +15,8 @@ use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\DiscoveryResolver;
+use LLM\Skills\Discovery\InstalledSkill;
+use LLM\Skills\Discovery\InstalledSkillScanner;
 use LLM\Skills\Discovery\MalformedDonor;
 use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Provider\ProviderId;
@@ -49,8 +51,10 @@ use Symfony\Component\Console\Command\Command;
  *      asked for (via `--discovery` or a positional name) into the donor list.
  *   4. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
  *   5. {@see SkillEnumerator}: enumerate skill subdirs for approved donors.
- *   6. {@see SyncEngine}: detect conflicts, write files.
- *   7. Format the {@see SyncReport} grouped by package, add a `[failed]` row
+ *   6. {@see PurgePlanner}: under `--clean`, pick the installed skills to
+ *      delete first; otherwise the list is empty and the copy merges.
+ *   7. {@see SyncEngine}: detect conflicts, delete, write files.
+ *   8. Format the {@see SyncReport} grouped by package, add a `[failed]` row
  *      for every donor that contributed nothing, and emit the trailing
  *      `[skip]` / `[hint]` diagnostics.
  *
@@ -70,6 +74,8 @@ final readonly class SyncRunner
         private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
         private SymlinkLinker $symlinkLinker = new SymlinkLinker(),
         private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
+        private InstalledSkillScanner $installedScanner = new InstalledSkillScanner(),
+        private PurgePlanner $purgePlanner = new PurgePlanner(),
     ) {}
 
     /**
@@ -227,7 +233,58 @@ final readonly class SyncRunner
         $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
         $this->emitWarnings($io, $enumeration->warnings);
 
-        $report = $this->engine->sync($enumeration->skills, $plan->target, dryRun: $options->dryRun);
+        $purge = [];
+        if ($options->clean) {
+            // A donor that dropped out contributes no skills, so an unscoped
+            // wipe would delete its installed copies with nothing to put back.
+            // Two channels lose a donor this way: a `sources[]` entry that
+            // never resolved, and one whose source directory turned out to be
+            // missing or unreadable.
+            //
+            // Only an unscoped run is at risk. A scoped one deletes a subset of
+            // what it is about to write (see {@see PurgePlanner}), so a donor
+            // that produced nothing takes nothing with it, and refusing there
+            // would let one broken vendor package block the narrow `--clean`
+            // that works around it.
+            $unrestorable = $options->isScoped() ? [] : [
+                ...\array_map(
+                    static fn(SourceFailure $f): string => $f->label,
+                    $discovery->failures,
+                ),
+                ...$enumeration->droppedDonors,
+            ];
+            if ($unrestorable !== []) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] --clean refused: %s contributed no skills, so this run '
+                    . 'cannot restore what it would delete. Fix the donor, or narrow the run to '
+                    . 'the packages you want reinstalled.</error>',
+                    \implode(', ', $unrestorable),
+                ));
+                return Command::FAILURE;
+            }
+
+            $installed = $this->installedScanner->scan($plan->target);
+            if ($installed === null) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] --clean refused: %s could not be read, so this run '
+                    . 'cannot tell what is installed there.</error>',
+                    (string) $plan->target,
+                ));
+                return Command::FAILURE;
+            }
+
+            $purge = $this->planPurge($io, $plan, $installed, $enumeration->skills, $options);
+            if ($purge === null) {
+                return Command::SUCCESS;
+            }
+        }
+
+        $report = $this->engine->sync(
+            $enumeration->skills,
+            $plan->target,
+            dryRun: $options->dryRun,
+            purge: $purge,
+        );
 
         if ($report->hasConflicts()) {
             foreach ($report->conflicts as $conflict) {
@@ -247,17 +304,26 @@ final readonly class SyncRunner
             return Command::FAILURE;
         }
 
+        $this->emitRemoveReport($io, $report->removed, $options->dryRun);
         $this->emitCopyReport($io, $report->copied, $options->dryRun);
         $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
         $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
         $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
+        $this->emitRemovalFailures($io, $report->removalFailures);
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
-            '<info>[llm/skills] %s %d skill(s) into %s</info>%s',
+            '<info>[llm/skills] %s %d skill(s) into %s</info>%s%s',
             $verb,
             \count($report->copied),
             (string) $plan->target,
+            $report->removed === []
+                ? ''
+                : \sprintf(
+                    ' <fg=gray>(%s %d)</>',
+                    $options->dryRun ? 'would remove' : 'removed',
+                    \count($report->removed),
+                ),
             $this->formatFailureTally($discovery->failures, $discovery->malformed),
         ));
 
@@ -267,7 +333,51 @@ final readonly class SyncRunner
 
         // Alias errors fail the run loudly — silent partial success would
         // mask broken `.claude/skills` / `.cursor/skills` aliases on CI.
-        return $aliasFailed ? Command::FAILURE : Command::SUCCESS;
+        // A skill the purge could not delete fails it for the same reason:
+        // what landed there is a merge, not the clean install that was asked for.
+        return $aliasFailed || $report->removalFailures !== []
+            ? Command::FAILURE
+            : Command::SUCCESS;
+    }
+
+    /**
+     * Resolve `--clean` into the list of installed skills to delete, prompting
+     * when the session is interactive.
+     *
+     * @param list<InstalledSkill> $installed what currently sits in the target
+     * @param list<Skill> $incoming skills the approved donors are about to write
+     *
+     * @return list<InstalledSkill>|null `null` when the user declined the
+     *         prompt and the run must stop without touching the target
+     */
+    private function planPurge(
+        IOInterface $io,
+        SyncPlan $plan,
+        array $installed,
+        array $incoming,
+        SyncOptions $options,
+    ): ?array {
+        $purge = $this->purgePlanner->plan($installed, $incoming, $options->isScoped());
+
+        if ($purge === [] || $options->dryRun || !$options->interactive) {
+            return $purge;
+        }
+
+        $io->write(\sprintf(
+            '<comment>[llm/skills] --clean will delete %d installed skill(s) under %s:</comment>',
+            \count($purge),
+            (string) $plan->target,
+        ));
+        foreach ($purge as $installed) {
+            $io->write('  <comment>' . $installed->name . '</comment>');
+        }
+
+        if (!$io->askConfirmation('<info>Delete them and reinstall? [y/N]:</info> ', false)) {
+            $io->write('<comment>[llm/skills] aborted; nothing was written.</comment>');
+            return null;
+        }
+
+        return $purge;
     }
 
     /**
@@ -511,6 +621,39 @@ final readonly class SyncRunner
                 . 'were not copied: ' . $dir . '</comment>',
                 verbosity: IOInterface::VERBOSE,
             );
+        }
+    }
+
+    /**
+     * Render the purge phase above the copy listing, in the order the two
+     * actually happen, so a skill that is removed and written back reads as
+     * one story rather than an unexplained deletion after the fact.
+     *
+     * @param list<non-empty-string> $removed
+     */
+    private function emitRemoveReport(IOInterface $io, array $removed, bool $dryRun): void
+    {
+        if ($removed === []) {
+            return;
+        }
+
+        $action = $dryRun ? '[would remove]' : '[remove]';
+        foreach ($removed as $name) {
+            $io->write('  <comment>' . $action . '</comment> ' . $name);
+        }
+    }
+
+    /**
+     * @param list<non-empty-string> $failures
+     */
+    private function emitRemovalFailures(IOInterface $io, array $failures): void
+    {
+        foreach ($failures as $name) {
+            $io->writeError(\sprintf(
+                '<error>[remove-failed] %s could not be fully deleted; what remains was merged '
+                . 'with the donor copy, not replaced by it.</error>',
+                $name,
+            ));
         }
     }
 

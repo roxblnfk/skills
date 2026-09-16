@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Discovery\InstalledSkillScanner;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -100,6 +101,30 @@ final class InstalledSkillScannerTest
             \str_replace('\\', '/', (string) $result[0]->dir),
             \str_replace('\\', '/', $target . '/greeting'),
         );
+    }
+
+    public function missingTargetIsAnEmptyListNotAScanFailure(): void
+    {
+        // The two are kept apart for `--clean`: an absent target has nothing to
+        // delete, an unreadable one must stop the wipe.
+        Assert::same((new InstalledSkillScanner())->scan(Path::create($this->tmp . '/nowhere')), []);
+    }
+
+    public function unreadableTargetIsReportedAsNull(): void
+    {
+        if (\DIRECTORY_SEPARATOR === '\\' || \function_exists('posix_getuid') && \posix_getuid() === 0) {
+            throw new SkipTest('directory read permissions are not enforced here');
+        }
+
+        $target = $this->tmp . '/target';
+        $this->installSkill($target, 'greeting');
+        \chmod($target, 0o000);
+
+        try {
+            Assert::same((new InstalledSkillScanner())->scan(Path::create($target)), null);
+        } finally {
+            \chmod($target, 0o777);
+        }
     }
 
     /**

@@ -126,6 +126,7 @@ skills — see [Donor sources](#donor-sources).
 | `--auto-sync`, `--no-auto-sync` | init | Pre-fill `auto-sync`. Unrelated to `--no-sync`, which only skips the one sync `init` itself runs.                                                        |
 | `--discovery`, `--no-discovery` | init | Pre-fill `discovery`.                                                                                                                                    |
 | `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Donor sources](#donor-sources).                                                              |
+| `--clean`             | update | Delete installed skills before copying instead of merging into them. See [Clean install](#clean-install).                                                           |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
 Short flag `-d` for `--discovery` is registered only by the standalone `bin/skills` binary;
@@ -140,6 +141,7 @@ composer skills:update 'acme/*'                           # sync an entire vendo
 composer skills:update --no-discovery                     # only packages that declare extra.skills
 composer skills:update --alias=.claude/skills             # mirror target via a junction/symlink
 composer skills:update --from=github                      # only refresh remote GitHub donors
+composer skills:update --clean                            # wipe the target first, then reinstall
 composer skills:update --dry-run                          # preview, write nothing
 composer skills:show                                      # inspect: per-skill status, what is skipped
 composer skills:init                                      # create skills.json (migrating inline keys), then sync
@@ -735,3 +737,44 @@ A junction or symlink that escapes the package root is silently rejected.
   listed in the output.
 - **Grouped output.** Copied skills are grouped by donor package; trailing `[skip]` and
   `[hint]` blocks summarise what was left out and how to opt in.
+
+### Clean install
+
+The merge above never deletes, so anything a donor stops shipping stays in the target forever:
+a file dropped from a skill, a skill renamed upstream, or a whole directory left behind by a
+package that is no longer a dependency. `--clean` removes the installed skills before copying,
+so what lands is exactly what the donors ship right now.
+
+```bash
+composer skills:update --clean                    # wipe every skill in the target, reinstall all
+composer skills:update acme/skills-pro --clean    # reinstall just this donor's skills
+composer skills:update --clean --dry-run          # list what would be removed
+```
+
+What gets deleted depends on whether the run is scoped:
+
+| Run | Deleted |
+|-----|---------|
+| No package filter and no `--from` | every directory in the target holding a `SKILL.md` |
+| Scoped by `<package>` or `--from` | only the skills this run reinstalls |
+
+A scoped run cannot see the donors it filtered out, so it restricts itself to what it is able
+to write back — otherwise `skills:update acme/skills-pro --clean` would take another donor's
+skills with it.
+
+> **Unscoped `--clean` deletes skills you wrote by hand** if they live in the target directory.
+> Nothing on disk distinguishes them from a synced copy. In an interactive terminal the command
+> lists what it is about to remove and asks first; under `--no-interaction` (CI, `post-update-cmd`)
+> it proceeds without asking.
+
+Three things `--clean` refuses or leaves alone:
+
+- An **unscoped** run aborts with a non-zero exit, before deleting anything, when a donor
+  contributed nothing this time — a source that would not resolve, or a declared source
+  directory that is missing from the installed package. Its skills are not in this run, so the
+  wipe could not put them back. A scoped run proceeds: it only deletes what it reinstalls, so
+  one broken package cannot block the narrow `--clean` that works around it.
+- An unreadable target directory aborts for the same reason — an empty listing there would be
+  reported as a wipe that never happened.
+- Files in the target that are not skill directories are never touched, and neither are the
+  configured aliases, which are re-pointed at the target as usual after the copy.

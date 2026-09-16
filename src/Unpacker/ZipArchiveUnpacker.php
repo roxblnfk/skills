@@ -132,8 +132,11 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
      *
      * @return list<string>
      *
-     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedPropertyFetch,MixedArgument,MixedArgumentTypeCoercion
-     *         ext-zip is a soft requirement — guarded by the caller's class_exists
+     * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedPropertyFetch,MixedArgument,MixedArgumentTypeCoercion,MissingPureAnnotation
+     *         ext-zip is a soft requirement — guarded by the caller's class_exists.
+     *         Without the extension Psalm cannot resolve `ZipArchive`, so it reads the
+     *         body as side-effect-free and asks for `@psalm-pure`; with the extension
+     *         it sees the entry reads for what they are and the demand disappears.
      */
     private static function keptNames(\ZipArchive $zip, array $excludeNames): array
     {

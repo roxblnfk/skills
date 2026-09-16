@@ -33,16 +33,16 @@
     "require": {
         "php": ">=8.2",
         "composer-plugin-api": "^2.0",
-        "internal/path": "^1.2"
+        "internal/path": "^1.4"
     },
     "require-dev": {
-        "buggregator/trap": "^1.10",
-        "composer/composer": "^2.9.0",
+        "buggregator/trap": "^1.16",
+        "composer/composer": "^2.10.3",
         "infection/infection": "dev-testo-bridge-82 as 0.32.6",
         "roxblnfk/unpoly": "^1.8",
         "spiral/code-style": "^2.3",
         "testo/bridge-infection": "0.1 - 1",
-        "testo/testo": "0.1 - 1",
+        "testo/testo": "0.10 - 1",
         "vimeo/psalm": "^7"
     },
     "repositories": [
