@@ -767,10 +767,14 @@ skills with it.
 > lists what it is about to remove and asks first; under `--no-interaction` (CI, `post-update-cmd`)
 > it proceeds without asking.
 
-Two things `--clean` refuses or leaves alone:
+Three things `--clean` refuses or leaves alone:
 
-- A donor whose source could not be resolved (an unreachable repository, a missing `dir` path)
-  aborts the run with a non-zero exit before anything is deleted — a transient network failure
-  must not empty the target.
+- An **unscoped** run aborts with a non-zero exit, before deleting anything, when a donor
+  contributed nothing this time — a source that would not resolve, or a declared source
+  directory that is missing from the installed package. Its skills are not in this run, so the
+  wipe could not put them back. A scoped run proceeds: it only deletes what it reinstalls, so
+  one broken package cannot block the narrow `--clean` that works around it.
+- An unreadable target directory aborts for the same reason — an empty listing there would be
+  reported as a wipe that never happened.
 - Files in the target that are not skill directories are never touched, and neither are the
   configured aliases, which are re-pointed at the target as usual after the copy.

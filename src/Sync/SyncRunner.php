@@ -235,24 +235,45 @@ final readonly class SyncRunner
 
         $purge = [];
         if ($options->clean) {
-            // An unreachable donor means the skills it owns are absent from the
-            // enumeration, so wiping and copying would trade a working install
-            // for whatever survived the network. Refuse loudly rather than let
-            // a transient fetch error delete content.
-            if ($discovery->failures !== []) {
+            // A donor that dropped out contributes no skills, so an unscoped
+            // wipe would delete its installed copies with nothing to put back.
+            // Two channels lose a donor this way: a `sources[]` entry that
+            // never resolved, and one whose source directory turned out to be
+            // missing or unreadable.
+            //
+            // Only an unscoped run is at risk. A scoped one deletes a subset of
+            // what it is about to write (see {@see PurgePlanner}), so a donor
+            // that produced nothing takes nothing with it, and refusing there
+            // would let one broken vendor package block the narrow `--clean`
+            // that works around it.
+            $unrestorable = $options->isScoped() ? [] : [
+                ...\array_map(
+                    static fn(SourceFailure $f): string => $f->label,
+                    $discovery->failures,
+                ),
+                ...$enumeration->droppedDonors,
+            ];
+            if ($unrestorable !== []) {
                 $io->writeError(\sprintf(
-                    '<error>[llm/skills] --clean refused: %s could not be resolved, so this run '
-                    . 'cannot restore what it would delete. Fix the source, or re-run '
-                    . 'without --clean to merge what is reachable.</error>',
-                    \implode(', ', \array_map(
-                        static fn(SourceFailure $f): string => $f->label,
-                        $discovery->failures,
-                    )),
+                    '<error>[llm/skills] --clean refused: %s contributed no skills, so this run '
+                    . 'cannot restore what it would delete. Fix the donor, or narrow the run to '
+                    . 'the packages you want reinstalled.</error>',
+                    \implode(', ', $unrestorable),
                 ));
                 return Command::FAILURE;
             }
 
-            $purge = $this->planPurge($io, $plan, $enumeration->skills, $options);
+            $installed = $this->installedScanner->scan($plan->target);
+            if ($installed === null) {
+                $io->writeError(\sprintf(
+                    '<error>[llm/skills] --clean refused: %s could not be read, so this run '
+                    . 'cannot tell what is installed there.</error>',
+                    (string) $plan->target,
+                ));
+                return Command::FAILURE;
+            }
+
+            $purge = $this->planPurge($io, $plan, $installed, $enumeration->skills, $options);
             if ($purge === null) {
                 return Command::SUCCESS;
             }
@@ -323,6 +344,7 @@ final readonly class SyncRunner
      * Resolve `--clean` into the list of installed skills to delete, prompting
      * when the session is interactive.
      *
+     * @param list<InstalledSkill> $installed what currently sits in the target
      * @param list<Skill> $incoming skills the approved donors are about to write
      *
      * @return list<InstalledSkill>|null `null` when the user declined the
@@ -331,14 +353,11 @@ final readonly class SyncRunner
     private function planPurge(
         IOInterface $io,
         SyncPlan $plan,
+        array $installed,
         array $incoming,
         SyncOptions $options,
     ): ?array {
-        $purge = $this->purgePlanner->plan(
-            $this->installedScanner->scan($plan->target),
-            $incoming,
-            $options->isScoped(),
-        );
+        $purge = $this->purgePlanner->plan($installed, $incoming, $options->isScoped());
 
         if ($purge === [] || $options->dryRun || !$options->interactive) {
             return $purge;

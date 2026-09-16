@@ -105,7 +105,10 @@ final readonly class InspectionBuilder
         $conflictReport = $this->engine->sync($approvedSkills, $plan->target, dryRun: true);
         $conflictMap = $this->indexConflicts($conflictReport->conflicts);
 
-        $installed = $this->installedScanner->scan($plan->target);
+        // An unreadable target is reported as nothing installed: `show` only
+        // marks skills `[✓]` / `[ ]`, so the worst it costs is an optimistic
+        // "would be written" row, not a destructive decision.
+        $installed = $this->installedScanner->scan($plan->target) ?? [];
         $installedByName = $this->indexInstalledByName($installed);
 
         $donorInspections = $this->buildDonorInspections(

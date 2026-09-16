@@ -148,6 +148,10 @@ final class SkillsCleanTest
         $this->runSync();
         $before = $this->listTargetEntries();
         Assert::true($before !== [], 'the plain sync must have installed something to protect');
+        // A sentinel inside a skill, because comparing directory names alone
+        // would also pass if the refusal deleted each skill and recopied it —
+        // losing exactly the local files the refusal exists to protect.
+        \file_put_contents(self::TARGET_DIR . '/greeting/sentinel.md', 'local only');
 
         $process = $this->runSync('--clean');
 
@@ -161,6 +165,58 @@ final class SkillsCleanTest
             $before,
             'a refused --clean must leave the target exactly as it was',
         );
+        Assert::same(
+            \file_get_contents(self::TARGET_DIR . '/greeting/sentinel.md'),
+            'local only',
+            'a refused --clean must not touch the contents of an installed skill either',
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './vanished-skills'],
+        ],
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function cleanIsRefusedWhenADonorSourceDirectoryIsMissing(): void
+    {
+        // `vanished-skills` resolves as a donor but declares a source directory
+        // that is not there, so the enumerator drops it. Its skills are absent
+        // from this run, and an unscoped wipe would have nothing to put back.
+        $this->runSync();
+        \file_put_contents(self::TARGET_DIR . '/greeting/sentinel.md', 'local only');
+
+        $process = $this->runSync('--clean');
+
+        Assert::same($process->getExitCode(), 1, 'stdout: ' . $process->getOutput());
+        Assert::true(
+            \str_contains($process->getErrorOutput(), '--clean refused')
+            && \str_contains($process->getErrorOutput(), 'acme/dir-vanished'),
+            'the refusal must name the donor that dropped out. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::same(\file_get_contents(self::TARGET_DIR . '/greeting/sentinel.md'), 'local only');
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './vanished-skills'],
+        ],
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function aScopedCleanProceedsDespiteADonorThatDroppedOut(): void
+    {
+        // The narrow run deletes only what it reinstalls, so the broken donor
+        // costs it nothing — refusing here would leave no way to clean at all.
+        $this->runSync();
+        \file_put_contents(self::TARGET_DIR . '/greeting/leftover.md', 'dropped by the donor');
+
+        $process = $this->runSync('acme/skills-basic', '--clean');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(\is_file(self::TARGET_DIR . '/greeting/leftover.md'));
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────

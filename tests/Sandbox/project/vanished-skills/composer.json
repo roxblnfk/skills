@@ -1,0 +1,9 @@
+{
+    "name": "acme/dir-vanished",
+    "description": "A local directory donor whose declared source directory is absent — the shape a package takes when its skills/ tree is stripped from the distributed archive.",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}
