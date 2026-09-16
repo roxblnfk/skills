@@ -318,7 +318,7 @@ final readonly class InspectionBuilder
      * be several per package (one per container); a skill belongs to the row
      * whose explicit directory list contains its source directory.
      *
-     * @psalm-mutation-free
+     * @psalm-pure
      */
     private function skillBelongsToDonor(Skill $skill, VendorConfig $donor): bool
     {
