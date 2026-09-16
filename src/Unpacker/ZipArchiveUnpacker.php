@@ -134,6 +134,8 @@ final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
      *
      * @psalm-suppress UndefinedClass,MixedAssignment,MixedMethodCall,MixedPropertyFetch,MixedArgument,MixedArgumentTypeCoercion
      *         ext-zip is a soft requirement — guarded by the caller's class_exists
+     *
+     * @psalm-pure
      */
     private static function keptNames(\ZipArchive $zip, array $excludeNames): array
     {

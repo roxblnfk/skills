@@ -164,6 +164,8 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
      * The donor's package name (the {@see DirDonorRef::$packageHint})
      * is the entry's `package` override when present, else a name
      * derived from the resolved absolute path.
+     *
+     * @psalm-mutation-free
      */
     private function resolveDirEntry(Path $projectRoot, SourceEntry $entry): DirDonorRef
     {
