@@ -7,7 +7,8 @@ use LLM\Skills\Info;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\CommandLoader\FactoryCommandLoader;
 
-if ('cli' !== PHP_SAPI) {
+// `micro` is the SAPI of the self-contained binary built with static-php-cli.
+if (!\in_array(PHP_SAPI, ['cli', 'micro'], true)) {
     throw new Exception('This script must be run from the command line.');
 }
 

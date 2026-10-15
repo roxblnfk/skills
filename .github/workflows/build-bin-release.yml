@@ -1,0 +1,172 @@
+---
+
+on:  # yamllint disable-line rule:truthy
+  release:
+    types:
+      - published
+  pull_request:
+    paths:
+      - .github/workflows/build-bin-release.yml
+      - bin/skills
+      - box.json
+      - composer.json
+  workflow_dispatch:
+
+name: 📦 Build binaries
+
+env:
+  # Pre-built static PHP `micro` runtimes from static-php-cli. The binary is
+  # `micro.sfx` with the PHAR appended, so no PHP is compiled here.
+  MICRO_PHP_VERSION: '8.4.20'
+  MICRO_BASE_URL: 'https://dl.static-php.dev/static-php-cli'
+  PHAR_PATH: '.build/phar/skills.phar'
+
+jobs:
+  phar:
+    name: 📦 Build PHAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # box.json sets `git`, so box runs `git describe --tags` and needs the tags.
+      - name: 📦 Check out the codebase
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 🛠️ Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          ini-values: error_reporting=E_ALL, phar.readonly=0
+          coverage: none
+          tools: composer, box
+
+      # The standalone `bin/skills` bootstraps a Composer instance via
+      # Composer\Factory, so composer/composer must ship inside the PHAR.
+      # The committed composer.json keeps it in `require-dev` so plugin-mode
+      # users don't pull the Composer source tree.
+      - name: 🔁 Promote composer/composer into require
+        run: |
+          composer config --unset require-dev.composer/composer
+          composer require composer/composer:^2.9.0 --no-update --no-interaction --ansi
+
+      - name: 📥 Install production dependencies
+        run: composer update --no-dev --no-interaction --no-plugins --ansi --prefer-dist
+
+      - name: 📦 Build PHAR
+        run: box compile
+
+      - name: 🤔 Run skills.phar
+        run: php ${{ env.PHAR_PATH }} --version
+
+      - name: 📤 Upload PHAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phar
+          path: ${{ env.PHAR_PATH }}
+          retention-days: 1
+          if-no-files-found: error
+
+  binary:
+    name: 📦 Build ${{ matrix.os }}-${{ matrix.arch }}
+    needs: phar
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+            micro: common/php-${MICRO_PHP_VERSION}-micro-linux-x86_64.tar.gz
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            micro: common/php-${MICRO_PHP_VERSION}-micro-linux-aarch64.tar.gz
+          - os: darwin
+            arch: amd64
+            runner: macos-15-intel
+            micro: common/php-${MICRO_PHP_VERSION}-micro-macos-x86_64.tar.gz
+          - os: darwin
+            arch: arm64
+            runner: macos-15
+            micro: common/php-${MICRO_PHP_VERSION}-micro-macos-aarch64.tar.gz
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+            micro: windows/spc-max/php-${MICRO_PHP_VERSION}-micro-win.zip
+            ext: .exe
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 📥 Download PHAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: phar
+          path: .build/phar
+
+      - name: 📥 Download micro runtime
+        run: |
+          mkdir -p .build/micro
+          url="${MICRO_BASE_URL}/${{ matrix.micro }}"
+          curl -fsSL --retry 3 -o ".build/micro/$(basename "$url")" "$url"
+          cd .build/micro
+          case "$url" in
+            *.zip) unzip -q ./*.zip ;;
+            *) tar -xzf ./*.tar.gz ;;
+          esac
+          ls -la
+
+      - name: 🔗 Combine micro.sfx with the PHAR
+        run: |
+          mkdir -p dist
+          cat .build/micro/micro.sfx "$PHAR_PATH" > "dist/skills${{ matrix.ext }}"
+          chmod +x "dist/skills${{ matrix.ext }}"
+
+      - name: 🤔 Run the binary
+        run: |
+          "dist/skills${{ matrix.ext }}" --version
+          "dist/skills${{ matrix.ext }}" list
+
+      - name: 🗜️ Pack the binary
+        id: pack
+        run: |
+          version="${{ github.event.release.tag_name || 'dev' }}"
+          archive="skills-${version}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
+          tar -czf "$archive" -C dist "skills${{ matrix.ext }}"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: 📤 Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ steps.pack.outputs.archive }}
+          retention-days: 7
+          if-no-files-found: error
+
+  # One job attaches every binary: parallel uploads to the same release race
+  # and drop a random subset of the assets.
+  publish:
+    name: 📤 Publish binaries to the release
+    needs: binary
+    # Ship the platforms that built even if another failed; the failed build
+    # stays red as the signal one is missing.
+    if: ${{ always() && github.event_name == 'release' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bin-*
+          path: dist
+          merge-multiple: true
+
+      - name: 📤 Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
