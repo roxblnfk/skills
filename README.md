@@ -91,6 +91,22 @@ Project-level settings (`target`, `dependencies`, `discovery`, …) live in the 
 `skills.json` at the project root. See [Project configuration](#project-configuration) for the
 full reference.
 
+### Standalone binary
+
+Every [release](https://github.com/roxblnfk/skills/releases) ships self-contained executables
+that need no PHP installed: `skills-<version>-<os>-<arch>.tar.gz` for `linux` and `darwin`
+(`amd64`, `arm64`) and `windows` (`amd64`). Unpack it and run the binary from the project root:
+
+```bash
+skills show
+skills update
+skills add owner/repo
+```
+
+The binary runs the same commands as the `bin/skills` script, without the `skills:` prefix.
+In a project with `composer.json` it reads the installed packages from `vendor/` without loading
+any Composer plugins.
+
 
 ## Commands
 
