@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/roxblnfk/skills/compare/1.14.0...1.15.0) (2026-10-15)
+
+
+### Features
+
+* ship standalone binaries for Linux, macOS and Windows ([#48](https://github.com/roxblnfk/skills/issues/48)) ([0cc134c](https://github.com/roxblnfk/skills/commit/0cc134c989f2dbf2a0a8664f22aeae630c9e86bd))
+
 ## [1.14.0](https://github.com/roxblnfk/skills/compare/1.13.0...1.14.0) (2026-09-16)
 
 
