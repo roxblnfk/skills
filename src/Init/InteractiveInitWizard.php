@@ -629,7 +629,7 @@ final readonly class InteractiveInitWizard
 
         $io->write('<info>4/4  auto-sync</info> — when <comment>true</comment> (default), <comment>skills:update</comment> runs');
         $io->write('     automatically after every <comment>composer install</comment> /');
-        $io->write('     <comment>composer update</comment>. Suppressed by <comment>--no-scripts</comment>.');
+        $io->write('     <comment>composer update</comment>.');
         $bool = $io->askConfirmation(
             \sprintf(
                 '  <info>auto-sync</info> [<comment>%s</comment>]: ',

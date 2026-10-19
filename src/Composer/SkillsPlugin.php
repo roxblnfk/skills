@@ -29,13 +29,11 @@ use LLM\Skills\Sync\SyncRunner;
  * Wires our {@see CommandProvider} into Composer so that
  * `composer skills:update` becomes available.
  *
- * By default the plugin follows a **pull model**: nothing touches the user's
- * filesystem until they explicitly invoke `skills:update`. Projects that want
- * a hands-off setup can opt in by setting `extra.skills.auto-sync: true` —
- * the plugin then subscribes to {@see ScriptEvents::POST_INSTALL_CMD} and
- * {@see ScriptEvents::POST_UPDATE_CMD} and runs sync automatically. The
- * `composer --no-scripts` flag still suppresses the auto-run, because
- * Composer skips dispatching script events entirely in that mode.
+ * Auto-sync listens to {@see ScriptEvents::POST_INSTALL_CMD} and
+ * {@see ScriptEvents::POST_UPDATE_CMD} and runs `skills:update` unless the
+ * project sets `auto-sync: false`. `composer --no-scripts` does not suppress
+ * it: in that mode Composer drops only the root package's `scripts`
+ * listeners and still dispatches the events to plugin subscribers.
  *
  * `activate()` captures the {@see Composer} and {@see IOInterface} handed in
  * by the host so the event callbacks can reuse them; `deactivate()` and

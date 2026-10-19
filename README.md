@@ -68,9 +68,10 @@ without the file — defaults are sensible — but committing an explicit `skill
 makes your skill setup reproducible across the team.
 
 Auto-sync after every `composer install` / `update` is **on by default**, so after `init` you
-get fresh skills with no further setup. To opt out, set `"auto-sync": false` in `skills.json`;
-`composer install --no-scripts` also suppresses the auto-run for a single invocation without
-changing the config.
+get fresh skills with no further setup. To opt out, set `"auto-sync": false` in `skills.json`.
+Note that `--no-scripts` does **not** skip it: that flag only disables the `scripts` section of
+`composer.json`, while auto-sync is a plugin event listener. To skip it for a single invocation,
+use `--no-plugins`, which disables every Composer plugin for that run.
 
 ### Global composer installation
 
