@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/roxblnfk/skills/compare/1.15.0...1.15.1) (2026-10-19)
+
+
+### Documentation
+
+* drop the `--no-scripts` opt-out claim for auto-sync ([#51](https://github.com/roxblnfk/skills/issues/51)) ([32d24f6](https://github.com/roxblnfk/skills/commit/32d24f6cbf4d5bcbcb592df46ee4a1b092f98719))
+
 ## [1.15.0](https://github.com/roxblnfk/skills/compare/1.14.0...1.15.0) (2026-10-15)
 
 
