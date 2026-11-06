@@ -152,6 +152,20 @@ final class SourceProviderTest
         Assert::same($result->failures, []);
     }
 
+    public function acceptsARepositoryWhoseRootIsTheSkill(): void
+    {
+        $extracted = $this->makeExtracted('root-skill-repo');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: example\n---\nbody");
+
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/example-skill');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/example-skill');
+        Assert::same($result->donors[0]->source, '.');
+        Assert::same($result->failures, []);
+    }
+
     public function autoDiscoversSkillsNestedBelowConventionalRoots(): void
     {
         // Mirrors ArtemProshkovskiy/laravel-maintenance-skills: no

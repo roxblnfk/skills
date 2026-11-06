@@ -294,6 +294,33 @@ final class SkillEnumeratorTest
         Assert::same($result->warnings, []);
     }
 
+    public function rootSkillTakesItsDirectoryNameFromFrontmatter(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: temporal-developer\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'temporal-developer');
+    }
+
+    public function rootSkillWithoutFrontmatterNameUsesTheRepositoryName(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', '# No frontmatter');
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'skill-repo');
+    }
+
+    public function rootSkillRejectsAFrontmatterNameThatEscapesTheTarget(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: ../../evil\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'skill-repo');
+    }
+
     public function discoveredDonorReadsCanonicalNameFromFrontmatter(): void
     {
         $donor = $this->makeDiscoveredDonor('acme/found', 'skills', [
@@ -398,6 +425,23 @@ final class SkillEnumeratorTest
             source: $source,
             discovered: true,
             discoveredSkillDirs: $dirs,
+        );
+    }
+
+    /**
+     * @param non-empty-string $packageName
+     */
+    private function makeRootSkillDonor(string $packageName, string $skillMd): VendorConfig
+    {
+        $packageRoot = $this->tmp . '/archive-abc123';
+        \mkdir($packageRoot, 0o777, true);
+        \file_put_contents($packageRoot . '/SKILL.md', $skillMd);
+
+        return new VendorConfig(
+            packageName: $packageName,
+            packageRoot: Path::create($packageRoot),
+            source: '.',
+            discoveredSkillDirs: [Path::create($packageRoot)],
         );
     }
 }

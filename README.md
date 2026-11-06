@@ -737,7 +737,9 @@ composer skills:update acme/skills-undeclared # picks up auto-skill only (named 
 ```
 
 The same scan powers `skills:add` for remote repositories that ship bare skills without a
-Composer manifest.
+Composer manifest. A remote repository with no other skills can also be one skill itself, with
+`SKILL.md` at its root. Its target directory is the `name` from the frontmatter, or the
+repository name when `name` is not a lowercase, hyphenated name.
 
 Auto-discovered donors still pass through the trust filter unless they were named on the CLI.
 A junction or symlink that escapes the package root is silently rejected.

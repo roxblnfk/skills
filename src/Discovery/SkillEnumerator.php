@@ -27,6 +27,8 @@ use LLM\Skills\Config\VendorConfig;
  */
 final readonly class SkillEnumerator
 {
+    private const SAFE_SKILL_NAME = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/D';
+
     /**
      * @psalm-mutation-free
      */
@@ -56,7 +58,7 @@ final readonly class SkillEnumerator
             // (they may sit at a catalog depth the immediate-subdir scan below
             // cannot reach); declared donors are scanned from their `source`.
             if ($donor->discoveredSkillDirs !== null) {
-                $candidates = $this->discoveredCandidates($donor->discoveredSkillDirs);
+                $candidates = $this->discoveredCandidates($donor);
             } else {
                 $sourcePath = (string) $donor->sourcePath();
 
@@ -174,22 +176,35 @@ final readonly class SkillEnumerator
      * `SKILL.md`) so a tree that changed between discovery and enumeration
      * degrades quietly instead of producing a phantom skill.
      *
-     * @param list<Path> $dirs
-     *
      * @return list<array{non-empty-string, non-empty-string}> `[directory name, absolute path]`
      */
-    private function discoveredCandidates(array $dirs): array
+    private function discoveredCandidates(VendorConfig $donor): array
     {
         $out = [];
-        foreach ($dirs as $dir) {
+        foreach ($donor->discoveredSkillDirs ?? [] as $dir) {
             $skillPath = (string) $dir;
             if (!\is_dir($skillPath) || !\is_file($skillPath . \DIRECTORY_SEPARATOR . 'SKILL.md')) {
                 continue;
             }
-            $out[] = [$dir->name(), $skillPath];
+            $isRootSkill = (string) $dir === (string) $donor->packageRoot;
+            $out[] = [$isRootSkill ? $this->rootSkillName($donor) : $dir->name(), $skillPath];
         }
 
         return $out;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function rootSkillName(VendorConfig $donor): string
+    {
+        $name = $this->frontmatterReader->read($donor->packageRoot)['name'] ?? null;
+        if (!\is_string($name) || \preg_match(self::SAFE_SKILL_NAME, $name) !== 1) {
+            $name = \basename($donor->packageName);
+        }
+
+        /** @var non-empty-string $name */
+        return $name;
     }
 
     /**
