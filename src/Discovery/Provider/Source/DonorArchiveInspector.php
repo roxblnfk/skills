@@ -97,13 +97,18 @@ final readonly class DonorArchiveInspector
         // Auto-discovery fallback: no usable manifest, but the archive
         // may still ship SKILL.md files at conventional or nested roots.
         $discovered = $this->scanner->scan($extractedRoot);
-        if ($discovered === []) {
+        $rootIsSkill = $discovered === [] && \is_file((string) $extractedRoot->join('SKILL.md'));
+        if ($discovered === [] && !$rootIsSkill) {
             return DonorArchiveInspection::rejected(DonorArchiveRejection::NoDonorShape);
         }
 
         $synthesisedName = $packageName ?? $packageHint;
         if ($synthesisedName === null) {
             return DonorArchiveInspection::rejected(DonorArchiveRejection::NoPackageName);
+        }
+
+        if ($rootIsSkill) {
+            return DonorArchiveInspection::bareSkillRepo($synthesisedName, '.', [$extractedRoot]);
         }
 
         return DonorArchiveInspection::bareSkillRepo(
