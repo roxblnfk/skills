@@ -57,7 +57,10 @@ final readonly class SkillConflict
             }
         }
 
-        return \function_exists('mb_convert_case')
+        // Composer loads symfony/polyfill-mbstring, which defines
+        // `mb_convert_case()` but not this constant; its own fold mode is
+        // full folding, which would merge `straße` and `strasse`.
+        return \defined('MB_CASE_FOLD_SIMPLE')
             ? \mb_convert_case($name, \MB_CASE_FOLD_SIMPLE, 'UTF-8')
             : \strtolower($name);
     }
@@ -73,7 +76,7 @@ final readonly class SkillConflict
      */
     public static function foldsUnicode(): bool
     {
-        return \class_exists(\Normalizer::class) && \function_exists('mb_convert_case');
+        return \class_exists(\Normalizer::class) && \defined('MB_CASE_FOLD_SIMPLE');
     }
 
     /**
