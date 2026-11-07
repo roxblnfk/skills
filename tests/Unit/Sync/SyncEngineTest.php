@@ -495,7 +495,7 @@ final class SyncEngineTest
         $elsewhere = $this->tmp . '/elsewhere';
         \mkdir($elsewhere, 0o777, true);
         \mkdir($this->targetPath('pdf'), 0o777, true);
-        $link = (string) $this->target()->join('pdf') . \DIRECTORY_SEPARATOR . 'scripts';
+        $link = (string) $this->target()->join('pdf', 'scripts');
         if (!Filesystem::makeDirLink($elsewhere, $link)) {
             throw new SkipTest('platform refuses both symlink and junction creation');
         }
@@ -515,7 +515,7 @@ final class SyncEngineTest
         $outsideFile = $this->tmp . '/outside.md';
         \file_put_contents($outsideFile, 'mine');
         \mkdir($this->targetPath('pdf'), 0o777, true);
-        $link = (string) $this->target()->join('pdf') . \DIRECTORY_SEPARATOR . 'notes.md';
+        $link = (string) $this->target()->join('pdf', 'notes.md');
         if (!Filesystem::makeFileLink($outsideFile, $link)) {
             throw new SkipTest('platform refuses file symlink creation');
         }

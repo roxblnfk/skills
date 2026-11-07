@@ -272,7 +272,8 @@ final readonly class SyncEngine
                 continue;
             }
             $s = $src . \DIRECTORY_SEPARATOR . $entry;
-            $d = $dst . \DIRECTORY_SEPARATOR . $entry;
+            // `/` as in the target's `Internal\Path`, so a reported link does not mix separators.
+            $d = $dst . '/' . $entry;
 
             if (LinkGuard::isLink($s)) {
                 $skippedLinks[] = $s;
