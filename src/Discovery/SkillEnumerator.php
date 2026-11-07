@@ -81,7 +81,7 @@ final readonly class SkillEnumerator
             \in_array($name[-1], ['.', ' '], true) => 'ends in a dot or space, which Windows strips',
             \preg_match(self::RESERVED_DEVICE_NAME, $name) !== 0 => 'is a Windows device name',
             \preg_match('/[^\x00-\x7f]/', $name) !== 0 && !($foldsUnicode ?? SkillConflict::foldsUnicode()) =>
-                'is not ASCII, and without the mbstring or intl PHP extension a namesake '
+                'is not ASCII, and unless PHP has both the mbstring and intl extensions a namesake '
                 . 'differing only in letter case or Unicode composition would go undetected',
             default => null,
         };

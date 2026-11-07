@@ -358,7 +358,7 @@ final class SkillEnumeratorTest
     {
         $reason = (string) SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false);
 
-        Assert::true(\str_contains($reason, 'mbstring or intl'), $reason);
+        Assert::true(\str_contains($reason, 'unless PHP has both the mbstring and intl extensions'), $reason);
         Assert::true(\str_contains($reason, 'letter case or Unicode composition'), $reason);
     }
 
