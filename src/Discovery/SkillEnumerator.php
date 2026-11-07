@@ -6,6 +6,7 @@ namespace LLM\Skills\Discovery;
 
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Sync\SkillConflict;
 
 /**
  * Looks inside each donor's source directory and lists the immediate
@@ -60,10 +61,15 @@ final readonly class SkillEnumerator
      * - Windows strips a trailing dot or space, so `foo.` would land in another
      *   skill's `foo`; it rejects device names and some characters outright,
      *   which would abort the sync halfway. A regex error counts as a refusal.
+     * - A non-ASCII name could share a directory with another spelling that
+     *   conflict detection cannot tell apart when `$foldsUnicode` is `false`.
+     *
+     * @param bool|null $foldsUnicode whether {@see SkillConflict::collisionKey()} folds Unicode;
+     *        `null` asks {@see SkillConflict::foldsUnicode()}
      *
      * @psalm-pure
      */
-    public static function refusedDirectoryName(string $name): ?string
+    public static function refusedDirectoryName(string $name, ?bool $foldsUnicode = null): ?string
     {
         return match (true) {
             $name === '' || $name[0] === '.' => 'is hidden',
@@ -74,6 +80,9 @@ final readonly class SkillEnumerator
                 'holds a character Windows does not allow in a directory name',
             \in_array($name[-1], ['.', ' '], true) => 'ends in a dot or space, which Windows strips',
             \preg_match(self::RESERVED_DEVICE_NAME, $name) !== 0 => 'is a Windows device name',
+            \preg_match('/[^\x00-\x7f]/', $name) !== 0 && !($foldsUnicode ?? SkillConflict::foldsUnicode()) =>
+                'is not ASCII, and without the mbstring and intl PHP extensions a namesake '
+                . 'differing only in letter case would go undetected',
             default => null,
         };
     }

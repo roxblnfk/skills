@@ -60,6 +60,15 @@ final class SkillConflictTest
         Assert::notSame(SkillConflict::collisionKey('straße'), SkillConflict::collisionKey('strasse'));
     }
 
+    public function unicodeSpellingsShareAKeyWheneverUnicodeIsFolded(): void
+    {
+        if (!SkillConflict::foldsUnicode()) {
+            throw new SkipTest('mbstring or intl is not available');
+        }
+
+        Assert::same(SkillConflict::collisionKey("\u{00DC}ber"), SkillConflict::collisionKey("u\u{0308}ber"));
+    }
+
     public function composedAndDecomposedSpellingsShareAKey(): void
     {
         if (!\class_exists(\Normalizer::class)) {

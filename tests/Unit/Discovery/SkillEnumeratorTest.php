@@ -8,8 +8,10 @@ use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillNotice;
+use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Data\DataSet;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
@@ -338,7 +340,36 @@ final class SkillEnumeratorTest
     #[DataSet(['a.b'])]
     public function portableDirectoryNamesAreAccepted(string $name): void
     {
-        Assert::null(SkillEnumerator::refusedDirectoryName($name));
+        Assert::null(SkillEnumerator::refusedDirectoryName($name, foldsUnicode: true));
+    }
+
+    public function nonAsciiNamesAreRefusedWhenUnicodeCaseCannotBeFolded(): void
+    {
+        Assert::true(\str_contains(
+            (string) SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false),
+            'is not ASCII',
+        ));
+        Assert::true(\str_contains(
+            (string) SkillEnumerator::refusedDirectoryName("u\u{0308}ber", foldsUnicode: false),
+            'is not ASCII',
+        ));
+    }
+
+    #[DataSet(['greeting'])]
+    #[DataSet(['Refactor_Legacy'])]
+    #[DataSet(['a.b'])]
+    public function asciiNamesAreAcceptedWhenUnicodeCaseCannotBeFolded(string $name): void
+    {
+        Assert::null(SkillEnumerator::refusedDirectoryName($name, foldsUnicode: false));
+    }
+
+    public function nonAsciiNamesAreAcceptedWhenTheExtensionsAreLoaded(): void
+    {
+        if (!SkillConflict::foldsUnicode()) {
+            throw new SkipTest('mbstring or intl is not available');
+        }
+
+        Assert::null(SkillEnumerator::refusedDirectoryName('Über'));
     }
 
     public function aDonorWhoseSkillsAreAllRefusedIsDropped(): void
