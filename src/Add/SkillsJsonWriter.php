@@ -87,6 +87,33 @@ final readonly class SkillsJsonWriter
     }
 
     /**
+     * The `skills` allowlist `$entry` carries once {@see self::upsertSource()}
+     * writes it: merged with the allowlist of the entry already on file under
+     * its composite key. An unreadable file yields the entry's own allowlist;
+     * the upsert reports that failure.
+     *
+     * @return list<non-empty-string>|null
+     */
+    public function allowlistAfterUpsert(Path $projectRoot, SourceEntry $entry): ?array
+    {
+        try {
+            /** @var array<string, mixed> $payload */
+            $payload = $this->loader->load($projectRoot) ?? [];
+        } catch (\Throwable) {
+            return $entry->skills;
+        }
+
+        $newKey = $entry->compositeKey();
+        foreach (self::normaliseExisting(self::collectExistingEntries($payload)) as $existing) {
+            if (self::compositeKeyOf($existing) === $newKey) {
+                return self::mergeSkills(self::extractSkills($existing), $entry->skills);
+            }
+        }
+
+        return $entry->skills;
+    }
+
+    /**
      * Gather the donor entries already on file, reading both the
      * canonical `sources` key and the deprecated `remote` alias so a
      * legacy file's entries survive the rewrite. A hand-edited file

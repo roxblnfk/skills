@@ -567,7 +567,10 @@ final class AddRunnerTest
     {
         // Two adds of the same path collapse into one entry (the path is
         // the composite key) with the allowlist merged additively.
-        $this->seedBareSkill($this->tmp . '/sub');
+        foreach (['alpha', 'beta'] as $name) {
+            \mkdir($this->tmp . '/sub/' . $name, 0o777, true);
+            \file_put_contents($this->tmp . '/sub/' . $name . '/SKILL.md', "---\nname: {$name}\n---\nbody");
+        }
         $runner = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher());
 
         $runner->run(
@@ -641,6 +644,113 @@ final class AddRunnerTest
         Assert::null($registered, 'the scoped-sync callback never fires on refusal');
     }
 
+    public function rootSkillDirWithNoUsableNameIsRefusedWithoutWritingAnEntry(): void
+    {
+        // A root SKILL.md without a frontmatter name, in a directory whose
+        // package name ends in `nul`: the sync would skip it, so nothing is
+        // registered.
+        \mkdir($this->tmp . '/tools/plain', 0o777, true);
+        \file_put_contents($this->tmp . '/tools/plain/composer.json', '{"name": "tools/nul"}');
+        \file_put_contents($this->tmp . '/tools/plain/SKILL.md', '# No frontmatter');
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './tools/plain'),
+        );
+
+        Assert::same($code, Command::FAILURE);
+        Assert::true(
+            \str_contains($io->getOutput(), 'dir ./tools/plain: tools/nul: the root SKILL.md has no usable name'),
+            'Got: ' . $io->getOutput(),
+        );
+        Assert::false(\is_file($this->tmp . '/skills.json'), 'no entry is written on refusal');
+    }
+
+    public function remoteRootSkillWithNoUsableNameIsRefused(): void
+    {
+        $extracted = $this->writeBareDir('root-unnamed');
+        \file_put_contents($extracted . '/SKILL.md', '# No frontmatter');
+
+        $io = new BufferIO();
+        $code = $this->runner(StubAdapter::withDefaults(), $this->fetcherReturning($extracted))->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/.github', from: ProviderId::GITHUB),
+        );
+
+        Assert::same($code, Command::FAILURE, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'the root SKILL.md has no usable name'));
+        Assert::false(\is_file($this->tmp . '/skills.json'));
+    }
+
+    public function bareRepoWhoseSkillsAreAllRefusedIsNotRegistered(): void
+    {
+        $extracted = $this->writeBareDir('all-refused');
+        \mkdir($extracted . '/skills/.template', 0o777, true);
+        \file_put_contents($extracted . '/skills/.template/SKILL.md', '# scaffold');
+
+        $io = new BufferIO();
+        $code = $this->runner(StubAdapter::withDefaults(), $this->fetcherReturning($extracted))->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB),
+        );
+
+        Assert::same($code, Command::FAILURE, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'skill directory ".template" is hidden'), 'Got: ' . $io->getOutput());
+        Assert::false(\is_file($this->tmp . '/skills.json'));
+    }
+
+    public function anAllowlistThatSelectsNothingIsRefused(): void
+    {
+        // The rejected frontmatter name is not the name the skill installs under.
+        \mkdir($this->tmp . '/tools/helper', 0o777, true);
+        \file_put_contents($this->tmp . '/tools/helper/SKILL.md', "---\nname: PDF Tools\n---\nbody");
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './tools/helper', skills: ['PDF Tools']),
+        );
+
+        Assert::same($code, Command::FAILURE, 'Got: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'skill "PDF Tools" declared in the skill allowlist but not found'));
+        Assert::false(\is_file($this->tmp . '/skills.json'));
+    }
+
+    public function anAllowlistNamingTheInstalledNameIsRegistered(): void
+    {
+        \mkdir($this->tmp . '/tools/helper', 0o777, true);
+        \file_put_contents($this->tmp . '/tools/helper/SKILL.md', "---\nname: PDF Tools\n---\nbody");
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './tools/helper', skills: ['helper']),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'Got: ' . $io->getOutput());
+    }
+
+    public function rootSkillWithAUsableNameIsRegistered(): void
+    {
+        \mkdir($this->tmp . '/tools/helper', 0o777, true);
+        \file_put_contents($this->tmp . '/tools/helper/SKILL.md', '# No frontmatter');
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './tools/helper'),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+    }
+
     // ── writer failure ─────────────────────────────────────────────
 
     public function writerFailureReturnsFailure(): void
@@ -689,6 +799,9 @@ final class AddRunnerTest
                 \JSON_THROW_ON_ERROR,
             ),
         );
+        // `skills:add` refuses a donor that would install nothing.
+        \mkdir($dir . '/' . $source . '/greeting', 0o777, true);
+        \file_put_contents($dir . '/' . $source . '/greeting/SKILL.md', "---\nname: greeting\n---\nbody");
         return $dir;
     }
 

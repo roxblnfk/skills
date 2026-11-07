@@ -65,6 +65,7 @@ final class Add extends BaseCommand
         );
 
         $runner = new AddRunner($registry, $fetcher);
+        $skillsJsonBefore = PostAddSync::snapshot($projectRoot);
         $donorPackageName = null;
         $exit = $runner->run(
             $projectRoot,
@@ -83,6 +84,6 @@ final class Add extends BaseCommand
         // new skills land in the target without re-syncing everything
         // else. Matches `composer require <pkg>` ergonomics, which
         // only installs the requested package's tree.
-        return PostAddSync::run($projectRoot, $composer, $this->getIO(), $donorPackageName);
+        return PostAddSync::run($projectRoot, $composer, $this->getIO(), $donorPackageName, $skillsJsonBefore);
     }
 }
