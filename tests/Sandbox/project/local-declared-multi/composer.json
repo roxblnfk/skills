@@ -1,0 +1,8 @@
+{
+    "name": "acme/dir-declared-multi",
+    "extra": {
+        "skills": {
+            "source": ["skills", "missing"]
+        }
+    }
+}

@@ -128,6 +128,142 @@ final class SkillsAddDirTest
         );
     }
 
+    public function addWithAnAllowlistThatSelectsNothingFailsWithoutWritingSkillsJson(): void
+    {
+        // `local-root-skill-bad-name` installs as its directory name; the
+        // rejected frontmatter name `Bad_Name` selects nothing.
+        $process = $this->runAdd('./local-root-skill-bad-name --skill=Bad_Name');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'skill "Bad_Name" declared in the skill allowlist but not found'),
+            $this->diagnostics($process),
+        );
+        Assert::false(\is_file(self::SKILLS_JSON), 'a refused add writes no skills.json. ' . $this->diagnostics($process));
+    }
+
+    public function reAddingAnEntryWhoseStoredAllowlistSelectsNothingFails(): void
+    {
+        // The entry on file keeps its allowlist through the upsert, so the
+        // check has to judge that one, not the `--skill`-less invocation.
+        $stored = \json_encode([
+            'sources' => [['from' => 'dir', 'path' => './local-skills', 'skills' => ['gone']]],
+        ], \JSON_THROW_ON_ERROR);
+        \file_put_contents(self::SKILLS_JSON, $stored);
+
+        $process = $this->runAdd('./local-skills');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'skill "gone" declared in the skill allowlist but not found'),
+            $this->diagnostics($process),
+        );
+        Assert::same((string) \file_get_contents(self::SKILLS_JSON), $stored, 'a refused add leaves skills.json as it was');
+    }
+
+    public function aFirstAddThatConflictsLeavesNoSkillsJson(): void
+    {
+        // `local-root-skill-twin-namesakes` ships `tn-pdf` twice, so its sync aborts.
+        $process = $this->runAdd('./local-root-skill-twin-namesakes');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::false(\is_file(self::SKILLS_JSON), 'skills.json did not exist before. ' . $this->diagnostics($process));
+    }
+
+    public function theSyncAfterAddConflictsWithAnotherDonorsSkill(): void
+    {
+        // `local-skills-case` ships `Dir-Hello`, a namesake of the registered
+        // `local-skills` donor's `dir-hello` on a case-insensitive target.
+        Assert::same($this->runAdd('./local-skills')->getExitCode(), 0);
+        $registered = (string) \file_get_contents(self::SKILLS_JSON);
+
+        $process = $this->runAdd('./local-skills-case');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), '[conflict] skill "Dir-Hello"'),
+            $this->diagnostics($process),
+        );
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'the entry was not registered'),
+            $this->diagnostics($process),
+        );
+        Assert::same(
+            (string) \file_get_contents(self::SKILLS_JSON),
+            $registered,
+            'an entry every full run would abort on is not kept. ' . $this->diagnostics($process),
+        );
+        Assert::true(
+            \str_contains((string) \file_get_contents(self::TARGET_DIR . '/dir-hello/SKILL.md'), 'name: dir-hello'),
+            'the other donor\'s skill must not be overwritten. ' . $this->diagnostics($process),
+        );
+    }
+
+    public function addComposerShapedDirWithAnAllowlistThatSelectsNothingFails(): void
+    {
+        $process = $this->runAdd('./local-composer-skill --skill=typo');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'skill "typo" declared in the skill allowlist but not found'),
+            $this->diagnostics($process),
+        );
+        Assert::false(\is_file(self::SKILLS_JSON), 'a refused add writes no skills.json. ' . $this->diagnostics($process));
+    }
+
+    public function addComposerShapedDirWithoutItsSourceDirectoryFails(): void
+    {
+        // `local-composer-empty` declares `source: skills` and ships no `skills/`.
+        $process = $this->runAdd('./local-composer-empty');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'acme/dir-empty: source directory "skills" does not exist'),
+            $this->diagnostics($process),
+        );
+        Assert::false(\is_file(self::SKILLS_JSON), 'a refused add writes no skills.json. ' . $this->diagnostics($process));
+    }
+
+    public function addComposerShapedDirWithARejectedManifestFails(): void
+    {
+        // `local-composer-malformed` declares an absolute `extra.skills.source`.
+        $process = $this->runAdd('./local-composer-malformed');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'Package "acme/dir-malformed"'),
+            $this->diagnostics($process),
+        );
+        Assert::false(\is_file(self::SKILLS_JSON), 'a refused add writes no skills.json. ' . $this->diagnostics($process));
+    }
+
+    public function reAddingAnEntryWithAnEmptyAllowlistKeepsItRegistered(): void
+    {
+        // `skills: []` keeps a donor on file with nothing pulled, by intent.
+        \file_put_contents(self::SKILLS_JSON, \json_encode([
+            'sources' => [['from' => 'dir', 'path' => './local-skills', 'skills' => []]],
+        ], \JSON_THROW_ON_ERROR));
+
+        $process = $this->runAdd('./local-skills --no-sync');
+
+        Assert::same($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::same($this->readSources()[0]['skills'] ?? null, []);
+    }
+
+    public function addDirWhoseOnlySkillIsRefusedFailsWithoutWritingSkillsJson(): void
+    {
+        // `local-skills-only-hidden` ships one skill, in a hidden directory the
+        // sync never installs; registering it would leave a dead entry.
+        $process = $this->runAdd('./local-skills-only-hidden');
+
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'skill directory ".template" is hidden'),
+            'the refusal must explain why nothing would be installed. ' . $this->diagnostics($process),
+        );
+        Assert::false(\is_file(self::SKILLS_JSON), 'a refused add writes no skills.json. ' . $this->diagnostics($process));
+    }
+
     public function addNonDonorDirFailsCleanlyWithoutWritingSkillsJson(): void
     {
         // The `not-a-donor` fixture exists but ships no composer.json

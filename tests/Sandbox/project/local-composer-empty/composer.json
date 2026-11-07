@@ -1,0 +1,8 @@
+{
+    "name": "acme/dir-empty",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}
