@@ -608,7 +608,7 @@ A donor often ships more skills than you want in a given project. The optional `
 - **Absent / omitted** → sync every skill the donor ships (legacy behaviour).
 - **Non-empty list of names** → only those skills are copied; the rest are silently skipped.
 - **Empty list (`"skills": []`)** → the donor is registered but no skills are pulled from it. Useful for staging a donor before opting into its content or for temporarily disabling a donor without deleting the entry.
-- Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in the skill allowlist but not found in the donor`) so typos surface without aborting the sync.
+- Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in the skill allowlist but not found in the donor`) so typos surface without aborting the sync. An allowlist none of whose names match leaves the donor contributing nothing, so an unscoped `--clean` refuses to run, and `skills:add` refuses to register it.
 
 `skills:add --skill=NAME` is the CLI surface: pass `--skill` repeatedly to build the list. The flag is **additive on upsert** — running `skills:add` again on the same entry adds the new names to whatever was already stored. A follow-up `skills:add` without `--skill` does **not** touch the existing allowlist (whether it was a populated list or an explicit empty one). Removing a name or clearing the allowlist entirely is a manual edit of `skills.json`.
 
@@ -737,9 +737,18 @@ composer skills:update acme/skills-undeclared # picks up auto-skill only (named 
 ```
 
 The same scan powers `skills:add` for remote repositories that ship bare skills without a
-Composer manifest. A remote repository with no other skills can also be one skill itself, with
-`SKILL.md` at its root. Its target directory is the `name` from the frontmatter, or the
-repository name when `name` is not a lowercase, hyphenated name.
+Composer manifest. A remote or `dir` repository can also be one skill itself, with `SKILL.md` at
+its root. A skill found at most two levels below the root (`pdf/`, `skills/pdf/`) still makes the
+repository a catalog, its root `SKILL.md` an index. Otherwise every `SKILL.md` below the root,
+including in `resources/skills/`, `.agents/skills/` and other agent directories, is part of the root
+skill, not a skill of its own. Its target directory is the `name` from the frontmatter, or, when
+`name` is not a lowercase, hyphenated name of up to 64 characters, the last segment of the donor's
+package name: the `composer.json` `name`, an entry's `package`, or else the repository or directory
+name. When neither can be a directory name, the skill is skipped with a warning.
+
+A skill is never installed, from any donor, when its directory name is hidden (starts with a dot),
+looks like a Windows short name (`SKILLS~1`), or is a name Windows rewrites or rejects, such as
+`foo.` or `con`.
 
 Auto-discovered donors still pass through the trust filter unless they were named on the CLI.
 A junction or symlink that escapes the package root is silently rejected.
@@ -753,7 +762,10 @@ A junction or symlink that escapes the package root is silently rejected.
 - **Idempotent.** Running `skills:update` twice produces the same state with no errors.
 - **Transactional on conflicts.** If two donors declare a skill with the same directory name,
   sync aborts *before* touching the filesystem; nothing is written. Every offending package is
-  listed in the output.
+  listed in the output. A scoped run (`skills:update <package>`, `--from`, the sync after
+  `skills:add`) and `skills:show <package>` also check the skills of the trusted donors they
+  leave out, since writing a namesake would overwrite what a full run installs. When the sync
+  after `skills:add` aborts this way, the new entry is not kept in `skills.json`.
 - **Grouped output.** Copied skills are grouped by donor package; trailing `[skip]` and
   `[hint]` blocks summarise what was left out and how to opt in.
 
@@ -777,9 +789,9 @@ What gets deleted depends on whether the run is scoped:
 | No package filter and no `--from` | every directory in the target holding a `SKILL.md` |
 | Scoped by `<package>` or `--from` | only the skills this run reinstalls |
 
-A scoped run cannot see the donors it filtered out, so it restricts itself to what it is able
-to write back — otherwise `skills:update acme/skills-pro --clean` would take another donor's
-skills with it.
+A scoped run does not install the donors it filtered out, so it restricts itself to what it is
+able to write back — otherwise `skills:update acme/skills-pro --clean` would take another
+donor's skills with it.
 
 > **Unscoped `--clean` deletes skills you wrote by hand** if they live in the target directory.
 > Nothing on disk distinguishes them from a synced copy. In an interactive terminal the command
@@ -789,8 +801,10 @@ skills with it.
 Three things `--clean` refuses or leaves alone:
 
 - An **unscoped** run aborts with a non-zero exit, before deleting anything, when a donor
-  contributed nothing this time — a source that would not resolve, or a declared source
-  directory that is missing from the installed package. Its skills are not in this run, so the
+  contributed nothing this time: a source that would not resolve, a `sources[]` entry whose
+  `extra.skills` block is rejected, a declared source directory that is missing from the
+  installed package, a donor whose every skill is refused for its directory name, or an
+  allowlist that names none of the donor's skills. Its skills are not in this run, so the
   wipe could not put them back. A scoped run proceeds: it only deletes what it reinstalls, so
   one broken package cannot block the narrow `--clean` that works around it.
 - An unreadable target directory aborts for the same reason — an empty listing there would be
