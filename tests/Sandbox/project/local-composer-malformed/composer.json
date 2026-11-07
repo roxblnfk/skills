@@ -1,0 +1,8 @@
+{
+    "name": "acme/dir-malformed",
+    "extra": {
+        "skills": {
+            "source": "/absolute"
+        }
+    }
+}

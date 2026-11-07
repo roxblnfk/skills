@@ -2,3 +2,7 @@
 /composer.lock
 /.claude/
 /.agents/
+/local-root-host/.agents/
+/local-root-skill-linked/
+/local-root-skill-linked.md
+/local-skills-unportable/

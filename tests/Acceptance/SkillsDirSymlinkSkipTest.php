@@ -89,6 +89,31 @@ final class SkillsDirSymlinkSkipTest
         );
     }
 
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './local-skills'],
+        ],
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function showReportsASkillWithASkippedLinkAsInSync(): void
+    {
+        \mkdir($this->secretDir, 0o777, true);
+        \file_put_contents($this->secretDir . '/secret.txt', 'must not leak');
+        if (!Filesystem::makeDirLink($this->secretDir, self::LINK_PATH)) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $update = $this->runUpdate();
+        Assert::same($update->getExitCode(), 0, 'stderr: ' . $update->getErrorOutput());
+
+        $show = ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:show', timeout: 60, mustSucceed: false);
+        Assert::true(
+            \preg_match('/^\s+OK\s+dir-hello\s/m', $show->getOutput()) === 1,
+            'the link the sync skipped must not count as drift. Got: ' . $show->getOutput(),
+        );
+    }
+
     private function runUpdate(): Process
     {
         return ComposerRunner::run(
