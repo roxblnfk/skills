@@ -59,6 +59,10 @@ final readonly class VendorConfig
      *         so a vendor-declared external source is approved exactly when at least one
      *         package that declared it would be. Unlike project `sources[]` entries, it is
      *         never implicit-trusted.
+     * @param bool $rootSkill the package root is itself the one skill this donor ships
+     *         (`SKILL.md` at the root). Its target directory is named from the frontmatter
+     *         or the package name, never from the root directory, whose name is whatever
+     *         the archive was extracted to.
      *
      * @psalm-mutation-free
      */
@@ -72,6 +76,7 @@ final readonly class VendorConfig
         public ?array $skillFilter = null,
         public ?array $discoveredSkillDirs = null,
         public array $declaredBy = [],
+        public bool $rootSkill = false,
     ) {}
 
     /**
@@ -120,6 +125,7 @@ final readonly class VendorConfig
             skillFilter: $this->skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $this->declaredBy,
+            rootSkill: $this->rootSkill,
         );
     }
 
@@ -147,6 +153,7 @@ final readonly class VendorConfig
             skillFilter: $this->skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $this->declaredBy,
+            rootSkill: $this->rootSkill,
         );
     }
 
@@ -172,6 +179,7 @@ final readonly class VendorConfig
             skillFilter: $this->skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $declaredBy,
+            rootSkill: $this->rootSkill,
         );
     }
 
@@ -196,6 +204,7 @@ final readonly class VendorConfig
             skillFilter: $skillFilter,
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $this->declaredBy,
+            rootSkill: $this->rootSkill,
         );
     }
 }

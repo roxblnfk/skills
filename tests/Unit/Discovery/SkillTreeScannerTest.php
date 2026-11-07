@@ -210,6 +210,18 @@ final class SkillTreeScannerTest
         Assert::same($this->names($this->scan()), ['real']);
     }
 
+    public function ignoresASkillWhoseSkillMdIsALink(): void
+    {
+        \mkdir($this->tmp . '/skills/linked', 0o777, true);
+        \file_put_contents($this->tmp . '/shared.md', "---\nname: linked\n---\nbody");
+        if (!@\symlink($this->tmp . '/shared.md', $this->tmp . '/skills/linked/SKILL.md')) {
+            throw new SkipTest('platform refuses file symlink creation');
+        }
+        $this->makeSkill('skills/real');
+
+        Assert::same($this->names($this->scan()), ['real']);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /**

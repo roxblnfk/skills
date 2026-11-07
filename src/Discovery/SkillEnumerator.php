@@ -30,11 +30,53 @@ final readonly class SkillEnumerator
     private const SAFE_SKILL_NAME = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/D';
 
     /**
+     * Longest skill name the Agent Skills specification allows.
+     */
+    private const MAX_NAME_LENGTH = 64;
+
+    /**
+     * Windows device names, which cannot name a directory there even with an
+     * extension, and also not with spaces before it (`nul .md`).
+     */
+    private const RESERVED_DEVICE_NAME = '/^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]) *(?:\..*)?$/iuD';
+
+    /**
      * @psalm-mutation-free
      */
     public function __construct(
         private SkillFrontmatterReader $frontmatterReader = new SkillFrontmatterReader(),
     ) {}
+
+    /**
+     * Why a skill directory name is never installed, or `null` when it may be.
+     * Discovery calls this too, so a skill it counts is one that gets installed.
+     * The name must stay one visible directory under the same spelling on every
+     * supported file system, since a donor on one may sync to a target on another:
+     *
+     * - A hidden directory in the target is never a skill to an agent, and
+     *   `.git` there would hand the donor a repository config git obeys.
+     * - A name shaped like a Windows short name can resolve to another skill's
+     *   directory.
+     * - Windows strips a trailing dot or space, so `foo.` would land in another
+     *   skill's `foo`; it rejects device names and some characters outright,
+     *   which would abort the sync halfway. A regex error counts as a refusal.
+     *
+     * @psalm-pure
+     */
+    public static function refusedDirectoryName(string $name): ?string
+    {
+        return match (true) {
+            $name === '' || $name[0] === '.' => 'is hidden',
+            self::looksLikeShortName($name) =>
+                'looks like a Windows short name, which can resolve to another skill\'s directory',
+            \preg_match('//u', $name) !== 1 => 'is not valid UTF-8',
+            \preg_match('/[\x00-\x1f\/\\\\:<>"|?*]/', $name) !== 0 =>
+                'holds a character Windows does not allow in a directory name',
+            \in_array($name[-1], ['.', ' '], true) => 'ends in a dot or space, which Windows strips',
+            \preg_match(self::RESERVED_DEVICE_NAME, $name) !== 0 => 'is a Windows device name',
+            default => null,
+        };
+    }
 
     /**
      * @param list<VendorConfig> $donors
@@ -43,6 +85,8 @@ final readonly class SkillEnumerator
     {
         $skills = [];
         $warnings = [];
+        $skipped = [];
+        $renamed = [];
         $droppedDonors = [];
 
         // Allowlist bookkeeping spans donor rows: a multi-source donor
@@ -52,13 +96,19 @@ final readonly class SkillEnumerator
         // package → declared name → seen anywhere.
         /** @var array<non-empty-string, array<string, bool>> $allowlistSeen */
         $allowlistSeen = [];
+        /** @var array<non-empty-string, true> $installingPackages */
+        $installingPackages = [];
+        /** @var array<non-empty-string, true> $refusingPackages */
+        $refusingPackages = [];
 
         foreach ($donors as $donor) {
+            $skippedBefore = \count($skipped);
+
             // Auto-discovered donors carry their skill directories explicitly
             // (they may sit at a catalog depth the immediate-subdir scan below
             // cannot reach); declared donors are scanned from their `source`.
             if ($donor->discoveredSkillDirs !== null) {
-                $candidates = $this->discoveredCandidates($donor);
+                $candidates = $this->discoveredCandidates($donor, $skipped);
             } else {
                 $sourcePath = (string) $donor->sourcePath();
 
@@ -97,8 +147,12 @@ final readonly class SkillEnumerator
             }
             $filterSet = $filter === null ? null : \array_fill_keys($filter, true);
 
-            foreach ($candidates as [$entry, $skillPath]) {
-                $canonicalName = $this->readCanonicalName(Path::create($skillPath), $entry);
+            foreach ($candidates as [$entry, $skillPath, $rename]) {
+                // A renamed root skill is known by the name it is installed
+                // under: its frontmatter name was rejected.
+                $canonicalName = $rename === null
+                    ? $this->readCanonicalName(Path::create($skillPath), $entry)
+                    : $entry;
 
                 if ($filterSet !== null) {
                     if (!\array_key_exists($canonicalName, $filterSet)) {
@@ -112,12 +166,43 @@ final readonly class SkillEnumerator
                     $allowlistSeen[$donor->packageName][$canonicalName] = true;
                 }
 
+                $refusal = self::refusedDirectoryName($entry);
+                if ($refusal !== null) {
+                    // Reported only for a directory that is a skill: a declared
+                    // source may hold `.github` or other plain directories.
+                    if (SkillTreeScanner::holdsSkillMd(Path::create($skillPath))) {
+                        $skipped[] = new SkillNotice(
+                            $donor->packageName,
+                            \sprintf('skill directory "%s" %s, and is not installed', $entry, $refusal),
+                        );
+                    }
+                    continue;
+                }
+
+                if ($rename !== null) {
+                    $renamed[] = $rename;
+                }
                 $skills[] = new Skill(
                     name: $entry,
                     canonicalName: $canonicalName,
                     sourceDir: Path::create($skillPath),
                     packageName: $donor->packageName,
                 );
+                $installingPackages[$donor->packageName] = true;
+            }
+
+            if (\count($skipped) > $skippedBefore) {
+                $refusingPackages[$donor->packageName] = true;
+            }
+        }
+
+        // A donor whose skills were all refused for their names contributes
+        // nothing, like one with a missing source: a full `--clean` must not
+        // delete what it installed before. Judged per package, since a
+        // multi-source donor's rows install for one another.
+        foreach ($refusingPackages as $packageName => $_) {
+            if (!isset($installingPackages[$packageName])) {
+                $droppedDonors[] = $packageName;
             }
         }
 
@@ -135,13 +220,58 @@ final readonly class SkillEnumerator
                     );
                 }
             }
+            // A stale allowlist, say one naming the catalog skills of a donor
+            // that is now one root skill, selects nothing and so drops the donor.
+            // Judged per package: a multi-source donor's rows share one allowlist.
+            if (!isset($installingPackages[$packageName]) && \in_array(false, $names, true)) {
+                $droppedDonors[] = $packageName;
+            }
         }
 
         return new SkillEnumerationResult(
             skills: $skills,
             warnings: $warnings,
             droppedDonors: \array_values(\array_unique($droppedDonors)),
+            skipped: $skipped,
+            renamed: $renamed,
         );
+    }
+
+    /**
+     * @psalm-pure
+     */
+    private static function nameRule(): string
+    {
+        return \sprintf(
+            'is lowercase and hyphenated, at most %d characters, and not a Windows device name such as `con`',
+            self::MAX_NAME_LENGTH,
+        );
+    }
+
+    /**
+     * `true` for a name shaped like a Windows 8.3 short name (`SKILLS~1`). NTFS
+     * gives long directory names such an alias, so writing to it can land in
+     * another skill's directory without any name collision being visible.
+     *
+     * @psalm-pure
+     */
+    private static function looksLikeShortName(string $name): bool
+    {
+        return \preg_match('/~\d/', $name) !== 0;
+    }
+
+    /**
+     * A name a root skill may take: one {@see self::refusedDirectoryName()}
+     * accepts, within the length limit counted in characters.
+     *
+     * @psalm-assert-if-true non-empty-string $name
+     *
+     * @psalm-pure
+     */
+    private static function isPortableDirName(string $name): bool
+    {
+        return self::refusedDirectoryName($name) === null
+            && (int) \preg_match_all('/./su', $name) <= self::MAX_NAME_LENGTH;
     }
 
     /**
@@ -150,7 +280,7 @@ final readonly class SkillEnumerator
      *
      * @param list<string> $entries result of {@see \scandir()} on `$sourcePath`
      *
-     * @return list<array{non-empty-string, non-empty-string}> `[directory name, absolute path]`
+     * @return list<array{non-empty-string, non-empty-string, null}> `[directory name, absolute path, no rename]`
      */
     private function declaredCandidates(string $sourcePath, array $entries): array
     {
@@ -164,7 +294,7 @@ final readonly class SkillEnumerator
                 continue;
             }
             /** @var non-empty-string $entry */
-            $out[] = [$entry, $skillPath];
+            $out[] = [$entry, $skillPath, null];
         }
 
         return $out;
@@ -176,35 +306,82 @@ final readonly class SkillEnumerator
      * `SKILL.md`) so a tree that changed between discovery and enumeration
      * degrades quietly instead of producing a phantom skill.
      *
-     * @return list<array{non-empty-string, non-empty-string}> `[directory name, absolute path]`
+     * @param list<SkillNotice> $skipped appended to when a root skill has no usable target name
+     *
+     * @return list<array{non-empty-string, non-empty-string, SkillNotice|null}> `[target directory name,
+     *         absolute path, the rename to report once the skill is installed]`
+     *
+     * @param-out list<SkillNotice> $skipped
      */
-    private function discoveredCandidates(VendorConfig $donor): array
+    private function discoveredCandidates(VendorConfig $donor, array &$skipped): array
     {
         $out = [];
         foreach ($donor->discoveredSkillDirs ?? [] as $dir) {
             $skillPath = (string) $dir;
-            if (!\is_dir($skillPath) || !\is_file($skillPath . \DIRECTORY_SEPARATOR . 'SKILL.md')) {
+            if (!\is_dir($skillPath) || !SkillTreeScanner::holdsSkillMd($dir)) {
                 continue;
             }
-            $isRootSkill = (string) $dir === (string) $donor->packageRoot;
-            $out[] = [$isRootSkill ? $this->rootSkillName($donor) : $dir->name(), $skillPath];
+            if (!$donor->rootSkill) {
+                $out[] = [$dir->name(), $skillPath, null];
+                continue;
+            }
+
+            $named = $this->rootSkillName($donor, $dir, $skipped);
+            if ($named !== null) {
+                $out[] = [$named[0], $skillPath, $named[1]];
+            }
         }
 
         return $out;
     }
 
     /**
-     * @return non-empty-string
+     * Target directory name for a donor whose root is the skill: the frontmatter
+     * `name` when it is a lowercase, hyphenated name, otherwise the last segment
+     * of the package name. Both come from the donor, so either one is used only
+     * when it stays a single directory inside the target on every platform.
+     *
+     * @param list<SkillNotice> $skipped appended to when neither name is usable
+     *
+     * @return array{non-empty-string, SkillNotice|null}|null the name, with a notice when the frontmatter
+     *         name was replaced; `null` when neither name is usable
+     *
+     * @param-out list<SkillNotice> $skipped
      */
-    private function rootSkillName(VendorConfig $donor): string
+    private function rootSkillName(VendorConfig $donor, Path $skillDir, array &$skipped): ?array
     {
-        $name = $this->frontmatterReader->read($donor->packageRoot)['name'] ?? null;
-        if (!\is_string($name) || \preg_match(self::SAFE_SKILL_NAME, $name) !== 1) {
-            $name = \basename($donor->packageName);
+        $declared = $this->frontmatterReader->read($skillDir)['name'] ?? null;
+        if (
+            \is_string($declared)
+            && \preg_match(self::SAFE_SKILL_NAME, $declared) === 1
+            && self::isPortableDirName($declared)
+        ) {
+            return [$declared, null];
         }
 
-        /** @var non-empty-string $name */
-        return $name;
+        $slashAt = \strrpos($donor->packageName, '/');
+        $fallback = $slashAt === false ? $donor->packageName : \substr($donor->packageName, $slashAt + 1);
+        if (!self::isPortableDirName($fallback)) {
+            $skipped[] = new SkillNotice(
+                $donor->packageName,
+                \sprintf('the root SKILL.md has no usable name; set a `name` in its frontmatter that %s', self::nameRule()),
+            );
+            return null;
+        }
+
+        if (!\is_string($declared) || $declared === '') {
+            return [$fallback, null];
+        }
+
+        return [$fallback, new SkillNotice(
+            $donor->packageName,
+            \sprintf(
+                'the root SKILL.md name "%s" cannot be a directory name, which %s; installing it as "%s"',
+                $declared,
+                self::nameRule(),
+                $fallback,
+            ),
+        )];
     }
 
     /**

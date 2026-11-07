@@ -94,6 +94,69 @@ final class SkillFrontmatterReaderTest
         ]);
     }
 
+    public function ignoresKeysOfNestedMappings(): void
+    {
+        $dir = $this->skill('nested', <<<'MD'
+            ---
+            name: pdf
+            metadata:
+              name: helper
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm['name'] ?? null, 'pdf');
+    }
+
+    public function keepsTheFirstOccurrenceOfAKey(): void
+    {
+        $dir = $this->skill('duplicate', <<<'MD'
+            ---
+            name: pdf
+            name: other
+            ---
+            MD);
+
+        Assert::same((new SkillFrontmatterReader())->read($dir)['name'] ?? null, 'pdf');
+    }
+
+    public function stripsTrailingComments(): void
+    {
+        $dir = $this->skill('commented', <<<'MD'
+            ---
+            name: pdf # the main skill
+            title: "PDF # tools" # quoted hash survives
+            anchor: issue#12
+            empty: # nothing
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm, [
+            'name' => 'pdf',
+            'title' => 'PDF # tools',
+            'anchor' => 'issue#12',
+            'empty' => '',
+        ]);
+    }
+
+    public function aCommentDoesNotEndAQuotedValueAtAnEscapedQuote(): void
+    {
+        $dir = $this->skill('escaped', <<<'MD'
+            ---
+            double: "Type \"foo\" # to search"
+            single: 'It'' # fine' # comment
+            ---
+            MD);
+
+        Assert::same((new SkillFrontmatterReader())->read($dir), [
+            'double' => 'Type \"foo\" # to search',
+            'single' => "It'' # fine",
+        ]);
+    }
+
     public function ignoresLinesThatDoNotLookLikeKeyValuePairs(): void
     {
         // A line without `:` is dropped silently rather than failing the

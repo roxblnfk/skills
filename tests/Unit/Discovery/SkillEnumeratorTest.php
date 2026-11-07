@@ -7,8 +7,10 @@ namespace LLM\Skills\Tests\Unit\Discovery;
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\SkillEnumerator;
+use LLM\Skills\Discovery\SkillNotice;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Data\DataSet;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -158,6 +160,22 @@ final class SkillEnumeratorTest
         Assert::true(\str_contains($result->warnings[0], 'not found'));
     }
 
+    public function aDonorWhoseAllowlistSelectsNothingIsDropped(): void
+    {
+        $stale = $this->makeDonor('acme/stale', 'src', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['gone']);
+        $partial = $this->makeDonor('acme/partial', 'src', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['alpha', 'gone']);
+        $rowA = $this->makeDonor('acme/mono', 'src-a', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['beta']);
+        $rowB = $this->makeDonor('acme/mono', 'src-b', ['beta/SKILL.md' => 'B'])
+            ->withSkillFilter(['beta']);
+
+        $result = (new SkillEnumerator())->enumerate([$stale, $partial, $rowA, $rowB]);
+
+        Assert::same($result->droppedDonors, ['acme/stale']);
+    }
+
     public function skillFilterDoesNotWarnWhenSkillLivesInASiblingSourceRow(): void
     {
         // A multi-directory `source` declaration arrives as several donor
@@ -276,6 +294,105 @@ final class SkillEnumeratorTest
 
     // ── auto-discovered donors (explicit skill directories) ───────────────────
 
+    public function hiddenSkillDirectoriesAreNeverInstalled(): void
+    {
+        $declared = $this->makeDonor('acme/declared', 'skills', [
+            '.git/SKILL.md' => '# planted',
+            'ZZZZZZ~9/SKILL.md' => '# planted',
+            'greeting/SKILL.md' => '# Greeting',
+        ]);
+        $discovered = $this->makeDiscoveredDonor('acme/found', 'skills', [
+            'skills/.github' => '# planted',
+            'skills/review' => '# Review',
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$declared, $discovered]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['greeting', 'review']);
+        Assert::same($result->warnings, []);
+        Assert::same(self::describe($result->skipped), [
+            'acme/declared: skill directory ".git" is hidden, and is not installed',
+            'acme/declared: skill directory "ZZZZZZ~9" looks like a Windows short name, which can resolve to '
+                . 'another skill\'s directory, and is not installed',
+            'acme/found: skill directory ".github" is hidden, and is not installed',
+        ]);
+    }
+
+    #[DataSet(['.github', 'is hidden'])]
+    #[DataSet(['SKILLS~1', 'looks like a Windows short name'])]
+    #[DataSet(["caf\xe9", 'is not valid UTF-8'])]
+    #[DataSet(['a:b', 'holds a character Windows does not allow'])]
+    #[DataSet(["a\tb", 'holds a character Windows does not allow'])]
+    #[DataSet(['foo.', 'ends in a dot or space'])]
+    #[DataSet(['foo ', 'ends in a dot or space'])]
+    #[DataSet(['con', 'is a Windows device name'])]
+    #[DataSet(['LPT1.txt', 'is a Windows device name'])]
+    public function anyDonorDirectoryNameIsRefusedWhenItIsNotPortable(string $name, string $reason): void
+    {
+        Assert::true(\str_contains((string) SkillEnumerator::refusedDirectoryName($name), $reason));
+    }
+
+    #[DataSet(['greeting'])]
+    #[DataSet(['refactor_legacy'])]
+    #[DataSet(['Über'])]
+    #[DataSet(['a.b'])]
+    public function portableDirectoryNamesAreAccepted(string $name): void
+    {
+        Assert::null(SkillEnumerator::refusedDirectoryName($name));
+    }
+
+    public function aDonorWhoseSkillsAreAllRefusedIsDropped(): void
+    {
+        $unnamed = $this->makeRootSkillDonor('evil/..', '# No frontmatter');
+        $declared = $this->makeDonor('acme/hidden-only', 'skills', ['.planted/SKILL.md' => '# planted']);
+        $healthy = $this->makeDonor('acme/mixed', 'skills', [
+            '.planted/SKILL.md' => '# planted',
+            'greeting/SKILL.md' => '# Greeting',
+        ]);
+        $legacyRow = $this->makeDonor('acme/mono', 'legacy', ['.old/SKILL.md' => '# old']);
+        $currentRow = $this->makeDonor('acme/mono', 'skills', ['pdf/SKILL.md' => '# PDF']);
+
+        $result = (new SkillEnumerator())->enumerate([$unnamed, $declared, $healthy, $legacyRow, $currentRow]);
+
+        Assert::same($result->droppedDonors, ['evil/..', 'acme/hidden-only']);
+    }
+
+    public function rootSkillFallsBackToAPackageNameWithoutAVendor(): void
+    {
+        $donor = $this->makeRootSkillDonor('pdf-tool', '# No frontmatter');
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'pdf-tool');
+    }
+
+    public function rootSkillLengthLimitCountsCharactersNotBytes(): void
+    {
+        $name = \str_repeat('ü', 40);
+        $donor = $this->makeRootSkillDonor('acme/' . $name, '# No frontmatter');
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, $name);
+    }
+
+    public function refusedDirectoriesThatAreNotSelectedSkillsStayQuiet(): void
+    {
+        $donor = $this->makeDonor('acme/declared', 'skills', [
+            '.curated/README.md' => 'a category, not a skill',
+            '.planted/SKILL.md' => '# planted',
+            'greeting/SKILL.md' => '# Greeting',
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor, $donor->withSkillFilter(['greeting'])]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['greeting', 'greeting']);
+        Assert::same(
+            self::describe($result->skipped),
+            ['acme/declared: skill directory ".planted" is hidden, and is not installed'],
+        );
+    }
+
     public function discoveredDonorEnumeratesItsExplicitSkillDirectories(): void
     {
         // Auto-discovery can surface skills at a catalog depth that is NOT an
@@ -315,6 +432,120 @@ final class SkillEnumeratorTest
     public function rootSkillRejectsAFrontmatterNameThatEscapesTheTarget(): void
     {
         $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: ../../evil\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'skill-repo');
+    }
+
+    public function rootSkillWarnsWhenItsFrontmatterNameIsReplaced(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: Code_Review\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'skill-repo');
+        Assert::same($result->warnings, []);
+        Assert::same(self::describe($result->renamed), [
+            'acme/skill-repo: the root SKILL.md name "Code_Review" cannot be a directory name, which is lowercase '
+                . 'and hyphenated, at most 64 characters, and not a Windows device name such as `con`; '
+                . 'installing it as "skill-repo"',
+        ]);
+    }
+
+    public function rootSkillWarningForADeviceNameDoesNotBlameTheSpelling(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: con\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::count($result->renamed, 1);
+        Assert::true(\str_contains($result->renamed[0]->message, 'not a Windows device name'));
+    }
+
+    public function rootSkillRejectsAFrontmatterNameOverTheLengthLimit(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: " . \str_repeat('a', 65) . "\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, 'skill-repo');
+    }
+
+    public function rootSkillAcceptsAFrontmatterNameAtTheLengthLimit(): void
+    {
+        $name = \str_repeat('a', 64);
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: {$name}\n---\nbody");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills[0]->name, $name);
+    }
+
+    public function aRenamedRootSkillIsSelectedByTheNameItIsInstalledUnder(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: Code_Review\n---\nbody");
+
+        $kept = (new SkillEnumerator())->enumerate([$donor->withSkillFilter(['skill-repo'])]);
+        $dropped = (new SkillEnumerator())->enumerate([$donor->withSkillFilter(['Code_Review'])]);
+
+        Assert::same($kept->skills[0]->canonicalName, 'skill-repo');
+        Assert::count($kept->renamed, 1);
+        Assert::same($dropped->skills, []);
+        Assert::same($dropped->renamed, [], 'a skill left out by the allowlist is not reported as renamed');
+    }
+
+    public function rootSkillWithoutFrontmatterNameDoesNotWarn(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', '# No frontmatter');
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->warnings, []);
+    }
+
+    #[DataSet(['evil/..'], name: 'parent directory')]
+    #[DataSet(['evil/.'], name: 'current directory')]
+    #[DataSet(['evil/...'], name: 'all dots')]
+    #[DataSet(['evil/foo.'], name: 'trailing dot, stripped by Windows')]
+    #[DataSet(['evil/foo '], name: 'trailing space, stripped by Windows')]
+    #[DataSet(['evil/a*b'], name: 'character Windows forbids')]
+    #[DataSet(["evil/a\tb"], name: 'control character')]
+    #[DataSet(['evil/con.txt'], name: 'device name with an extension')]
+    #[DataSet(['evil/SKILLS~1'], name: 'Windows short name')]
+    #[DataSet(['evil/a~12.md'], name: 'Windows short name with an extension')]
+    #[DataSet(['evil/.git'], name: 'hidden repository directory')]
+    #[DataSet(['acme/.github'], name: 'hidden directory')]
+    #[DataSet(['evil/nul .md'], name: 'device name with spaces before the extension')]
+    #[DataSet(['evil/con  .txt'], name: 'device name with several spaces before the extension')]
+    #[DataSet(['evil/conin$'], name: 'console input device')]
+    #[DataSet(['evil/CONOUT$'], name: 'console output device')]
+    #[DataSet(['evil/com¹'], name: 'superscript serial port')]
+    #[DataSet(['evil/lpt³'], name: 'superscript parallel port')]
+    #[DataSet(["evil/a\xffb"], name: 'invalid UTF-8')]
+    #[DataSet(['evil/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'], name: 'over the length limit')]
+    public function rootSkillNeverTakesAnUnportableNameFromThePackageName(string $packageName): void
+    {
+        $donor = $this->makeRootSkillDonor($packageName, '# No frontmatter');
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::same($result->warnings, []);
+        Assert::count($result->skipped, 1);
+        Assert::same($result->skipped[0]->packageName, $packageName);
+        Assert::true(\str_starts_with($result->skipped[0]->message, 'the root SKILL.md has no usable name'));
+    }
+
+    #[DataSet(['con'])]
+    #[DataSet(['nul'])]
+    #[DataSet(['aux'])]
+    #[DataSet(['prn'])]
+    #[DataSet(['com1'])]
+    #[DataSet(['lpt9'])]
+    public function rootSkillRejectsAWindowsReservedFrontmatterName(string $reserved): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/skill-repo', "---\nname: {$reserved}\n---\nbody");
 
         $result = (new SkillEnumerator())->enumerate([$donor]);
 
@@ -442,6 +673,17 @@ final class SkillEnumeratorTest
             packageRoot: Path::create($packageRoot),
             source: '.',
             discoveredSkillDirs: [Path::create($packageRoot)],
+            rootSkill: true,
         );
+    }
+
+    /**
+     * @param list<SkillNotice> $notices
+     *
+     * @return list<string>
+     */
+    private static function describe(array $notices): array
+    {
+        return \array_map(static fn(SkillNotice $notice): string => $notice->describe(), $notices);
     }
 }

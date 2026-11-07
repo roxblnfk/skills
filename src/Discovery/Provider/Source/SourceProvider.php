@@ -268,6 +268,8 @@ final readonly class SourceProvider implements DonorProvider
                 $malformed[] = new MalformedDonor(
                     packageName: $e->packageName,
                     reason: $reason,
+                    // A bundle a vendor package declares is no entry of the user's.
+                    declared: !($ref instanceof RemoteDonorRef) || $ref->declaredBy === [],
                 );
                 return [];
             }
@@ -293,6 +295,7 @@ final readonly class SourceProvider implements DonorProvider
                 packageRoot: $path,
                 source: $source,
                 discoveredSkillDirs: $inspection->discoveredSkillDirs,
+                rootSkill: $inspection->isRootSkill,
             ),
             $ref,
         )];

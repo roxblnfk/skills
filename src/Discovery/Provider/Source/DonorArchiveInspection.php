@@ -19,8 +19,9 @@ use Internal\Path;
  *   `extra.skills.source`. Carries the name and the raw `extra` so the
  *   caller can hand it to {@see \LLM\Skills\Config\Mapper\VendorConfigMapper::fromExtra()}.
  * - {@see self::bareSkillRepo()} — no usable manifest, but the archive
- *   ships `SKILL.md` files. Carries the synthesised name, the `source`
- *   container, and the discovered skill directories.
+ *   ships `SKILL.md` files, or is one skill with `SKILL.md` at its root.
+ *   Carries the synthesised name, the `source` container, and the
+ *   discovered skill directories.
  * - {@see self::rejected()} — not a donor; carries the
  *   {@see DonorArchiveRejection} (and an optional detail line).
  *
@@ -31,11 +32,12 @@ final readonly class DonorArchiveInspection
     /**
      * @param non-empty-string|null $packageName donor package name (accepted outcomes only)
      * @param mixed $extra raw `composer.json` `extra` (composer-shaped only)
-     * @param non-empty-string|null $source relative container of the discovered skills
-     *        (bare-skill-repo only)
+     * @param non-empty-string|null $source relative container of the discovered skills, or `.`
+     *        when the archive root is the skill itself (bare-skill-repo only)
      * @param list<Path> $discoveredSkillDirs absolute skill directories (bare-skill-repo only)
      * @param non-empty-string|null $detail extra context for the rejection message
      *        (e.g. the JSON parse error)
+     * @param bool $isRootSkill the archive root is the one skill (bare-skill-repo only)
      *
      * @psalm-mutation-free
      */
@@ -47,6 +49,7 @@ final readonly class DonorArchiveInspection
         public array $discoveredSkillDirs,
         public ?DonorArchiveRejection $rejection,
         public ?string $detail,
+        public bool $isRootSkill = false,
     ) {}
 
     /**
@@ -87,6 +90,27 @@ final readonly class DonorArchiveInspection
             discoveredSkillDirs: $discoveredSkillDirs,
             rejection: null,
             detail: null,
+        );
+    }
+
+    /**
+     * A bare skill repo whose root directory is the skill.
+     *
+     * @param non-empty-string $packageName
+     *
+     * @psalm-pure
+     */
+    public static function rootSkill(string $packageName, Path $root): self
+    {
+        return new self(
+            isComposerShaped: false,
+            packageName: $packageName,
+            extra: null,
+            source: '.',
+            discoveredSkillDirs: [$root],
+            rejection: null,
+            detail: null,
+            isRootSkill: true,
         );
     }
 
