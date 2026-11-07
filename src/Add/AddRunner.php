@@ -605,6 +605,9 @@ final readonly class AddRunner
      * Phrase a {@see DonorArchiveRejection} for the `skills:add`
      * console channel. The inspector owns the *classification*; the
      * wording (and the "fetched"/`--from` framing) is this command's.
+     * `OnlyInstalledCopies` is unreachable here — a fetched archive is
+     * inspected without a target, since it cannot hold one — but is phrased
+     * so the match stays exhaustive.
      *
      * @psalm-pure
      */
