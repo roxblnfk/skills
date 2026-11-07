@@ -177,6 +177,27 @@ final class SkillEnumeratorTest
         Assert::same($result->droppedDonors, ['acme/stale']);
     }
 
+    public function eachDroppedDonorCarriesWhyItContributedNothing(): void
+    {
+        $packageRoot = $this->tmp . '/vendor/acme/broken';
+        \mkdir($packageRoot, 0o777, true);
+        $broken = new VendorConfig('acme/broken', Path::create($packageRoot), 'src');
+        $stale = $this->makeDonor('acme/stale', 'src', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['gone', 'lost']);
+        $partial = $this->makeDonor('acme/partial', 'src', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['alpha', 'gone']);
+
+        $result = (new SkillEnumerator())->enumerate([$broken, $stale, $partial]);
+
+        Assert::same($result->dropReasons, [
+            'acme/broken' => ['source directory "src" does not exist'],
+            'acme/stale' => [
+                'skill "gone" declared in the skill allowlist but not found in the donor',
+                'skill "lost" declared in the skill allowlist but not found in the donor',
+            ],
+        ]);
+    }
+
     public function skillFilterDoesNotWarnWhenSkillLivesInASiblingSourceRow(): void
     {
         // A multi-directory `source` declaration arrives as several donor

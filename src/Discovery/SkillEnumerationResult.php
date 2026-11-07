@@ -37,6 +37,10 @@ final readonly class SkillEnumerationResult
      *        (every skill refused for its name)
      * @param list<SkillNotice> $skipped one per skill refused for its directory name
      * @param list<SkillNotice> $renamed one per root skill installed under another name
+     * @param array<non-empty-string, non-empty-list<string>> $dropReasons why each dropped donor
+     *        contributed nothing, keyed by package name, worded as in `warnings` without the
+     *        package prefix; a donor whose skills were all refused for their names is absent,
+     *        `skipped` explains it
      *
      * @psalm-mutation-free
      */
@@ -46,5 +50,6 @@ final readonly class SkillEnumerationResult
         public array $droppedDonors = [],
         public array $skipped = [],
         public array $renamed = [],
+        public array $dropReasons = [],
     ) {}
 }

@@ -279,9 +279,15 @@ final readonly class SyncRunner
                 ...$enumeration->droppedDonors,
             ];
             if ($unrestorable !== []) {
-                // The rows carry each source's reason, which the refusal alone
+                // The rows carry each donor's reason, which the refusal alone
                 // does not name.
                 $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
+                foreach ($enumeration->dropReasons as $packageName => $reasons) {
+                    $io->write('<fg=cyan>' . $packageName . '</>');
+                    foreach ($reasons as $reason) {
+                        $io->write('  <fg=red;options=bold>[failed]</> ' . $reason);
+                    }
+                }
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] --clean refused: %s contributed no skills, so this run '
                     . 'cannot restore what it would delete. Fix the donor, or narrow the run to '

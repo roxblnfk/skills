@@ -97,6 +97,8 @@ final readonly class SkillEnumerator
         $skipped = [];
         $renamed = [];
         $droppedDonors = [];
+        /** @var array<non-empty-string, non-empty-list<string>> $dropReasons */
+        $dropReasons = [];
 
         // Allowlist bookkeeping spans donor rows: a multi-source donor
         // arrives as several rows sharing one package name, and a
@@ -124,23 +126,19 @@ final readonly class SkillEnumerator
                 $sourcePath = (string) $donor->sourcePath();
 
                 if (!\is_dir($sourcePath)) {
-                    $warnings[] = \sprintf(
-                        '%s: source directory "%s" does not exist',
-                        $donor->packageName,
-                        $donor->source,
-                    );
+                    $reason = \sprintf('source directory "%s" does not exist', $donor->source);
+                    $warnings[] = $donor->packageName . ': ' . $reason;
                     $droppedDonors[] = $donor->packageName;
+                    $dropReasons[$donor->packageName][] = $reason;
                     continue;
                 }
 
                 $entries = \scandir($sourcePath);
                 if ($entries === false) {
-                    $warnings[] = \sprintf(
-                        '%s: source directory "%s" is unreadable',
-                        $donor->packageName,
-                        $donor->source,
-                    );
+                    $reason = \sprintf('source directory "%s" is unreadable', $donor->source);
+                    $warnings[] = $donor->packageName . ': ' . $reason;
                     $droppedDonors[] = $donor->packageName;
+                    $dropReasons[$donor->packageName][] = $reason;
                     continue;
                 }
 
@@ -232,25 +230,29 @@ final readonly class SkillEnumerator
         // them as `-v` warnings without aborting — the rest of the
         // allowlist still syncs.
         foreach ($allowlistSeen as $packageName => $names) {
+            $missing = [];
             foreach ($names as $name => $seen) {
                 if (!$seen) {
                     // A copy of the skill in the target would otherwise make
                     // the warning read as a contradiction.
                     $copied = isset($targetHolders[$packageName]) && $target !== null
                         && \is_dir((string) $target->join($name));
-                    $warnings[] = \sprintf(
-                        '%s: skill "%s" declared in the skill allowlist but not found in the donor%s',
-                        $packageName,
+                    $missing[] = \sprintf(
+                        'skill "%s" declared in the skill allowlist but not found in the donor%s',
                         $name,
                         $copied ? \sprintf('; its copy installed in the target %s does not count', $target) : '',
                     );
                 }
             }
+            foreach ($missing as $reason) {
+                $warnings[] = $packageName . ': ' . $reason;
+            }
             // A stale allowlist, say one naming the catalog skills of a donor
             // that is now one root skill, selects nothing and so drops the donor.
             // Judged per package: a multi-source donor's rows share one allowlist.
-            if (!isset($installingPackages[$packageName]) && \in_array(false, $names, true)) {
+            if (!isset($installingPackages[$packageName]) && $missing !== []) {
                 $droppedDonors[] = $packageName;
+                $dropReasons[$packageName] = [...$dropReasons[$packageName] ?? [], ...$missing];
             }
         }
 
@@ -258,6 +260,7 @@ final readonly class SkillEnumerator
             skills: $skills,
             warnings: $warnings,
             droppedDonors: \array_values(\array_unique($droppedDonors)),
+            dropReasons: $dropReasons,
             skipped: $skipped,
             renamed: $renamed,
         );

@@ -816,7 +816,9 @@ Three things `--clean` refuses or leaves alone:
   `extra.skills` block is rejected, a declared source directory that is missing from the
   installed package, a donor whose every skill is refused for its directory name, or an
   allowlist that names none of the donor's skills. Its skills are not in this run, so the
-  wipe could not put them back. A scoped run proceeds: it only deletes what it reinstalls, so
+  wipe could not put them back. The output above the refusal says why each such donor
+  contributed nothing: a `[failed]` row, or the `[skip]` lines of its refused skills. A scoped
+  run proceeds: it only deletes what it reinstalls, so
   one broken package cannot block the narrow `--clean` that works around it.
 - An unreadable target directory aborts for the same reason — an empty listing there would be
   reported as a wipe that never happened.

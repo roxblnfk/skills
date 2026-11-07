@@ -121,14 +121,14 @@ final class SkillsDonorOwnSkillsBesideTargetTest
         \mkdir(self::TARGET_DIR . '/copied', 0o777, true);
         \file_put_contents(self::TARGET_DIR . '/copied/SKILL.md', "---\nname: copied\n---\nan installed copy\n");
 
-        $process = $this->run('skills:update --clean -v');
+        $process = $this->run('skills:update --clean');
 
         Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
         Assert::true(\str_contains($process->getErrorOutput(), '--clean refused'), $this->diagnostics($process));
         Assert::true(
             \str_contains(
-                $process->getOutput() . $process->getErrorOutput(),
-                'skill "copied" declared in the skill allowlist but not found in the donor; '
+                $process->getOutput(),
+                '[failed] skill "copied" declared in the skill allowlist but not found in the donor; '
                 . 'its copy installed in the target',
             ),
             $this->diagnostics($process),
