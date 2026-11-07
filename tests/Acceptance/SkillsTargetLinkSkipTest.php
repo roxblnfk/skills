@@ -243,8 +243,9 @@ final class SkillsTargetLinkSkipTest
         $this->composer('skills:update');
         $installed = self::TARGET_DIR . '/refactor/SKILL.md';
         \unlink($installed);
-        // A hard link cannot cross volumes, so its other name lives beside the target.
-        $this->outsideFile = Info::PROJECT_DIR . '/.llm-skills-hard-link-' . \bin2hex(\random_bytes(6)) . '.md';
+        // A hard link cannot cross volumes, so its other name lives beside the
+        // target, in the ignored `.agents/` so an interrupted run leaves no stray file.
+        $this->outsideFile = \dirname(self::TARGET_DIR) . '/.llm-skills-hard-link-' . \bin2hex(\random_bytes(6)) . '.md';
         \file_put_contents($this->outsideFile, 'mine');
         if (!@\link($this->outsideFile, $installed)) {
             throw new SkipTest('platform refuses hard link creation');
