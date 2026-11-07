@@ -170,7 +170,16 @@ final readonly class SyncRunner
 
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $discovery = $provider->discover($projectRoot);
+        // Resolved before discovery: a donor holding the target must not take
+        // the copies installed there for its own skills.
+        try {
+            $target = $this->planner->target($project, $options, $projectRoot);
+        } catch (MalformedProjectConfig $e) {
+            $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
+
+        $discovery = $provider->discover($projectRoot, $target);
         $this->emitWarnings($io, $discovery->warnings);
 
         $discoveryActive = $options->discovery ?? $project->discovery;
@@ -270,6 +279,9 @@ final readonly class SyncRunner
                 ...$enumeration->droppedDonors,
             ];
             if ($unrestorable !== []) {
+                // The rows carry each source's reason, which the refusal alone
+                // does not name.
+                $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] --clean refused: %s contributed no skills, so this run '
                     . 'cannot restore what it would delete. Fix the donor, or narrow the run to '

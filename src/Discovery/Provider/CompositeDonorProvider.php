@@ -59,7 +59,7 @@ final readonly class CompositeDonorProvider implements DonorProvider
     }
 
     #[\Override]
-    public function discover(Path $projectRoot): DonorDiscoveryResult
+    public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult
     {
         /** @var array<non-empty-string, non-empty-list<\LLM\Skills\Config\VendorConfig>> $donorsByName */
         $donorsByName = [];
@@ -79,7 +79,7 @@ final readonly class CompositeDonorProvider implements DonorProvider
                 continue;
             }
 
-            $result = $child->discover($projectRoot);
+            $result = $child->discover($projectRoot, $target);
 
             foreach ($result->donors as $donor) {
                 $name = $donor->packageName;

@@ -793,6 +793,39 @@ final class SourceProviderTest
         Assert::same($result->donors[0]->skillFilter, ['example']);
     }
 
+    public function dirRefHoldingTheTargetFindsItsOwnSkillsBesideTheInstalledCopies(): void
+    {
+        $dir = $this->makeExtracted('host-dir');
+        $this->writeSkill($dir, '.agents/skills/copied');
+        $this->writeSkill($dir, 'my-skills/foo');
+
+        $provider = new SourceProvider($this->sourceWithMixedRefs($this->dirRef($dir)));
+        $result = $provider->discover($this->projectRoot(), $dir->join('.agents/skills'));
+
+        Assert::same($result->failures, []);
+        Assert::count($result->donors, 1);
+        Assert::same(
+            \array_map(static fn(Path $skill): string => $skill->name(), $result->donors[0]->discoveredSkillDirs ?? []),
+            ['foo'],
+        );
+    }
+
+    public function dirRefWhoseOnlySkillsAreInstalledCopiesSaysSo(): void
+    {
+        $dir = $this->makeExtracted('copies-only-dir');
+        $this->writeSkill($dir, '.agents/skills/copied');
+
+        $provider = new SourceProvider($this->sourceWithMixedRefs($this->dirRef($dir)));
+        $result = $provider->discover($this->projectRoot(), $dir->join('.agents/skills'));
+
+        Assert::same($result->donors, []);
+        Assert::count($result->failures, 1);
+        Assert::true(
+            \str_contains($result->failures[0]->describe(), 'its only skills are the copies installed in the target'),
+            $result->failures[0]->describe(),
+        );
+    }
+
     public function directDependenciesAlwaysEmpty(): void
     {
         // Even with active source + working fetcher: remote refs are

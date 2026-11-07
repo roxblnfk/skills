@@ -69,19 +69,17 @@ final class SkillsDonorContainsTargetTest
             ['from' => 'dir', 'path' => './local-target-host'],
         ],
     ])]
-    public function cleanSyncRemovesACopyNoDonorShipsAnyMore(): void
+    public function cleanSyncIsRefusedNamingWhyAHostWithOnlyCopiesContributesNothing(): void
     {
-        \mkdir(self::TARGET_DIR . '/stale-copy', 0o777, true);
-        \file_put_contents(self::TARGET_DIR . '/stale-copy/SKILL.md', "---\nname: stale-copy\n---\nstale\n");
-
         $process = $this->run('skills:update --clean');
 
-        Assert::same($process->getExitCode(), 0, $this->diagnostics($process));
-        Assert::false(
-            \is_dir(self::TARGET_DIR . '/stale-copy'),
-            'a copy in the target is not a source of the donor holding it. ' . $this->diagnostics($process),
+        Assert::notSame($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::true(\str_contains($process->getErrorOutput(), '--clean refused'), $this->diagnostics($process));
+        Assert::true(
+            \str_contains($process->getOutput(), 'its only skills are the copies installed in the target'),
+            $this->diagnostics($process),
         );
-        Assert::true(\is_file(self::TARGET_DIR . '/dir-hello/SKILL.md'), $this->diagnostics($process));
+        Assert::true(\is_file(self::TARGET_DIR . '/dir-hello/SKILL.md'), 'a refused clean deletes nothing');
     }
 
     #[WithSkillsJson([

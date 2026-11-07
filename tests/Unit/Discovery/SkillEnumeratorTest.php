@@ -680,6 +680,23 @@ final class SkillEnumeratorTest
         Assert::same($result->droppedDonors, ['acme/host']);
     }
 
+    public function allowlistWarningSaysAnInstalledCopyDoesNotCount(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/host', 'skills', [
+            'skills/own' => '# Own',
+            '.agents/skills/copied' => '# Copied',
+        ])->withSkillFilter(['copied']);
+        $target = $donor->packageRoot->join('.agents/skills');
+
+        $result = (new SkillEnumerator())->enumerate([$donor], $target);
+
+        Assert::count($result->warnings, 1);
+        Assert::true(
+            \str_contains($result->warnings[0], 'its copy installed in the target ' . $target . ' does not count'),
+            $result->warnings[0],
+        );
+    }
+
     /**
      * @param non-empty-string $packageName
      * @param non-empty-string $sourceDir

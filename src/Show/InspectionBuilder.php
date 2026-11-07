@@ -76,7 +76,7 @@ final readonly class InspectionBuilder
     ): InspectionReport {
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $discovery = $provider->discover($projectRoot);
+        $discovery = $provider->discover($projectRoot, $this->planner->target($project, $options, $projectRoot));
 
         $discoveryActive = $options->discovery ?? $project->discovery;
         $resolution = $this->discoveryResolver->resolve(

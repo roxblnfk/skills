@@ -321,9 +321,11 @@ final readonly class AddRunner
         // the last fallback. Refusing a non-donor shape here keeps
         // `skills:add` from writing an entry the sync would then ignore
         // — a skill declared but never copied.
+        $target = $this->syncTarget($projectRoot);
         $inspection = $this->inspector->inspect(
             $resolved,
             DirDonorRef::derivePackageName($resolved),
+            $target,
         );
 
         $rejection = $inspection->rejection;
@@ -348,7 +350,7 @@ final readonly class AddRunner
             $inspection,
             $resolved,
             $this->writer->allowlistAfterUpsert($projectRoot, $entry),
-            $this->syncTarget($projectRoot),
+            $target,
         );
         if ($unnamed !== null) {
             $io->writeError(\sprintf('<error>[llm/skills] dir %s: %s</error>', $spelling, $unnamed));
@@ -592,10 +594,6 @@ final readonly class AddRunner
             return null;
         }
 
-        if ($target !== null && $this->enumerator->enumerate($donors)->skills !== []) {
-            return \sprintf('%s: its only skills are the copies installed in the target %s', $packageName, $target);
-        }
-
         if (isset($result->skipped[0])) {
             return $result->skipped[0]->describe();
         }
@@ -629,6 +627,8 @@ final readonly class AddRunner
                 $adapterId,
                 $parsed->package ?? $parsed->url ?? $parsed->from,
             ),
+            DonorArchiveRejection::OnlyInstalledCopies =>
+                'fetched archive\'s only skills are the copies installed in the target ' . ($detail ?? ''),
             DonorArchiveRejection::NoPackageName => \sprintf(
                 'fetched archive ships SKILL.md files but no package name to register it under '
                 . '(composer.json missing AND --from=%s did not derive a vendor/repo identifier)',
@@ -664,6 +664,9 @@ final readonly class AddRunner
             DonorArchiveRejection::NoDonorShape =>
                 'directory ships neither a composer.json with extra.skills.source '
                 . 'nor any SKILL.md files — cannot register as a skill donor',
+            DonorArchiveRejection::OnlyInstalledCopies =>
+                'its only skills are the copies installed in the target ' . ($detail ?? '')
+                . ', which do not count as its own — cannot register as a skill donor',
             DonorArchiveRejection::NoPackageName =>
                 'directory ships SKILL.md files but no package name to register it under',
         };

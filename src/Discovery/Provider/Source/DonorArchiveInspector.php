@@ -61,8 +61,10 @@ final readonly class DonorArchiveInspector
      * @param non-empty-string|null $packageHint adapter-side identifier used as the
      *        donor name for the bare-skill-repo shape (for GitHub, `<owner>/<repo>`);
      *        `null` when the adapter could not derive one.
+     * @param Path|null $target the sync target; when it lies inside the archive, the skills there
+     *        are installed copies and are left out of the scan
      */
-    public function inspect(Path $extractedRoot, ?string $packageHint): DonorArchiveInspection
+    public function inspect(Path $extractedRoot, ?string $packageHint, ?Path $target = null): DonorArchiveInspection
     {
         $packageName = null;
         $extra = null;
@@ -114,11 +116,11 @@ final readonly class DonorArchiveInspector
         // hide a catalog's `pdf/`. Otherwise a root SKILL.md makes the whole
         // archive one skill, and SKILL.md files below it are its content,
         // including skills installed into a target that lies inside the donor.
-        $discovered = $this->scanner->scan($extractedRoot);
+        $discovered = $this->scanner->scan($extractedRoot, $target);
         $rootIsSkill = false;
         if (SkillTreeScanner::holdsSkillMd($extractedRoot)) {
             $shallow = self::withoutIndexes(
-                $this->scanner->scanShallow($extractedRoot, self::OUTRANKING_DEPTH),
+                $this->scanner->scanShallow($extractedRoot, self::OUTRANKING_DEPTH, $target),
                 $discovered,
             );
             // Decided before names are merged: a shallow skill outranks the
@@ -127,7 +129,9 @@ final readonly class DonorArchiveInspector
             $discovered = self::merge($discovered, $shallow);
         }
         if (!$rootIsSkill && $discovered === []) {
-            return DonorArchiveInspection::rejected(DonorArchiveRejection::NoDonorShape);
+            return $target !== null && $this->scanner->scan($extractedRoot) !== []
+                ? DonorArchiveInspection::rejected(DonorArchiveRejection::OnlyInstalledCopies, (string) $target)
+                : DonorArchiveInspection::rejected(DonorArchiveRejection::NoDonorShape);
         }
 
         $synthesisedName = $packageName ?? $packageHint;

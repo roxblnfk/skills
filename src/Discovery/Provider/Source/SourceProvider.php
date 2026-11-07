@@ -79,7 +79,7 @@ final readonly class SourceProvider implements DonorProvider
     }
 
     #[\Override]
-    public function discover(Path $projectRoot): DonorDiscoveryResult
+    public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult
     {
         $donors = [];
         /** @var list<SourceFailure> $failures */
@@ -94,7 +94,7 @@ final readonly class SourceProvider implements DonorProvider
 
         foreach ($this->source->refs($projectRoot) as $ref) {
             if ($ref instanceof DirDonorRef) {
-                foreach ($this->resolveDirRef($ref, $failures, $malformed) as $donor) {
+                foreach ($this->resolveDirRef($ref, $target, $failures, $malformed) as $donor) {
                     $donors[] = $donor;
                 }
                 continue;
@@ -126,7 +126,7 @@ final readonly class SourceProvider implements DonorProvider
                 continue;
             }
 
-            foreach ($this->buildDonor($ref, $path, $failures, $malformed) as $donor) {
+            foreach ($this->buildDonor($ref, $path, $target, $failures, $malformed) as $donor) {
                 $donors[] = $donor;
             }
         }
@@ -194,6 +194,7 @@ final readonly class SourceProvider implements DonorProvider
      */
     private function resolveDirRef(
         DirDonorRef $ref,
+        ?Path $target,
         array &$failures,
         array &$malformed,
     ): array {
@@ -206,7 +207,7 @@ final readonly class SourceProvider implements DonorProvider
             return [];
         }
 
-        return $this->buildDonor($ref, $ref->directory, $failures, $malformed);
+        return $this->buildDonor($ref, $ref->directory, $target, $failures, $malformed);
     }
 
     /**
@@ -238,10 +239,11 @@ final readonly class SourceProvider implements DonorProvider
     private function buildDonor(
         RemoteDonorRef|DirDonorRef $ref,
         Path $path,
+        ?Path $target,
         array &$failures,
         array &$malformed,
     ): array {
-        $inspection = $this->inspector->inspect($path, $ref->packageHint);
+        $inspection = $this->inspector->inspect($path, $ref->packageHint, $target);
 
         $rejection = $inspection->rejection;
         if ($rejection !== null) {
@@ -322,6 +324,9 @@ final readonly class SourceProvider implements DonorProvider
             DonorArchiveRejection::NoDonorShape =>
                 'archive ships neither a composer.json with extra.skills.source '
                 . 'nor any SKILL.md files — not a donor',
+            DonorArchiveRejection::OnlyInstalledCopies =>
+                'its only skills are the copies installed in the target ' . ($detail ?? '')
+                . ', which do not count as its own',
             DonorArchiveRejection::NoPackageName =>
                 'archive ships SKILL.md files but no package name to register it under '
                 . '(composer.json missing AND the adapter could not derive a `vendor/repo` identifier)',

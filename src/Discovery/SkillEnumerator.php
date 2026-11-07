@@ -28,7 +28,9 @@ use LLM\Skills\Filesystem\PathContainment;
  *
  * A donor whose tree contains the sync target, such as the project itself
  * registered as a `dir` source, has no skills in the target: what sits there
- * are installed copies, whichever donor they came from.
+ * are installed copies, whichever donor they came from. Discovery already
+ * leaves them out of the skill directories it finds; a declared `source` is
+ * listed here, so a candidate within the target is dropped here too.
  */
 final readonly class SkillEnumerator
 {
@@ -107,6 +109,8 @@ final readonly class SkillEnumerator
         $installingPackages = [];
         /** @var array<non-empty-string, true> $refusingPackages */
         $refusingPackages = [];
+        /** @var array<non-empty-string, true> $targetHolders packages with a row that holds the target */
+        $targetHolders = [];
 
         foreach ($donors as $donor) {
             $skippedBefore = \count($skipped);
@@ -154,6 +158,9 @@ final readonly class SkillEnumerator
             }
             $filterSet = $filter === null ? null : \array_fill_keys($filter, true);
             $excludedTarget = $target !== null && self::containsTarget($donor, $target) ? $target : null;
+            if ($excludedTarget !== null) {
+                $targetHolders[$donor->packageName] = true;
+            }
 
             foreach ($candidates as [$entry, $skillPath, $rename]) {
                 // Resolved, not spelled: an alias such as `.claude/skills` links
@@ -227,10 +234,15 @@ final readonly class SkillEnumerator
         foreach ($allowlistSeen as $packageName => $names) {
             foreach ($names as $name => $seen) {
                 if (!$seen) {
+                    // A copy of the skill in the target would otherwise make
+                    // the warning read as a contradiction.
+                    $copied = isset($targetHolders[$packageName]) && $target !== null
+                        && \is_dir((string) $target->join($name));
                     $warnings[] = \sprintf(
-                        '%s: skill "%s" declared in the skill allowlist but not found in the donor',
+                        '%s: skill "%s" declared in the skill allowlist but not found in the donor%s',
                         $packageName,
                         $name,
+                        $copied ? \sprintf('; its copy installed in the target %s does not count', $target) : '',
                     );
                 }
             }
@@ -261,7 +273,7 @@ final readonly class SkillEnumerator
     {
         $scanRoot = $donor->discoveredSkillDirs === null ? $donor->sourcePath() : $donor->packageRoot;
 
-        return PathContainment::isWithin($target, $scanRoot) && !PathContainment::isWithin($scanRoot, $target);
+        return PathContainment::isBelow($target, $scanRoot);
     }
 
     /**

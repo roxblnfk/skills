@@ -666,6 +666,24 @@ final class AddRunnerTest
         Assert::false(\is_file($this->tmp . '/skills.json'), 'no entry is written on refusal');
     }
 
+    public function projectDirWithItsOwnSkillsOutsideTheContainersIsAcceptedBesideInstalledCopies(): void
+    {
+        \mkdir($this->tmp . '/.agents/skills/copied', 0o777, true);
+        \file_put_contents($this->tmp . '/.agents/skills/copied/SKILL.md', "---\nname: copied\n---\nbody");
+        \mkdir($this->tmp . '/my-skills/foo', 0o777, true);
+        \file_put_contents($this->tmp . '/my-skills/foo/SKILL.md', "---\nname: foo\n---\nbody");
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './', skills: ['foo']),
+        );
+
+        Assert::same($code, Command::SUCCESS, $io->getOutput());
+        Assert::true(\is_file($this->tmp . '/skills.json'), 'the entry is written');
+    }
+
     public function theTargetLeftOutOfADirIsTheOneSkillsJsonConfigures(): void
     {
         \file_put_contents($this->tmp . '/skills.json', '{"target": "tools/installed"}');

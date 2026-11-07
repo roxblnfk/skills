@@ -6,6 +6,7 @@ namespace LLM\Skills\Discovery;
 
 use Internal\Path;
 use LLM\Skills\Filesystem\LinkGuard;
+use LLM\Skills\Filesystem\PathContainment;
 
 /**
  * Locates skill directories inside a package that does **not** declare
@@ -34,6 +35,14 @@ use LLM\Skills\Filesystem\LinkGuard;
  * As a second line, every accepted skill directory must still resolve (via
  * {@see \realpath()}) to a path contained within the package root; anything
  * escaping the boundary is silently rejected.
+ *
+ * Excluded directory: a scan may be given a directory whose skills are not the
+ * package's own, such as a sync target inside the package that holds installed
+ * copies. A skill within it is never recorded, so a container holding nothing
+ * else counts as empty and the fallback recursion still runs. The directory is
+ * matched as the file system resolves it, which also catches a container that
+ * links to it. One that is the package root or holds it is ignored: every skill
+ * would lie within it.
  */
 final readonly class SkillTreeScanner
 {
@@ -81,19 +90,22 @@ final readonly class SkillTreeScanner
     }
 
     /**
+     * @param Path|null $excluded a directory whose skills are not the package's own
+     *
      * @return list<DiscoveredSkill>
      */
-    public function scan(Path $packageRoot): array
+    public function scan(Path $packageRoot, ?Path $excluded = null): array
     {
         $rootReal = \realpath((string) $packageRoot);
         if ($rootReal === false || $rootReal === '') {
             return [];
         }
 
-        $found = $this->collectFromContainers($packageRoot, $rootReal);
+        $excluded = self::effectiveExclusion($packageRoot, $excluded);
+        $found = $this->collectFromContainers($packageRoot, $rootReal, $excluded);
         if ($found === []) {
             // Nothing in the conventional spots — cast a wider, bounded net.
-            $this->scanFallback($packageRoot, $rootReal, '', 0, $found);
+            $this->scanFallback($packageRoot, $rootReal, $excluded, '', 0, $found);
         }
 
         return \array_values($found);
@@ -106,10 +118,11 @@ final readonly class SkillTreeScanner
      * installed copy there cannot hide what the package itself ships.
      *
      * @param positive-int $maxDepth
+     * @param Path|null $excluded a directory whose skills are not the package's own
      *
      * @return list<DiscoveredSkill>
      */
-    public function scanShallow(Path $packageRoot, int $maxDepth): array
+    public function scanShallow(Path $packageRoot, int $maxDepth, ?Path $excluded = null): array
     {
         $rootReal = \realpath((string) $packageRoot);
         if ($rootReal === false || $rootReal === '') {
@@ -117,9 +130,18 @@ final readonly class SkillTreeScanner
         }
 
         $found = [];
-        $this->scanFallback($packageRoot, $rootReal, '', 0, $found, $maxDepth);
+        $excluded = self::effectiveExclusion($packageRoot, $excluded);
+        $this->scanFallback($packageRoot, $rootReal, $excluded, '', 0, $found, $maxDepth);
 
         return \array_values($found);
+    }
+
+    /**
+     * The excluded directory when it lies below the package root, `null` otherwise.
+     */
+    private static function effectiveExclusion(Path $packageRoot, ?Path $excluded): ?Path
+    {
+        return $excluded !== null && PathContainment::isBelow($excluded, $packageRoot) ? $excluded : null;
     }
 
     /**
@@ -127,7 +149,7 @@ final readonly class SkillTreeScanner
      *
      * @return array<string, DiscoveredSkill> keyed by the skill dir's realpath
      */
-    private function collectFromContainers(Path $packageRoot, string $rootReal): array
+    private function collectFromContainers(Path $packageRoot, string $rootReal, ?Path $excluded): array
     {
         /** @var array<string, DiscoveredSkill> $found keyed by the skill dir's realpath to dedupe */
         $found = [];
@@ -144,7 +166,7 @@ final readonly class SkillTreeScanner
                 if (self::holdsSkillMd($skillDir)) {
                     // Flat layout: <container>/<name>/SKILL.md. Found a skill —
                     // do not descend (shadowing).
-                    $this->record($found, $rootReal, $skillDir, $name, $container);
+                    $this->record($found, $rootReal, $excluded, $skillDir, $name, $container);
                     continue;
                 }
 
@@ -152,7 +174,7 @@ final readonly class SkillTreeScanner
                 foreach ($this->immediateSubdirs((string) $skillDir) as $leaf) {
                     $leafDir = $skillDir->join($leaf);
                     if (self::holdsSkillMd($leafDir)) {
-                        $this->record($found, $rootReal, $leafDir, $leaf, $container . '/' . $name);
+                        $this->record($found, $rootReal, $excluded, $leafDir, $leaf, $container . '/' . $name);
                     }
                 }
             }
@@ -177,6 +199,7 @@ final readonly class SkillTreeScanner
     private function scanFallback(
         Path $dir,
         string $rootReal,
+        ?Path $excluded,
         string $relPrefix,
         int $depth,
         array &$found,
@@ -206,17 +229,18 @@ final readonly class SkillTreeScanner
                 // A skill's parent is the container we group it under; the root
                 // itself surfaces as "." since a donor source must be non-empty.
                 $container = $relPrefix === '' ? '.' : $relPrefix;
-                $this->record($found, $rootReal, $child, $name, $container);
+                $this->record($found, $rootReal, $excluded, $child, $name, $container);
                 continue;
             }
 
             $childPrefix = $relPrefix === '' ? $name : $relPrefix . '/' . $name;
-            $this->scanFallback($child, $rootReal, $childPrefix, $depth + 1, $found, $maxDepth);
+            $this->scanFallback($child, $rootReal, $excluded, $childPrefix, $depth + 1, $found, $maxDepth);
         }
     }
 
     /**
      * Validate containment and append a discovered skill, deduping by realpath.
+     * A skill within the excluded directory is left out.
      *
      * @param array<string, DiscoveredSkill> $found
      * @param non-empty-string $rootReal
@@ -228,12 +252,16 @@ final readonly class SkillTreeScanner
     private function record(
         array &$found,
         string $rootReal,
+        ?Path $excluded,
         Path $skillDir,
         string $name,
         string $container,
     ): void {
         $real = \realpath((string) $skillDir);
         if ($real === false || !$this->within($rootReal, $real)) {
+            return;
+        }
+        if ($excluded !== null && PathContainment::isWithin($skillDir, $excluded)) {
             return;
         }
 

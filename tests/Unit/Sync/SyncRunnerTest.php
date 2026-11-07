@@ -102,7 +102,7 @@ final class SyncRunnerTest
                 return true;
             }
 
-            public function discover(Path $projectRoot): DonorDiscoveryResult
+            public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult
             {
                 return new DonorDiscoveryResult(donors: $this->donors, warnings: []);
             }
