@@ -135,8 +135,10 @@ final readonly class SyncEngine
             }
         } else {
             $removed = \array_map(static fn(InstalledSkill $s): string => $s->name, $purge);
-            // The purge strips a linked skill directory as a link, so a skill
-            // about to be purged is written into a fresh directory.
+            // The dry run does not walk the skills, so it names a link only when
+            // it is the skill directory, which decides whether the skill counts
+            // as copied. The purge strips a linked skill directory as a link,
+            // so a skill about to be purged is written into a fresh directory.
             $purgedKeys = [];
             foreach ($purge as $installed) {
                 $purgedKeys[SkillConflict::collisionKey($installed->name)] = true;
@@ -221,6 +223,8 @@ final readonly class SyncEngine
      * local checkout, leads outside it, so writing into the link would overwrite
      * whatever it points at. The entry is left as it is and its destination path
      * appended to `$linkedDestinations`; `$dst` itself is checked by the caller.
+     * A hard-linked file is unlinked before the copy, which leaves its other
+     * names intact; one that cannot be unlinked is left and reported the same way.
      *
      * The target directory is never copied: a donor that contains it, such as a
      * root skill whose directory is the project, would otherwise copy the target
@@ -295,10 +299,29 @@ final readonly class SyncEngine
                     $truncatedDirs,
                     $linkedDestinations,
                 );
-            } else {
+            } elseif ($this->detachHardLink($d)) {
                 \copy($s, $d);
+            } else {
+                $linkedDestinations[] = $d;
             }
         }
+    }
+
+    /**
+     * Gives `$path` an inode of its own when it is a hard link, so the copy
+     * replaces the file instead of truncating an inode another name shares,
+     * possibly outside the target.
+     *
+     * @return bool `true` when `$path` can be written without reaching another name
+     */
+    private function detachHardLink(string $path): bool
+    {
+        $stat = @\stat($path);
+        if ($stat === false || $stat['nlink'] <= 1) {
+            return true;
+        }
+
+        return @\unlink($path);
     }
 
     private function ensureDirectory(string $path): void

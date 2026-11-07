@@ -352,7 +352,7 @@ final readonly class SyncRunner
         $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
         foreach ($report->linkedDestinations as $link) {
             $io->writeError(\sprintf(
-                '<warning>[skip] %s: a symlink/junction inside the target; the sync does not write through it.</warning>',
+                '<warning>[skip] %s: a link inside the target; the sync does not write through it.</warning>',
                 $link,
             ));
         }
