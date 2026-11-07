@@ -466,6 +466,93 @@ final class SyncEngineTest
         Assert::same($report->skippedLinks, [$loop]);
     }
 
+    public function neverWritesThroughASkillDirectoryLinkedInsideTheTarget(): void
+    {
+        $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'extra.md' => 'donor extra']);
+        $checkout = $this->tmp . '/checkout';
+        \mkdir($checkout, 0o777, true);
+        \file_put_contents($checkout . '/SKILL.md', 'my version');
+        \mkdir($this->tmp . '/target', 0o777, true);
+        $link = $this->target()->join('pdf');
+        if (!Filesystem::makeDirLink($checkout, (string) $link)) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        Assert::same(\file_get_contents($checkout . '/SKILL.md'), 'my version');
+        Assert::false(\file_exists($checkout . '/extra.md'));
+        Assert::same($report->copied, []);
+        Assert::same($report->linkedDestinations, [(string) $link]);
+    }
+
+    public function neverWritesThroughALinkDeeperInsideAnInstalledSkill(): void
+    {
+        $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'scripts/run.sh' => 'donor']);
+        $elsewhere = $this->tmp . '/elsewhere';
+        \mkdir($elsewhere, 0o777, true);
+        \mkdir($this->targetPath('pdf'), 0o777, true);
+        $link = (string) $this->target()->join('pdf') . \DIRECTORY_SEPARATOR . 'scripts';
+        if (!Filesystem::makeDirLink($elsewhere, $link)) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        Assert::same(\file_get_contents($this->targetPath('pdf/SKILL.md')), 'donor version');
+        Assert::false(\file_exists($elsewhere . '/run.sh'));
+        Assert::same(\count($report->copied), 1);
+        Assert::same($report->linkedDestinations, [$link]);
+    }
+
+    public function neverWritesThroughAFileLinkInsideTheTarget(): void
+    {
+        $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'notes.md' => 'donor notes']);
+        $outsideFile = $this->tmp . '/outside.md';
+        \file_put_contents($outsideFile, 'mine');
+        \mkdir($this->targetPath('pdf'), 0o777, true);
+        $link = (string) $this->target()->join('pdf') . \DIRECTORY_SEPARATOR . 'notes.md';
+        if (!Filesystem::makeFileLink($outsideFile, $link)) {
+            throw new SkipTest('platform refuses file symlink creation');
+        }
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        Assert::same(\file_get_contents($this->targetPath('pdf/SKILL.md')), 'donor version');
+        Assert::same(\file_get_contents($outsideFile), 'mine');
+        Assert::same($report->linkedDestinations, [$link]);
+    }
+
+    public function dryRunReportsALinkedSkillDirectoryUnlessThePurgeStripsIt(): void
+    {
+        $kept = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version']);
+        $purged = $this->makeSkill('acme/pdf', 'docx', ['SKILL.md' => 'donor version']);
+        $checkout = $this->tmp . '/checkout';
+        \mkdir($checkout, 0o777, true);
+        \file_put_contents($checkout . '/SKILL.md', 'my version');
+        \mkdir($this->tmp . '/target', 0o777, true);
+        $keptLink = $this->target()->join('pdf');
+        $purgedLink = $this->target()->join('docx');
+        if (!Filesystem::makeDirLink($checkout, (string) $keptLink)
+            || !Filesystem::makeDirLink($checkout, (string) $purgedLink)
+        ) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $report = (new SyncEngine())->sync(
+            [$kept, $purged],
+            $this->target(),
+            dryRun: true,
+            purge: [new InstalledSkill(name: 'docx', dir: $purgedLink)],
+        );
+
+        Assert::same($report->linkedDestinations, [(string) $keptLink]);
+        Assert::same(\array_map(static fn(Skill $s): string => $s->name, $report->copied), ['docx']);
+        Assert::same(\file_get_contents($checkout . '/SKILL.md'), 'my version');
+    }
     public function stopsAtTheDepthCapAndReportsTheTruncationPoint(): void
     {
         // A tree deeper than the copy backstop must still copy what it can

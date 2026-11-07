@@ -331,6 +331,12 @@ final readonly class SyncRunner
         $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
         $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
         $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
+        foreach ($report->linkedDestinations as $link) {
+            $io->writeError(\sprintf(
+                '<warning>[skip] %s: a symlink/junction inside the target; the sync does not write through it.</warning>',
+                $link,
+            ));
+        }
         $this->emitRemovalFailures($io, $report->removalFailures);
         $this->emitKeptSources($io, $report->keptSources);
         foreach ($report->targetAsSource as $name) {

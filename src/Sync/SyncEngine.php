@@ -95,6 +95,8 @@ final readonly class SyncEngine
         $removalFailures = [];
         $skippedLinks = [];
         $truncatedDirs = [];
+        $linkedDestinations = [];
+        $copied = [];
         if (!$dryRun) {
             foreach ($purge as $installed) {
                 if ($this->remover->remove((string) $installed->dir)) {
@@ -113,8 +115,14 @@ final readonly class SyncEngine
                 $destination = $target->join($skill->name);
                 if (PathContainment::isSame($destination, $skill->sourceDir)) {
                     // Already in place; copying a file onto itself truncates it.
+                    $copied[] = $skill;
                     continue;
                 }
+                if (LinkGuard::isLink((string) $destination)) {
+                    $linkedDestinations[] = (string) $destination;
+                    continue;
+                }
+                $copied[] = $skill;
                 $this->copyTree(
                     (string) $skill->sourceDir,
                     (string) $destination,
@@ -122,14 +130,32 @@ final readonly class SyncEngine
                     0,
                     $skippedLinks,
                     $truncatedDirs,
+                    $linkedDestinations,
                 );
             }
         } else {
             $removed = \array_map(static fn(InstalledSkill $s): string => $s->name, $purge);
+            // The purge strips a linked skill directory as a link, so a skill
+            // about to be purged is written into a fresh directory.
+            $purgedKeys = [];
+            foreach ($purge as $installed) {
+                $purgedKeys[SkillConflict::collisionKey($installed->name)] = true;
+            }
+            foreach ($skills as $skill) {
+                $destination = $target->join($skill->name);
+                if (!isset($purgedKeys[SkillConflict::collisionKey($skill->name)])
+                    && !PathContainment::isSame($destination, $skill->sourceDir)
+                    && LinkGuard::isLink((string) $destination)
+                ) {
+                    $linkedDestinations[] = (string) $destination;
+                    continue;
+                }
+                $copied[] = $skill;
+            }
         }
 
         return new SyncReport(
-            copied: $skills,
+            copied: $copied,
             conflicts: [],
             skippedLinks: $skippedLinks,
             truncatedDirs: $truncatedDirs,
@@ -137,6 +163,7 @@ final readonly class SyncEngine
             removalFailures: $removalFailures,
             keptSources: $keptSources,
             targetAsSource: $targetAsSource,
+            linkedDestinations: $linkedDestinations,
         );
     }
 
@@ -189,11 +216,17 @@ final readonly class SyncEngine
      * contents were left uncopied is appended to `$truncatedDirs` for the same
      * reason: a truncated copy the user cannot see is a debugging trap too.
      *
+     * Links on the destination side are never written through either. A link
+     * the user made inside the target, such as a skill directory pointing at a
+     * local checkout, leads outside it, so writing into the link would overwrite
+     * whatever it points at. The entry is left as it is and its destination path
+     * appended to `$linkedDestinations`; `$dst` itself is checked by the caller.
+     *
      * The target directory is never copied: a donor that contains it, such as a
      * root skill whose directory is the project, would otherwise copy the target
      * into one of its own skills, and again on every level below. Matching the
-     * target itself is enough, since links are never followed and so nothing
-     * inside it is reachable any other way.
+     * target itself is enough: the walk follows no link in the source, so the
+     * target is reachable only at its own path.
      *
      * @param DirectoryIdentity|null $excludedDir the target when the skill source
      *        contains it, `null` when the source cannot reach it
@@ -202,9 +235,12 @@ final readonly class SyncEngine
      * @param list<string> $skippedLinks source paths of skipped links, accumulated across the tree
      * @param list<string> $truncatedDirs source paths where recursion stopped at the depth cap,
      *        accumulated across the tree
+     * @param list<string> $linkedDestinations destination paths of links left unwritten,
+     *        accumulated across the tree
      *
      * @param-out list<string> $skippedLinks
      * @param-out list<string> $truncatedDirs
+     * @param-out list<string> $linkedDestinations
      */
     private function copyTree(
         string $src,
@@ -213,6 +249,7 @@ final readonly class SyncEngine
         int $depth,
         array &$skippedLinks,
         array &$truncatedDirs,
+        array &$linkedDestinations,
     ): void {
         if ($depth >= self::MAX_COPY_DEPTH) {
             $truncatedDirs[] = $src;
@@ -238,11 +275,26 @@ final readonly class SyncEngine
                 continue;
             }
 
-            if (\is_dir($s)) {
-                if ($excludedDir?->matches(Path::create($s)) === true) {
-                    continue;
-                }
-                $this->copyTree($s, $d, $excludedDir, $depth + 1, $skippedLinks, $truncatedDirs);
+            $isDir = \is_dir($s);
+            if ($isDir && $excludedDir?->matches(Path::create($s)) === true) {
+                continue;
+            }
+
+            if (LinkGuard::isLink($d)) {
+                $linkedDestinations[] = $d;
+                continue;
+            }
+
+            if ($isDir) {
+                $this->copyTree(
+                    $s,
+                    $d,
+                    $excludedDir,
+                    $depth + 1,
+                    $skippedLinks,
+                    $truncatedDirs,
+                    $linkedDestinations,
+                );
             } else {
                 \copy($s, $d);
             }

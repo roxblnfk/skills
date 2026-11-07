@@ -38,6 +38,10 @@ use LLM\Skills\Discovery\Skill;
  * - `targetAsSource` — names of skills whose source directory is the target
  *                    itself, left out of `copied` because there is nowhere to
  *                    copy them to.
+ * - `linkedDestinations` — paths of symlinks/junctions inside the target the
+ *                    copy refused to write through, since that would overwrite
+ *                    what they point at, outside the target. A skill whose own
+ *                    directory is such a link is left out of `copied`.
  *
  * Discovery-time warnings (missing source dir, malformed extra, etc.) are
  * **not** part of this report — they happen earlier in the pipeline and
@@ -56,6 +60,7 @@ final readonly class SyncReport
      * @param list<non-empty-string> $removalFailures
      * @param list<non-empty-string> $keptSources
      * @param list<non-empty-string> $targetAsSource
+     * @param list<string> $linkedDestinations
      *
      * @psalm-mutation-free
      */
@@ -68,6 +73,7 @@ final readonly class SyncReport
         public array $removalFailures = [],
         public array $keptSources = [],
         public array $targetAsSource = [],
+        public array $linkedDestinations = [],
     ) {}
 
     /**
