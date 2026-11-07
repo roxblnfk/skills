@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Show;
 
 use Internal\Path;
+use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Show\DriftDetector;
+use LLM\Skills\Sync\SyncEngine;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -108,6 +111,46 @@ final class DriftDetectorTest
         $installed = $this->makeDir('installed', ['SKILL.md' => '# Refactor']);
 
         Assert::true((new DriftDetector())->differs($donor, $installed));
+    }
+
+    public function ignoresTheTargetInsideADonorThatContainsIt(): void
+    {
+        $donor = $this->makeDir('project', [
+            'SKILL.md' => '# Root',
+            '.agents/skills/root/SKILL.md' => '# Root',
+            '.agents/skills/other/SKILL.md' => '# Other',
+        ]);
+        $installed = Path::create((string) $donor . '/.agents/skills/root');
+        \mkdir((string) $installed . '/.agents', 0o777, true);
+
+        Assert::false((new DriftDetector())->differs($donor, $installed));
+    }
+
+    public function ignoresLinksTheSyncNeverCopies(): void
+    {
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting']);
+        $installed = $this->makeDir('installed', ['SKILL.md' => '# Greeting']);
+        $this->makeDir('elsewhere', ['payload.md' => 'not copied']);
+        if (!Filesystem::makeDirLink($this->tmp . '/elsewhere', (string) $donor . '/linked')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        Assert::false((new DriftDetector())->differs($donor, $installed));
+    }
+
+    public function stopsAtTheDepthTheSyncCopiesTo(): void
+    {
+        $deep = \str_repeat('d/', SyncEngine::MAX_COPY_DEPTH) . 'beyond.md';
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting', $deep => 'never copied']);
+        $installed = $this->makeDir('installed', ['SKILL.md' => '# Greeting']);
+
+        $report = (new SyncEngine())->sync(
+            [new Skill(name: 'installed', canonicalName: 'installed', sourceDir: $donor, packageName: 'acme/deep')],
+            Path::create($this->tmp),
+        );
+
+        Assert::true($report->truncatedDirs !== [], 'the fixture must reach the copy depth cap');
+        Assert::false((new DriftDetector())->differs($donor, $installed));
     }
 
     /**

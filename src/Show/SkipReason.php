@@ -43,4 +43,19 @@ enum SkipReason: string
      * could be read.
      */
     case SourceFailed = 'source-failed';
+
+    /**
+     * A skill the donor ships that is never installed because its directory
+     * name is unsafe or unusable: hidden, shaped like a Windows short name, not
+     * portable, or a root skill with no usable name. The donor itself may still
+     * install other skills, so the row names one skill, not the whole donor.
+     */
+    case SkillRefused = 'skill-refused';
+
+    /**
+     * A skill whose source directory is the target itself, such as a root
+     * skill declared by `{"from": "dir", "path": "./.agents/skills"}`. The
+     * sync has nowhere to copy it, so it is never installed.
+     */
+    case TargetIsSource = 'target-is-source';
 }

@@ -17,6 +17,7 @@ use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
+use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Sync\SyncEngine;
 use LLM\Skills\Sync\SyncPlan;
@@ -102,30 +103,58 @@ final readonly class InspectionBuilder
         // filesystem.
         $approvedEnumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
         $approvedSkills = $approvedEnumeration->skills;
-        $conflictReport = $this->engine->sync($approvedSkills, $plan->target, dryRun: true);
+        // A scoped report checks the donors it leaves out too, as the run does.
+        $bystanders = $options->isScoped()
+            ? $this->skillEnumerator->enumerate(
+                $this->planner->bystanders($plan, $donors, $project, $options, $builtin, $projectRoot, $directDeps),
+            )->skills
+            : [];
+        $conflictReport = $this->engine->sync($approvedSkills, $plan->target, dryRun: true, bystanders: $bystanders);
         $conflictMap = $this->indexConflicts($conflictReport->conflicts);
 
         // An unreadable target is reported as nothing installed: `show` only
         // marks skills `[✓]` / `[ ]`, so the worst it costs is an optimistic
         // "would be written" row, not a destructive decision.
         $installed = $this->installedScanner->scan($plan->target) ?? [];
-        $installedByName = $this->indexInstalledByName($installed);
+        $installedByKey = $this->indexInstalledByKey($installed);
+
+        // A skill whose source is the target is skipped by the sync, so it is
+        // listed as skipped rather than as a skill waiting to be written.
+        $targetSources = [];
+        $listedSkills = [];
+        foreach ($approvedSkills as $skill) {
+            if (PathContainment::isSame($plan->target, $skill->sourceDir)) {
+                $targetSources[] = new SkippedDonor(
+                    packageName: $skill->packageName,
+                    reason: SkipReason::TargetIsSource,
+                    detail: \sprintf(
+                        'skill "%s": its source is the target directory itself, so there is nowhere to copy it',
+                        $skill->name,
+                    ),
+                );
+            } else {
+                $listedSkills[] = $skill;
+            }
+        }
 
         $donorInspections = $this->buildDonorInspections(
             $plan->approvedDonors,
-            $approvedSkills,
+            $listedSkills,
             $attributor,
             $conflictMap,
-            $installedByName,
+            $installedByKey,
         );
 
         $skipped = $this->buildSkippedList(
             $discovery->malformed,
             $discovery->failures,
             $approvedEnumeration->warnings,
+            $approvedEnumeration->droppedDonors,
+            $approvedEnumeration->skipped,
             $plan,
             $resolution->excluded,
         );
+        \array_push($skipped, ...$targetSources);
 
         return new InspectionReport(
             target: $plan->target,
@@ -230,7 +259,7 @@ final readonly class InspectionBuilder
     /**
      * @param list<SkillConflict> $conflicts
      *
-     * @return array<non-empty-string, list<non-empty-string>> map of skill-name → packages
+     * @return array<string, list<non-empty-string>> map of {@see SkillConflict::collisionKey()} → packages
      *
      * @psalm-pure
      */
@@ -238,7 +267,7 @@ final readonly class InspectionBuilder
     {
         $out = [];
         foreach ($conflicts as $conflict) {
-            $out[$conflict->name] = $conflict->packages;
+            $out[SkillConflict::collisionKey($conflict->name)] = $conflict->packages;
         }
 
         return $out;
@@ -247,15 +276,15 @@ final readonly class InspectionBuilder
     /**
      * @param list<InstalledSkill> $installed
      *
-     * @return array<non-empty-string, InstalledSkill>
+     * @return array<string, list<InstalledSkill>> keyed by {@see SkillConflict::collisionKey()}
      *
      * @psalm-pure
      */
-    private function indexInstalledByName(array $installed): array
+    private function indexInstalledByKey(array $installed): array
     {
         $out = [];
         foreach ($installed as $skill) {
-            $out[$skill->name] = $skill;
+            $out[SkillConflict::collisionKey($skill->name)][] = $skill;
         }
 
         return $out;
@@ -264,8 +293,8 @@ final readonly class InspectionBuilder
     /**
      * @param list<VendorConfig> $approvedDonors
      * @param list<Skill> $approvedSkills
-     * @param array<non-empty-string, list<non-empty-string>> $conflictMap
-     * @param array<non-empty-string, InstalledSkill> $installedByName
+     * @param array<string, list<non-empty-string>> $conflictMap
+     * @param array<string, list<InstalledSkill>> $installedByKey
      *
      * @return list<DonorInspection>
      */
@@ -274,7 +303,7 @@ final readonly class InspectionBuilder
         array $approvedSkills,
         TrustAttributor $attributor,
         array $conflictMap,
-        array $installedByName,
+        array $installedByKey,
     ): array {
         $result = [];
         foreach ($approvedDonors as $donor) {
@@ -290,7 +319,7 @@ final readonly class InspectionBuilder
             foreach ($donorSkills as $skill) {
                 $skillInspections[] = new SkillInspection(
                     skill: $skill,
-                    status: $this->resolveStatus($skill, $installedByName),
+                    status: $this->resolveStatus($skill, $installedByKey),
                     conflictWith: $this->resolveConflictPartner($skill, $conflictMap),
                     description: $this->resolveDescription($skill),
                 );
@@ -341,11 +370,11 @@ final readonly class InspectionBuilder
     }
 
     /**
-     * @param array<non-empty-string, InstalledSkill> $installedByName
+     * @param array<string, list<InstalledSkill>> $installedByKey
      */
-    private function resolveStatus(Skill $skill, array $installedByName): SyncStatus
+    private function resolveStatus(Skill $skill, array $installedByKey): SyncStatus
     {
-        $installed = $installedByName[$skill->name] ?? null;
+        $installed = $this->findInstalled($skill, $installedByKey[SkillConflict::collisionKey($skill->name)] ?? []);
         if ($installed === null) {
             return SyncStatus::NotSynced;
         }
@@ -353,6 +382,30 @@ final readonly class InspectionBuilder
         return $this->drift->differs($skill->sourceDir, $installed->dir)
             ? SyncStatus::Drift
             : SyncStatus::InSync;
+    }
+
+    /**
+     * The installed directory `$skill` is written to: the one with its exact
+     * name, or one spelled in another case that a case-insensitive target
+     * stores it in. Only the file system can tell the second case apart: on a
+     * case-sensitive target such a directory is a different skill.
+     *
+     * @param list<InstalledSkill> $candidates installed skills sharing the skill's collision key
+     */
+    private function findInstalled(Skill $skill, array $candidates): ?InstalledSkill
+    {
+        foreach ($candidates as $installed) {
+            if ($installed->name === $skill->name) {
+                return $installed;
+            }
+        }
+        foreach ($candidates as $installed) {
+            if (PathContainment::isSame($installed->dir->parent()->join($skill->name), $installed->dir)) {
+                return $installed;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -373,7 +426,7 @@ final readonly class InspectionBuilder
     }
 
     /**
-     * @param array<non-empty-string, list<non-empty-string>> $conflictMap
+     * @param array<string, list<non-empty-string>> $conflictMap
      *
      * @return non-empty-string|null
      *
@@ -381,7 +434,7 @@ final readonly class InspectionBuilder
      */
     private function resolveConflictPartner(Skill $skill, array $conflictMap): ?string
     {
-        $packages = $conflictMap[$skill->name] ?? null;
+        $packages = $conflictMap[SkillConflict::collisionKey($skill->name)] ?? null;
         if ($packages === null) {
             return null;
         }
@@ -395,7 +448,9 @@ final readonly class InspectionBuilder
             }
         }
 
-        return null;
+        // Every contender is this package: two of its own skills share one
+        // directory name, whether spelled alike or differing only by case.
+        return $skill->packageName;
     }
 
     /**
@@ -404,6 +459,10 @@ final readonly class InspectionBuilder
      *         became donors; listed under `source-failed` so a declared donor that could not be
      *         resolved or fetched is visible in the report instead of being absent from it
      * @param list<string> $enumerationWarnings raw text from {@see SkillEnumerator}
+     * @param list<non-empty-string> $droppedDonors the donors whose source directory was missing
+     *         or unreadable; only their warnings mean the donor itself was skipped
+     * @param list<\LLM\Skills\Discovery\SkillNotice> $refusedSkills one per skill refused for its
+     *         directory name
      * @param list<VendorConfig> $unactivatedDiscoverable packages that ship undeclared skills
      *         (found by {@see \LLM\Skills\Discovery\SkillTreeScanner}) but were not promoted
      *         into the run (because `--discovery` is off); listed under `not-declared` so the
@@ -417,6 +476,8 @@ final readonly class InspectionBuilder
         array $malformed,
         array $failures,
         array $enumerationWarnings,
+        array $droppedDonors,
+        array $refusedSkills,
         \LLM\Skills\Sync\SyncPlan $plan,
         array $unactivatedDiscoverable,
     ): array {
@@ -462,17 +523,31 @@ final readonly class InspectionBuilder
             );
         }
 
-        // Enumeration warnings are "source dir does not exist / is unreadable" —
-        // parse the package name back out so we can match it to a typed reason.
+        // A dropped donor's warning says its source dir does not exist or is
+        // unreadable; parse the package name back out to match it to a typed
+        // reason. Other warnings, such as a renamed root skill or an allowlist
+        // typo, leave the donor installed and are no reason to list it here.
+        $dropped = \array_fill_keys($droppedDonors, true);
         foreach ($enumerationWarnings as $warning) {
             $name = $this->extractPackageName($warning);
-            if ($name === null) {
+            if ($name === null || !isset($dropped[$name])) {
+                continue;
+            }
+            if (!\str_starts_with($warning, $name . ': source directory "')) {
                 continue;
             }
             $result[] = new SkippedDonor(
                 packageName: $name,
                 reason: SkipReason::SourceMissing,
                 detail: $warning,
+            );
+        }
+
+        foreach ($refusedSkills as $notice) {
+            $result[] = new SkippedDonor(
+                packageName: $notice->packageName,
+                reason: SkipReason::SkillRefused,
+                detail: $notice->message,
             );
         }
 
