@@ -769,9 +769,10 @@ A junction or symlink that escapes the package root is silently rejected.
   holds what the donor ships, so it counts as in place, with no `[skip]` line. `--dry-run`
   reports a linked skill directory; a link deeper inside a skill is reported by the real run
   only, since a dry run does not walk the skills. When `--clean` deletes a linked skill, it
-  removes the link itself, never what it points at, and installs a fresh copy in its place. A
-  hard-linked file in the target is replaced with a new file, so its other names keep their
-  content.
+  removes the link itself, never what it points at, and installs a fresh copy in its place.
+  `--dry-run --clean` assumes that removal succeeds: if the real run cannot remove the link, it
+  reports the failed removal and skips the link instead. A hard-linked file in the target is
+  replaced with a new file, so its other names keep their content.
 - **Transactional on conflicts.** If two donors declare a skill with the same directory name,
   sync aborts *before* touching the filesystem; nothing is written. Every offending package is
   listed in the output. A scoped run (`skills:update <package>`, `--from`, the sync after
