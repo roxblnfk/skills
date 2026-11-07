@@ -644,6 +644,66 @@ final class AddRunnerTest
         Assert::null($registered, 'the scoped-sync callback never fires on refusal');
     }
 
+    public function projectDirWhoseOnlySkillsAreInstalledCopiesIsRefused(): void
+    {
+        // The default target `.agents/skills` lies inside the project, so the
+        // project's only skill is a copy another donor installed there.
+        \mkdir($this->tmp . '/.agents/skills/copied', 0o777, true);
+        \file_put_contents($this->tmp . '/.agents/skills/copied/SKILL.md', "---\nname: copied\n---\nbody");
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './'),
+        );
+
+        Assert::same($code, Command::FAILURE, $io->getOutput());
+        Assert::true(
+            \str_contains($io->getOutput(), 'its only skills are the copies installed in the target'),
+            'Got: ' . $io->getOutput(),
+        );
+        Assert::false(\is_file($this->tmp . '/skills.json'), 'no entry is written on refusal');
+    }
+
+    public function projectDirWithItsOwnSkillsOutsideTheContainersIsAcceptedBesideInstalledCopies(): void
+    {
+        \mkdir($this->tmp . '/.agents/skills/copied', 0o777, true);
+        \file_put_contents($this->tmp . '/.agents/skills/copied/SKILL.md', "---\nname: copied\n---\nbody");
+        \mkdir($this->tmp . '/my-skills/foo', 0o777, true);
+        \file_put_contents($this->tmp . '/my-skills/foo/SKILL.md', "---\nname: foo\n---\nbody");
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './', skills: ['foo']),
+        );
+
+        Assert::same($code, Command::SUCCESS, $io->getOutput());
+        Assert::true(\is_file($this->tmp . '/skills.json'), 'the entry is written');
+    }
+
+    public function theTargetLeftOutOfADirIsTheOneSkillsJsonConfigures(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{"target": "tools/installed"}');
+        \mkdir($this->tmp . '/tools/installed/copied', 0o777, true);
+        \file_put_contents($this->tmp . '/tools/installed/copied/SKILL.md', "---\nname: copied\n---\nbody");
+        $io = new BufferIO();
+
+        $code = $this->runner(StubAdapter::withDefaults(), new ExplodingFetcher())->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: './tools'),
+        );
+
+        Assert::same($code, Command::FAILURE, $io->getOutput());
+        Assert::true(
+            \str_contains($io->getOutput(), 'its only skills are the copies installed in the target'),
+            'Got: ' . $io->getOutput(),
+        );
+    }
+
     public function rootSkillDirWithNoUsableNameIsRefusedWithoutWritingAnEntry(): void
     {
         // A root SKILL.md without a frontmatter name, in a directory whose

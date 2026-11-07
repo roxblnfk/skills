@@ -222,14 +222,64 @@ final class SkillTreeScannerTest
         Assert::same($this->names($this->scan()), ['real']);
     }
 
+    public function containerHoldingOnlyTheExcludedDirectoryStillLetsTheFallbackRun(): void
+    {
+        $this->makeSkill('.agents/skills/copied');
+        $this->makeSkill('my-skills/foo');
+
+        $skills = $this->scan('.agents/skills');
+
+        Assert::same($this->names($skills), ['foo']);
+        Assert::same($skills[0]->container, 'my-skills');
+    }
+
+    public function containerLinkedToTheExcludedDirectoryIsLeftOut(): void
+    {
+        $this->makeSkill('.agents/skills/copied');
+        $this->makeSkill('my-skills/foo');
+        \mkdir($this->tmp . '/.claude');
+        if (!Filesystem::makeDirLink($this->tmp . '/.agents/skills', $this->tmp . '/.claude/skills')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        Assert::same($this->names($this->scan('.agents/skills')), ['foo']);
+    }
+
+    public function catalogDirectoryThatIsTheExcludedDirectoryIsLeftOut(): void
+    {
+        $this->makeSkill('skills/own');
+        $this->makeSkill('skills/installed/copied');
+
+        Assert::same($this->names($this->scan('skills/installed')), ['own']);
+    }
+
+    public function shallowScanLeavesTheExcludedDirectoryOut(): void
+    {
+        $this->makeSkill('installed/copied');
+        $this->makeSkill('own');
+
+        $skills = (new SkillTreeScanner())->scanShallow(
+            Path::create($this->tmp),
+            2,
+            Path::create($this->tmp . '/installed'),
+        );
+
+        Assert::same($this->names($skills), ['own']);
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /**
+     * @param string|null $excluded directory left out of the scan, relative to the temp root
+     *
      * @return list<DiscoveredSkill>
      */
-    private function scan(): array
+    private function scan(?string $excluded = null): array
     {
-        return (new SkillTreeScanner())->scan(Path::create($this->tmp));
+        return (new SkillTreeScanner())->scan(
+            Path::create($this->tmp),
+            $excluded === null ? null : Path::create($this->tmp . '/' . $excluded),
+        );
     }
 
     /**

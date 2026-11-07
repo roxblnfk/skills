@@ -205,7 +205,7 @@ final class CompositeDonorProviderTest
             }
 
             #[\Override]
-            public function discover(Path $projectRoot): DonorDiscoveryResult
+            public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult
             {
                 return $this->result;
             }

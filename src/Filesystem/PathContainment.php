@@ -52,6 +52,14 @@ final class PathContainment
     }
 
     /**
+     * `true` when `$path` lies below `$dir` and is not `$dir` itself.
+     */
+    public static function isBelow(Path $path, Path $dir): bool
+    {
+        return self::isWithin($path, $dir) && !self::isWithin($dir, $path);
+    }
+
+    /**
      * `true` when both paths exist and resolve to the same directory or file.
      */
     public static function isSame(Path $a, Path $b): bool

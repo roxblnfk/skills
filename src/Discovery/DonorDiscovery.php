@@ -34,7 +34,10 @@ final readonly class DonorDiscovery
         private SkillTreeScanner $scanner = new SkillTreeScanner(),
     ) {}
 
-    public function discover(Composer $composer): DonorDiscoveryResult
+    /**
+     * @param Path|null $target the sync target, whose installed copies a package holding it does not own
+     */
+    public function discover(Composer $composer, ?Path $target = null): DonorDiscoveryResult
     {
         $donors = [];
         $warnings = [];
@@ -68,7 +71,7 @@ final readonly class DonorDiscovery
                     continue;
                 }
                 $packageRoot = Path::create($installPath);
-                foreach ($this->discoverDonors($name, $packageRoot) as $donor) {
+                foreach ($this->discoverDonors($name, $packageRoot, $target) as $donor) {
                     $discoverable[] = $donor;
                 }
                 continue;
@@ -114,11 +117,11 @@ final readonly class DonorDiscovery
      *
      * @return list<VendorConfig>
      */
-    private function discoverDonors(string $packageName, Path $packageRoot): array
+    private function discoverDonors(string $packageName, Path $packageRoot, ?Path $target): array
     {
         /** @var array<non-empty-string, list<Path>> $byContainer preserves first-seen order */
         $byContainer = [];
-        foreach ($this->scanner->scan($packageRoot) as $skill) {
+        foreach ($this->scanner->scan($packageRoot, $target) as $skill) {
             $byContainer[$skill->container][] = $skill->dir;
         }
 

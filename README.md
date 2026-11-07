@@ -635,6 +635,7 @@ composer skills:add D:\team\skills --from=dir
 ```
 
 - **Path resolution.** A relative `path` resolves from the project root (the same anchor `target` uses); absolute paths (including Windows drive letters) are honoured as-is. `..` segments and locations outside the project root are allowed — a `sources[]` entry is an explicit act of trust. The stored `path` is kept as typed (normalised to forward slashes).
+- **A directory that contains the target.** The skills in the target are installed copies, so they never count as skills of a donor whose directory holds the target, such as the project itself (`{"from": "dir", "path": "."}`). Discovery looks past them: a conventional container that holds nothing but the target's copies counts as empty, so the donor's own skills are still found wherever they sit, `my-skills/foo/` included. A skill kept only in the target, hand-written or not, is therefore no skill of that donor: an allowlist naming it reports it as not found, and an unscoped `--clean` deletes it when the donor has skills elsewhere. When the copies in the target are all the skills it has, the donor contributes nothing: an unscoped `--clean` refuses to run, and `skills:add` refuses the directory. A donor that is the target, or lies inside it, keeps its skills there: they are sources, and the sync leaves them in place.
 - **Package name.** The donor's name is the entry's `package` override if present, else the directory's own `composer.json` `name`, else it is derived from the resolved path as `<parent>/<basename>` lowercased (e.g. `.../testo/skills` → `testo/skills`).
 - **Implicit trust.** Like every `sources[]` entry, a `dir` donor is trusted by declaration — you typed the path, so its skills sync without a `trusted` listing.
 - `url`, `host`, and `ref` are not applicable and are rejected (there is no host and no version concept); the per-entry `skills` allowlist behaves exactly as for other adapters. A `path` that does not exist at sync time degrades to a `-v` warning and is skipped, but an explicit `skills:add` of a missing directory is refused up front (a missing directory at add time is a typo).
@@ -746,6 +747,13 @@ skill, not a skill of its own. Its target directory is the `name` from the front
 package name: the `composer.json` `name`, an entry's `package`, or else the repository or directory
 name. When neither can be a directory name, the skill is skipped with a warning.
 
+In a remote or `dir` repository, a skill under a hidden directory, such as a committed installed
+copy in `.claude/skills/`, gives way to a visible skill of its name in `skills/` or
+`resources/skills/`, and of several hidden copies of one skill only one is installed. Two visible
+skills of one name still conflict. Without a root `SKILL.md`, a skill in a hidden container stops
+the search for skills outside the conventional folders, so a visible `pdf/` next to
+`.claude/skills/pdf/` is not found and the hidden copy is installed.
+
 A skill is never installed, from any donor, when its directory name is hidden (starts with a dot),
 looks like a Windows short name (`SKILLS~1`), or is a name Windows rewrites or rejects, such as
 `foo.` or `con`. A non-ASCII name such as `Über` is also skipped unless PHP has both the
@@ -800,16 +808,21 @@ donor's skills with it.
 > **Unscoped `--clean` deletes skills you wrote by hand** if they live in the target directory.
 > Nothing on disk distinguishes them from a synced copy. In an interactive terminal the command
 > lists what it is about to remove and asks first; under `--no-interaction` (CI, `post-update-cmd`)
-> it proceeds without asking.
+> it proceeds without asking. This holds even when the directory holding the target is itself
+> registered as a donor, such as the project with `{"from": "dir", "path": "."}`: whatever sits in
+> the target counts as an installed copy, never as that donor's skill, so keep hand-written
+> skills outside the target, for example in `skills/` or `my-skills/`.
 
 Three things `--clean` refuses or leaves alone:
 
 - An **unscoped** run aborts with a non-zero exit, before deleting anything, when a donor
-  contributed nothing this time: a source that would not resolve, a `sources[]` entry whose
-  `extra.skills` block is rejected, a declared source directory that is missing from the
+  contributed nothing this time: a source that would not resolve, a `dir` source whose only
+  skills are the copies in the target, a `sources[]` entry whose `extra.skills` block is rejected, a declared source directory that is missing from the
   installed package, a donor whose every skill is refused for its directory name, or an
   allowlist that names none of the donor's skills. Its skills are not in this run, so the
-  wipe could not put them back. A scoped run proceeds: it only deletes what it reinstalls, so
+  wipe could not put them back. The output above the refusal says why each such donor
+  contributed nothing: a `[failed]` row, or the `[skip]` lines of its refused skills. A scoped
+  run proceeds: it only deletes what it reinstalls, so
   one broken package cannot block the narrow `--clean` that works around it.
 - An unreadable target directory aborts for the same reason — an empty listing there would be
   reported as a wipe that never happened.

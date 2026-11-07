@@ -29,7 +29,8 @@ use Testo\Test;
  * skill in the hidden `.github/` and one in `ZZZZZZ~9/`, shaped like a Windows
  * short name, next to `visible-skill/`; `local-declared-hidden/` declares
  * `extra.skills.source` and holds a plain hidden `.github/` directory next to
- * `declared-hello/`; `local-declared-multi/` declares the sources `skills` and
+ * `declared-hello/`; `local-skills-installed-copy/` holds `skills/ic-pdf/` and
+ * a committed installed copy of it in `.claude/skills/ic-pdf/`; `local-declared-multi/` declares the sources `skills` and
  * `missing`, the second of which does not exist; `local-composer-malformed/`
  * declares an absolute `extra.skills.source`, which the mapper rejects. Each test injects a `skills.json` whose
  * `sources[]` declares that directory as a `from: "dir"` donor and runs
@@ -227,6 +228,25 @@ final class SkillsDirSourceTest
         Assert::true(
             \str_contains($process->getOutput() . $process->getErrorOutput(), '"ZZZZZZ~9" looks like a Windows short name'),
             'the skipped short name must be explained. Got: ' . $process->getErrorOutput(),
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './local-skills-installed-copy'],
+        ],
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+    ])]
+    public function aCommittedCopyInAHiddenDirectoryDoesNotConflictWithTheSkill(): void
+    {
+        $process = $this->runUpdate();
+
+        Assert::same($process->getExitCode(), 0, 'one donor must not conflict with itself. stderr: ' . $process->getErrorOutput());
+        Assert::false(\str_contains($process->getErrorOutput(), '[conflict]'), 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \str_contains((string) @\file_get_contents(self::TARGET_DIR . '/ic-pdf/SKILL.md'), 'From skills/ic-pdf.'),
+            'the visible skill is the one installed. stderr: ' . $process->getErrorOutput(),
         );
     }
 
