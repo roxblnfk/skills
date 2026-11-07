@@ -46,7 +46,8 @@ final class SkillConflictTest
 
     public function unicodeNamesDifferingByCaseShareAKey(): void
     {
-        if (!\function_exists('mb_convert_case')) {
+        // The mbstring polyfill defines `mb_convert_case()` but not the simple fold mode.
+        if (!\defined('MB_CASE_FOLD_SIMPLE')) {
             throw new SkipTest('mbstring is not available');
         }
 
@@ -55,7 +56,8 @@ final class SkillConflictTest
 
     public function namesFileSystemsKeepApartKeepDistinctKeys(): void
     {
-        if (!\function_exists('mb_convert_case')) {
+        // The mbstring polyfill defines `mb_convert_case()` but not the simple fold mode.
+        if (!\defined('MB_CASE_FOLD_SIMPLE')) {
             throw new SkipTest('mbstring is not available');
         }
 
