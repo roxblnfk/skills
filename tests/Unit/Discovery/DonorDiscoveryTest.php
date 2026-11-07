@@ -17,7 +17,10 @@ use Composer\Repository\InstalledRepositoryInterface;
 use Composer\Repository\RepositoryManager;
 use Composer\Util\HttpDownloader;
 use Composer\Util\Loop;
+use Internal\Path;
 use LLM\Skills\Discovery\DonorDiscovery;
+use LLM\Skills\Discovery\Provider\ComposerProvider;
+use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Codecov\Covers;
 use Testo\Test;
@@ -36,6 +39,7 @@ use Testo\Test;
  */
 #[Test]
 #[Covers(DonorDiscovery::class)]
+#[Covers(ComposerProvider::class)]
 final class DonorDiscoveryTest
 {
     public function devBranchAliasDoesNotDoubleTheDonor(): void
@@ -48,7 +52,7 @@ final class DonorDiscoveryTest
         // dependency without an explicit `branch-alias`.
         $alias = new AliasPackage($real, '9999999-dev', '9999999-dev');
 
-        $composer = $this->composerWith($real, $alias);
+        $composer = $this->composerWith(\sys_get_temp_dir() . '/vendor', $real, $alias);
 
         $result = (new DonorDiscovery())->discover($composer);
 
@@ -62,12 +66,41 @@ final class DonorDiscoveryTest
         Assert::same($result->donors[0]->source, 'skills');
     }
 
+    public function composerProviderLeavesOutTheCopiesInATargetInsideAPackage(): void
+    {
+        // Without the target, `.agents/skills` would be a container with a hit,
+        // which suppresses the fallback walk that finds `docs/own`.
+        $vendorDir = \sys_get_temp_dir() . '/llm-skills-discovery-' . \bin2hex(\random_bytes(6));
+        $packageRoot = $vendorDir . '/acme/project';
+        $target = $packageRoot . '/.agents/skills';
+        foreach ([$target . '/copied', $packageRoot . '/docs/own'] as $skillDir) {
+            \mkdir($skillDir, 0o777, true);
+            \file_put_contents($skillDir . '/SKILL.md', "---\nname: skill\n---\n");
+        }
+
+        $package = new CompletePackage('acme/project', '1.0.0.0', '1.0.0');
+        $package->setType('library');
+
+        try {
+            $result = (new ComposerProvider($this->composerWith($vendorDir, $package)))
+                ->discover(Path::create($packageRoot), Path::create($target));
+
+            Assert::same(\count($result->discoverable), 1);
+            Assert::same(
+                \array_map('strval', $result->discoverable[0]->discoveredSkillDirs ?? []),
+                [(string) Path::create($packageRoot . '/docs/own')],
+            );
+        } finally {
+            Filesystem::removeRecursive($vendorDir);
+        }
+    }
+
     /**
      * Build a Composer whose local repository returns exactly the given
-     * packages, with every package resolving to `<vendor>/<name>` under a
-     * fixed install root. No real Composer bootstrap or filesystem access.
+     * packages, with every package resolving to `<vendor-dir>/<name>`. No
+     * real Composer bootstrap or filesystem access.
      */
-    private function composerWith(PackageInterface ...$packages): Composer
+    private function composerWith(string $vendorDir, PackageInterface ...$packages): Composer
     {
         $io = new NullIO();
         $config = new Config(false, \sys_get_temp_dir());
@@ -82,7 +115,7 @@ final class DonorDiscoveryTest
         $repositoryManager->setLocalRepository($local);
 
         $installationManager = new InstallationManager(new Loop($http), $io);
-        $installationManager->addInstaller($this->pathStubInstaller());
+        $installationManager->addInstaller($this->pathStubInstaller($vendorDir));
 
         $composer = new Composer();
         $composer->setConfig($config);
@@ -97,9 +130,13 @@ final class DonorDiscoveryTest
      * mapping every package to `<vendor-dir>/<name>`. That is all discovery
      * needs, and it keeps a real installer's filesystem work out of the test.
      */
-    private function pathStubInstaller(): InstallerInterface
+    private function pathStubInstaller(string $vendorDir): InstallerInterface
     {
-        return new class implements InstallerInterface {
+        return new class($vendorDir) implements InstallerInterface {
+            public function __construct(
+                private readonly string $vendorDir,
+            ) {}
+
             public function supports(string $packageType): bool
             {
                 return true;
@@ -142,7 +179,7 @@ final class DonorDiscoveryTest
 
             public function getInstallPath(PackageInterface $package): string
             {
-                return \sys_get_temp_dir() . '/vendor/' . $package->getName();
+                return $this->vendorDir . '/' . $package->getName();
             }
         };
     }
