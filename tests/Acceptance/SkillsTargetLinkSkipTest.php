@@ -139,6 +139,27 @@ final class SkillsTargetLinkSkipTest
         Assert::false(\str_contains($out, ' MOD'), 'a skill the sync leaves alone is not drift. stdout: ' . $out);
     }
 
+    public function showStillFlagsAConflictOnALinkedSkillDirectory(): void
+    {
+        \mkdir(self::TARGET_DIR, 0o777, true);
+        \file_put_contents($this->checkoutDir . '/SKILL.md', 'my own version');
+        if (!Filesystem::makeDirLink($this->checkoutDir, self::TARGET_DIR . '/greeting')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $update = $this->composer('skills:update --trust=clash/skills-conflict');
+        $show = $this->composer('skills:show --trust=clash/skills-conflict');
+        $out = $show->getOutput();
+
+        Assert::notSame($update->getExitCode(), 0, 'the conflict aborts the sync. stderr: ' . $update->getErrorOutput());
+        Assert::same($show->getExitCode(), 0, 'stderr: ' . $show->getErrorOutput());
+        Assert::true(
+            \preg_match('/ !! .*greeting/', $out) === 1,
+            'show must flag the conflict that aborts the sync. stdout: ' . $out,
+        );
+        Assert::false(\str_contains($out, 'target-is-link'), $out);
+    }
+
     public function showIgnoresALinkDeeperInsideAnInstalledSkill(): void
     {
         $this->composer('skills:update');

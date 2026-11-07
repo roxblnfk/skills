@@ -122,6 +122,8 @@ final readonly class InspectionBuilder
         // A skill the sync leaves out, because its source is the target or its
         // directory in the target is a link it never writes through, is listed
         // as skipped rather than as a skill waiting to be written or drifted.
+        // A conflict aborts the sync before any link is looked at, so a
+        // conflicting skill stays listed to carry its conflict marker.
         $leftOut = [];
         $listedSkills = [];
         foreach ($approvedSkills as $skill) {
@@ -135,7 +137,8 @@ final readonly class InspectionBuilder
                         $skill->name,
                     ),
                 );
-            } elseif (!PathContainment::isSame($destination, $skill->sourceDir)
+            } elseif (!isset($conflictMap[SkillConflict::collisionKey($skill->name)])
+                && !PathContainment::isSame($destination, $skill->sourceDir)
                 && LinkGuard::isLink((string) $destination)
             ) {
                 $leftOut[] = new SkippedDonor(
