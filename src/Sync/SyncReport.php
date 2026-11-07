@@ -38,10 +38,13 @@ use LLM\Skills\Discovery\Skill;
  * - `targetAsSource` — names of skills whose source directory is the target
  *                    itself, left out of `copied` because there is nowhere to
  *                    copy them to.
- * - `linkedDestinations` — paths of symlinks/junctions inside the target the
- *                    copy refused to write through, since that would overwrite
- *                    what they point at, outside the target. A skill whose own
- *                    directory is such a link is left out of `copied`.
+ * - `linkedDestinations` — paths of links inside the target the copy refused
+ *                    to write through, since that would overwrite what they
+ *                    point at, outside the target: symlinks, junctions, and
+ *                    hard links that could not be unlinked first. A skill
+ *                    whose own directory is a link is left out of `copied`.
+ *                    A dry run names only links that are a skill's own
+ *                    directory, since it does not walk the skills.
  *
  * Discovery-time warnings (missing source dir, malformed extra, etc.) are
  * **not** part of this report — they happen earlier in the pipeline and
