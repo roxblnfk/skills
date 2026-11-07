@@ -39,11 +39,13 @@ final class SkillsTargetLinkSkipTest
     ];
 
     private string $checkoutDir;
+    private ?string $outsideFile = null;
 
     #[BeforeTest]
     public function setUp(): void
     {
         Filesystem::removeRecursive(self::TARGET_DIR);
+        $this->outsideFile = null;
         $this->checkoutDir = \sys_get_temp_dir() . '/llm-skills-checkout-' . \bin2hex(\random_bytes(6));
         \mkdir($this->checkoutDir, 0o777, true);
     }
@@ -53,6 +55,9 @@ final class SkillsTargetLinkSkipTest
     {
         Filesystem::removeRecursive(self::TARGET_DIR);
         Filesystem::removeRecursive($this->checkoutDir);
+        if ($this->outsideFile !== null) {
+            @\unlink($this->outsideFile);
+        }
     }
 
     #[WithSkillsJson(self::DIR_SOURCE)]
@@ -201,6 +206,60 @@ final class SkillsTargetLinkSkipTest
             \str_contains($out, ' MOD'),
             'a linked directory the sync never writes through is not drift. stdout: ' . $out,
         );
+    }
+
+    public function updateLeavesALinkDeeperInsideAnInstalledSkillAlone(): void
+    {
+        $this->composer('skills:update');
+        $templates = self::TARGET_DIR . '/refactor/templates';
+        Filesystem::removeRecursive($templates);
+        \file_put_contents($this->checkoutDir . '/mine.md', 'mine');
+        if (!Filesystem::makeDirLink($this->checkoutDir, $templates)) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+        \unlink(self::TARGET_DIR . '/refactor/SKILL.md');
+
+        $process = $this->composer('skills:update');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \preg_match(
+                '#\[skip\] \S*\.agents/skills/refactor/templates: a link inside the target#',
+                $process->getErrorOutput(),
+            ) === 1,
+            'the skipped link must be reported at the default verbosity. stderr: ' . $process->getErrorOutput(),
+        );
+        Assert::same(\scandir($this->checkoutDir), ['.', '..', 'mine.md'], 'nothing is written through the link');
+        Assert::same(\file_get_contents($this->checkoutDir . '/mine.md'), 'mine');
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/refactor/SKILL.md'),
+            'the rest of the skill is still copied. stderr: ' . $process->getErrorOutput(),
+        );
+        Assert::true(\str_contains($process->getOutput(), '[copy] refactor'), $process->getOutput());
+    }
+
+    public function updateReplacesAHardLinkedFileWithoutTouchingItsOtherName(): void
+    {
+        $this->composer('skills:update');
+        $installed = self::TARGET_DIR . '/refactor/SKILL.md';
+        \unlink($installed);
+        // A hard link cannot cross volumes, so its other name lives beside the target.
+        $this->outsideFile = Info::PROJECT_DIR . '/.llm-skills-hard-link-' . \bin2hex(\random_bytes(6)) . '.md';
+        \file_put_contents($this->outsideFile, 'mine');
+        if (!@\link($this->outsideFile, $installed)) {
+            throw new SkipTest('platform refuses hard link creation');
+        }
+
+        $process = $this->composer('skills:update');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same(\file_get_contents($this->outsideFile), 'mine', 'the other name keeps its content');
+        Assert::same(
+            \file_get_contents($installed),
+            \file_get_contents(Info::PROJECT_DIR . '/vendor/acme/skills-pro/resources/skills/refactor/SKILL.md'),
+            'the installed file is replaced with the donor version. stderr: ' . $process->getErrorOutput(),
+        );
+        Assert::false(\str_contains($process->getErrorOutput(), 'a link inside the target'), $process->getErrorOutput());
     }
 
     private function linkDirHelloToTheCheckout(): void
