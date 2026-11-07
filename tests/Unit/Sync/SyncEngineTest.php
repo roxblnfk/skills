@@ -622,6 +622,33 @@ final class SyncEngineTest
         Assert::same($report->linkedDestinations, []);
     }
 
+    public function leavesAHardLinkedFileThatCannotBeUnlinkedAndReportsIt(): void
+    {
+        if (\DIRECTORY_SEPARATOR === '\\' || \function_exists('posix_getuid') && \posix_getuid() === 0) {
+            throw new SkipTest('directory write permissions are not enforced here');
+        }
+
+        $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version']);
+        $outsideFile = $this->tmp . '/outside.md';
+        \file_put_contents($outsideFile, 'mine');
+        \mkdir($this->targetPath('pdf'), 0o777, true);
+        $link = (string) $this->target()->join('pdf', 'SKILL.md');
+        if (!@\link($outsideFile, $link)) {
+            throw new SkipTest('platform refuses hard link creation');
+        }
+        // A read-only directory refuses the unlink while the file itself stays writable.
+        \chmod($this->targetPath('pdf'), 0o555);
+
+        try {
+            $report = (new SyncEngine())->sync([$skill], $this->target());
+        } finally {
+            \chmod($this->targetPath('pdf'), 0o777);
+        }
+
+        Assert::same(\file_get_contents($outsideFile), 'mine');
+        Assert::same($report->linkedDestinations, [$link]);
+    }
+
     public function aDirectoryWhereTheDonorShipsAFileIsNotReportedAsALink(): void
     {
         // A POSIX directory has a link count of two or more, as a hard-linked file does.
