@@ -76,7 +76,7 @@ final readonly class InspectionBuilder
     ): InspectionReport {
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $discovery = $provider->discover($projectRoot);
+        $discovery = $provider->discover($projectRoot, $this->planner->target($project, $options, $projectRoot));
 
         $discoveryActive = $options->discovery ?? $project->discovery;
         $resolution = $this->discoveryResolver->resolve(
@@ -101,12 +101,13 @@ final readonly class InspectionBuilder
         // Conflict detection: run the engine in dry-run over the approved
         // donors' skills. We get a SkillConflict[] without touching the
         // filesystem.
-        $approvedEnumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
+        $approvedEnumeration = $this->skillEnumerator->enumerate($plan->approvedDonors, $plan->target);
         $approvedSkills = $approvedEnumeration->skills;
         // A scoped report checks the donors it leaves out too, as the run does.
         $bystanders = $options->isScoped()
             ? $this->skillEnumerator->enumerate(
                 $this->planner->bystanders($plan, $donors, $project, $options, $builtin, $projectRoot, $directDeps),
+                $plan->target,
             )->skills
             : [];
         $conflictReport = $this->engine->sync($approvedSkills, $plan->target, dryRun: true, bystanders: $bystanders);

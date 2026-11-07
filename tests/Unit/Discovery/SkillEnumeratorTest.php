@@ -10,6 +10,7 @@ use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillNotice;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Data\DataSet;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
@@ -174,6 +175,27 @@ final class SkillEnumeratorTest
         $result = (new SkillEnumerator())->enumerate([$stale, $partial, $rowA, $rowB]);
 
         Assert::same($result->droppedDonors, ['acme/stale']);
+    }
+
+    public function eachDroppedDonorCarriesWhyItContributedNothing(): void
+    {
+        $packageRoot = $this->tmp . '/vendor/acme/broken';
+        \mkdir($packageRoot, 0o777, true);
+        $broken = new VendorConfig('acme/broken', Path::create($packageRoot), 'src');
+        $stale = $this->makeDonor('acme/stale', 'src', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['gone', 'lost']);
+        $partial = $this->makeDonor('acme/partial', 'src', ['alpha/SKILL.md' => 'A'])
+            ->withSkillFilter(['alpha', 'gone']);
+
+        $result = (new SkillEnumerator())->enumerate([$broken, $stale, $partial]);
+
+        Assert::same($result->dropReasons, [
+            'acme/broken' => ['source directory "src" does not exist'],
+            'acme/stale' => [
+                'skill "gone" declared in the skill allowlist but not found in the donor',
+                'skill "lost" declared in the skill allowlist but not found in the donor',
+            ],
+        ]);
     }
 
     public function skillFilterDoesNotWarnWhenSkillLivesInASiblingSourceRow(): void
@@ -602,6 +624,98 @@ final class SkillEnumeratorTest
 
         Assert::count($result->skills, 1);
         Assert::same($result->skills[0]->name, 'alpha');
+    }
+
+    public function discoveredDonorHoldingTheTargetLeavesItsInstalledCopiesOut(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/host', 'skills', [
+            'skills/own' => '# Own',
+            '.agents/skills/copied' => '# Copied',
+        ]);
+        $target = $donor->packageRoot->join('.agents/skills');
+
+        $result = (new SkillEnumerator())->enumerate([$donor], $target);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['own']);
+        Assert::same($result->warnings, []);
+        Assert::same($result->droppedDonors, []);
+    }
+
+    public function declaredSourceHoldingTheTargetDoesNotListItAsASkill(): void
+    {
+        $donor = $this->makeDonor('acme/host', 'src', [
+            'greeting/SKILL.md' => '# Greeting',
+            'installed/copied/SKILL.md' => '# Copied',
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor], $donor->sourcePath()->join('installed'));
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['greeting']);
+    }
+
+    public function targetSpelledInADifferentCaseIsStillLeftOut(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/host', '.agents/skills', [
+            '.agents/skills/copied' => '# Copied',
+        ]);
+        $target = $donor->packageRoot->join('.AGENTS/skills');
+        if (!\is_dir((string) $target)) {
+            throw new SkipTest('the file system is case-sensitive');
+        }
+
+        $result = (new SkillEnumerator())->enumerate([$donor], $target);
+
+        Assert::same($result->skills, []);
+    }
+
+    public function copyReachedThroughALinkIntoTheTargetIsLeftOut(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/host', 'skills', ['.agents/skills/copied' => '# Copied']);
+        $root = (string) $donor->packageRoot;
+        \mkdir($root . '/.claude', 0o777, true);
+        if (!Filesystem::makeDirLink($root . '/.agents/skills', $root . '/.claude/skills')) {
+            throw new SkipTest('directory links are unavailable');
+        }
+        $aliased = new VendorConfig(
+            packageName: 'acme/host',
+            packageRoot: $donor->packageRoot,
+            source: '.claude/skills',
+            discovered: true,
+            discoveredSkillDirs: [Path::create($root . '/.claude/skills/copied')],
+        );
+
+        $result = (new SkillEnumerator())->enumerate([$aliased], $donor->packageRoot->join('.agents/skills'));
+
+        Assert::same($result->skills, []);
+    }
+
+    public function allowlistNamingOnlyAnInstalledCopyDropsTheDonor(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/host', '.agents/skills', [
+            '.agents/skills/copied' => '# Copied',
+        ])->withSkillFilter(['copied']);
+
+        $result = (new SkillEnumerator())->enumerate([$donor], $donor->packageRoot->join('.agents/skills'));
+
+        Assert::same($result->skills, []);
+        Assert::same($result->droppedDonors, ['acme/host']);
+    }
+
+    public function allowlistWarningSaysAnInstalledCopyDoesNotCount(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/host', 'skills', [
+            'skills/own' => '# Own',
+            '.agents/skills/copied' => '# Copied',
+        ])->withSkillFilter(['copied']);
+        $target = $donor->packageRoot->join('.agents/skills');
+
+        $result = (new SkillEnumerator())->enumerate([$donor], $target);
+
+        Assert::count($result->warnings, 1);
+        Assert::true(
+            \str_contains($result->warnings[0], 'its copy installed in the target ' . $target . ' does not count'),
+            $result->warnings[0],
+        );
     }
 
     /**

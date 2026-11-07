@@ -56,13 +56,13 @@ final readonly class ComposerProvider implements DonorProvider
     }
 
     #[\Override]
-    public function discover(Path $projectRoot): DonorDiscoveryResult
+    public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult
     {
         if (!$this->enabled || $this->composer === null) {
             return new DonorDiscoveryResult(donors: [], warnings: []);
         }
 
-        return $this->discovery->discover($this->composer);
+        return $this->discovery->discover($this->composer, $target);
     }
 
     #[\Override]

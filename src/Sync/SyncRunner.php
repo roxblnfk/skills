@@ -170,7 +170,16 @@ final readonly class SyncRunner
 
         $builtin = $this->loadBuiltinTrustedVendors();
 
-        $discovery = $provider->discover($projectRoot);
+        // Resolved before discovery: a donor holding the target must not take
+        // the copies installed there for its own skills.
+        try {
+            $target = $this->planner->target($project, $options, $projectRoot);
+        } catch (MalformedProjectConfig $e) {
+            $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
+        }
+
+        $discovery = $provider->discover($projectRoot, $target);
         $this->emitWarnings($io, $discovery->warnings);
 
         $discoveryActive = $options->discovery ?? $project->discovery;
@@ -234,7 +243,7 @@ final readonly class SyncRunner
             $io->write('<comment>[dry-run] no files will be written</comment>');
         }
 
-        $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
+        $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors, $plan->target);
         $this->emitWarnings($io, $enumeration->warnings);
         foreach ($enumeration->skipped as $notice) {
             $io->writeError('<warning>[skip] ' . $notice->describe() . '</warning>');
@@ -270,6 +279,15 @@ final readonly class SyncRunner
                 ...$enumeration->droppedDonors,
             ];
             if ($unrestorable !== []) {
+                // The rows carry each donor's reason, which the refusal alone
+                // does not name.
+                $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
+                foreach ($enumeration->dropReasons as $packageName => $reasons) {
+                    $io->write('<fg=cyan>' . $packageName . '</>');
+                    foreach ($reasons as $reason) {
+                        $io->write('  <fg=red;options=bold>[failed]</> ' . $reason);
+                    }
+                }
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] --clean refused: %s contributed no skills, so this run '
                     . 'cannot restore what it would delete. Fix the donor, or narrow the run to '
@@ -303,6 +321,7 @@ final readonly class SyncRunner
             bystanders: $options->isScoped()
                 ? $this->skillEnumerator->enumerate(
                     $this->planner->bystanders($plan, $allDonors, $project, $options, $builtin, $projectRoot, $directDeps),
+                    $plan->target,
                 )->skills
                 : [],
         );

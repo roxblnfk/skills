@@ -37,6 +37,13 @@ enum DonorArchiveRejection
     case NoDonorShape;
 
     /**
+     * The only `SKILL.md` files lie in the sync target inside the directory:
+     * they are installed copies, not skills of the directory. The detail
+     * carries the target.
+     */
+    case OnlyInstalledCopies;
+
+    /**
      * The archive ships `SKILL.md` files but there is no package name to
      * register it under (no usable `composer.json` name AND no hint from
      * the adapter side).

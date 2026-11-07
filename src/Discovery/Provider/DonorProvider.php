@@ -62,10 +62,16 @@ interface DonorProvider
      * (not `null`) when the provider is inactive or has nothing to
      * offer.
      *
+     * A donor whose directory holds the sync target, such as the project
+     * itself, does not own the skills installed there: they are copies, and
+     * counting them would hide the donor's own skills from discovery.
+     *
+     * @param Path|null $target the sync target; `null` when none is known
+     *
      * @psalm-suppress MissingAbstractPureAnnotation
      *         implementations talk to Composer / network / filesystem and are not pure
      */
-    public function discover(Path $projectRoot): DonorDiscoveryResult;
+    public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult;
 
     /**
      * Names of packages this provider considers "direct dependencies"

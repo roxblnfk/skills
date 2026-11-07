@@ -6,6 +6,7 @@ namespace LLM\Skills\Discovery;
 
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Filesystem\PathContainment;
 
 /**
  * Looks inside each donor's source directory and lists the immediate
@@ -24,6 +25,12 @@ use LLM\Skills\Config\VendorConfig;
  * Failures are soft: a missing or unreadable `source` directory becomes
  * a warning and that donor is dropped from the result. The caller (or
  * `-v` verbosity) decides whether to print the warning.
+ *
+ * A donor whose tree contains the sync target, such as the project itself
+ * registered as a `dir` source, has no skills in the target: what sits there
+ * are installed copies, whichever donor they came from. Discovery already
+ * leaves them out of the skill directories it finds; a declared `source` is
+ * listed here, so a candidate within the target is dropped here too.
  */
 final readonly class SkillEnumerator
 {
@@ -80,14 +87,18 @@ final readonly class SkillEnumerator
 
     /**
      * @param list<VendorConfig> $donors
+     * @param Path|null $target the sync target, left out of each donor that contains it; `null` when
+     *        no target is known
      */
-    public function enumerate(array $donors): SkillEnumerationResult
+    public function enumerate(array $donors, ?Path $target = null): SkillEnumerationResult
     {
         $skills = [];
         $warnings = [];
         $skipped = [];
         $renamed = [];
         $droppedDonors = [];
+        /** @var array<non-empty-string, non-empty-list<string>> $dropReasons */
+        $dropReasons = [];
 
         // Allowlist bookkeeping spans donor rows: a multi-source donor
         // arrives as several rows sharing one package name, and a
@@ -100,6 +111,8 @@ final readonly class SkillEnumerator
         $installingPackages = [];
         /** @var array<non-empty-string, true> $refusingPackages */
         $refusingPackages = [];
+        /** @var array<non-empty-string, true> $targetHolders packages with a row that holds the target */
+        $targetHolders = [];
 
         foreach ($donors as $donor) {
             $skippedBefore = \count($skipped);
@@ -113,23 +126,19 @@ final readonly class SkillEnumerator
                 $sourcePath = (string) $donor->sourcePath();
 
                 if (!\is_dir($sourcePath)) {
-                    $warnings[] = \sprintf(
-                        '%s: source directory "%s" does not exist',
-                        $donor->packageName,
-                        $donor->source,
-                    );
+                    $reason = \sprintf('source directory "%s" does not exist', $donor->source);
+                    $warnings[] = $donor->packageName . ': ' . $reason;
                     $droppedDonors[] = $donor->packageName;
+                    $dropReasons[$donor->packageName][] = $reason;
                     continue;
                 }
 
                 $entries = \scandir($sourcePath);
                 if ($entries === false) {
-                    $warnings[] = \sprintf(
-                        '%s: source directory "%s" is unreadable',
-                        $donor->packageName,
-                        $donor->source,
-                    );
+                    $reason = \sprintf('source directory "%s" is unreadable', $donor->source);
+                    $warnings[] = $donor->packageName . ': ' . $reason;
                     $droppedDonors[] = $donor->packageName;
+                    $dropReasons[$donor->packageName][] = $reason;
                     continue;
                 }
 
@@ -146,8 +155,18 @@ final readonly class SkillEnumerator
                 }
             }
             $filterSet = $filter === null ? null : \array_fill_keys($filter, true);
+            $excludedTarget = $target !== null && self::containsTarget($donor, $target) ? $target : null;
+            if ($excludedTarget !== null) {
+                $targetHolders[$donor->packageName] = true;
+            }
 
             foreach ($candidates as [$entry, $skillPath, $rename]) {
+                // Resolved, not spelled: an alias such as `.claude/skills` links
+                // into the target, and its entries are installed copies too.
+                if ($excludedTarget !== null && PathContainment::isWithin(Path::create($skillPath), $excludedTarget)) {
+                    continue;
+                }
+
                 // A renamed root skill is known by the name it is installed
                 // under: its frontmatter name was rejected.
                 $canonicalName = $rename === null
@@ -211,20 +230,29 @@ final readonly class SkillEnumerator
         // them as `-v` warnings without aborting — the rest of the
         // allowlist still syncs.
         foreach ($allowlistSeen as $packageName => $names) {
+            $missing = [];
             foreach ($names as $name => $seen) {
                 if (!$seen) {
-                    $warnings[] = \sprintf(
-                        '%s: skill "%s" declared in the skill allowlist but not found in the donor',
-                        $packageName,
+                    // A copy of the skill in the target would otherwise make
+                    // the warning read as a contradiction.
+                    $copied = isset($targetHolders[$packageName]) && $target !== null
+                        && \is_dir((string) $target->join($name));
+                    $missing[] = \sprintf(
+                        'skill "%s" declared in the skill allowlist but not found in the donor%s',
                         $name,
+                        $copied ? \sprintf('; its copy installed in the target %s does not count', $target) : '',
                     );
                 }
+            }
+            foreach ($missing as $reason) {
+                $warnings[] = $packageName . ': ' . $reason;
             }
             // A stale allowlist, say one naming the catalog skills of a donor
             // that is now one root skill, selects nothing and so drops the donor.
             // Judged per package: a multi-source donor's rows share one allowlist.
-            if (!isset($installingPackages[$packageName]) && \in_array(false, $names, true)) {
+            if (!isset($installingPackages[$packageName]) && $missing !== []) {
                 $droppedDonors[] = $packageName;
+                $dropReasons[$packageName] = [...$dropReasons[$packageName] ?? [], ...$missing];
             }
         }
 
@@ -232,9 +260,23 @@ final readonly class SkillEnumerator
             skills: $skills,
             warnings: $warnings,
             droppedDonors: \array_values(\array_unique($droppedDonors)),
+            dropReasons: $dropReasons,
             skipped: $skipped,
             renamed: $renamed,
         );
+    }
+
+    /**
+     * `true` when the target lies below the directory the donor is scanned
+     * from. A donor that is the target or lies within it keeps its skills
+     * there: they are sources, which the sync keeps and never copies onto
+     * themselves.
+     */
+    private static function containsTarget(VendorConfig $donor, Path $target): bool
+    {
+        $scanRoot = $donor->discoveredSkillDirs === null ? $donor->sourcePath() : $donor->packageRoot;
+
+        return PathContainment::isBelow($target, $scanRoot);
     }
 
     /**

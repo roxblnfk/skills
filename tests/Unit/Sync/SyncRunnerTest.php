@@ -65,6 +65,31 @@ final class SyncRunnerTest
         Assert::same((string) \file_get_contents($this->tmp . '/.agents/skills/pdf/SKILL.md'), 'installed from the clone');
     }
 
+    public function aRefusedCleanNamesWhyADroppedDonorContributedNothing(): void
+    {
+        $provider = $this->providerOf([$this->donor('dir', 'pack')->withSkillFilter(['gone'])]);
+        \mkdir($this->tmp . '/.agents/skills/gone', 0o777, true);
+        \file_put_contents($this->tmp . '/.agents/skills/gone/SKILL.md', 'installed earlier');
+
+        $io = new BufferIO();
+        $code = (new SyncRunner())->run(
+            Path::create($this->tmp),
+            $provider,
+            null,
+            $io,
+            new SyncOptions(packageFilters: [], extraTrusted: [], targetOverride: null, interactive: false, clean: true),
+        );
+
+        $output = $io->getOutput();
+        Assert::same($code, Command::FAILURE, $output);
+        Assert::true(\str_contains($output, '--clean refused: acme/tools contributed no skills'), $output);
+        Assert::true(
+            \str_contains($output, '[failed] skill "gone" declared in the skill allowlist but not found in the donor'),
+            $output,
+        );
+        Assert::true(\is_file($this->tmp . '/.agents/skills/gone/SKILL.md'), 'a refused clean deletes nothing');
+    }
+
     /**
      * @param non-empty-string $provenance
      * @param non-empty-string $label
@@ -102,7 +127,7 @@ final class SyncRunnerTest
                 return true;
             }
 
-            public function discover(Path $projectRoot): DonorDiscoveryResult
+            public function discover(Path $projectRoot, ?Path $target = null): DonorDiscoveryResult
             {
                 return new DonorDiscoveryResult(donors: $this->donors, warnings: []);
             }
