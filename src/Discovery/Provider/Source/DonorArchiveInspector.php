@@ -114,7 +114,10 @@ final readonly class DonorArchiveInspector
         // hide a catalog's `pdf/`. Otherwise a root SKILL.md makes the whole
         // archive one skill, and SKILL.md files below it are its content,
         // including skills installed into a target that lies inside the donor.
+        // Names are merged with or without a root SKILL.md: a committed copy in
+        // a hidden directory must not conflict with the skill it copies.
         $discovered = $this->scanner->scan($extractedRoot);
+        $shallow = [];
         $rootIsSkill = false;
         if (SkillTreeScanner::holdsSkillMd($extractedRoot)) {
             $shallow = self::withoutIndexes(
@@ -124,8 +127,8 @@ final readonly class DonorArchiveInspector
             // Decided before names are merged: a shallow skill outranks the
             // root even when a deeper one of its name is what gets installed.
             $rootIsSkill = !self::anyOutranksTheRoot([...$discovered, ...$shallow]);
-            $discovered = self::merge($discovered, $shallow);
         }
+        $discovered = self::merge($discovered, $shallow);
         if (!$rootIsSkill && $discovered === []) {
             return DonorArchiveInspection::rejected(DonorArchiveRejection::NoDonorShape);
         }
