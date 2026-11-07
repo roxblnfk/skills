@@ -354,12 +354,13 @@ final class SkillEnumeratorTest
         ));
     }
 
-    public function theNonAsciiRefusalNamesBothRisks(): void
+    public function theNonAsciiRefusalNamesBothExtensionsAndBothRisks(): void
     {
-        $reason = (string) SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false);
-
-        Assert::true(\str_contains($reason, 'unless PHP has both the mbstring and intl extensions'), $reason);
-        Assert::true(\str_contains($reason, 'letter case or Unicode composition'), $reason);
+        Assert::same(
+            SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false),
+            'is not ASCII, which needs PHP\'s mbstring and intl extensions to spot a namesake '
+                . 'differing in case or Unicode composition',
+        );
     }
 
     #[DataSet(['greeting'])]

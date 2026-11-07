@@ -61,6 +61,10 @@ final class SkillsWithoutMbstringTest
         Assert::same($process->getExitCode(), 0, $output);
         Assert::true(\is_file($this->tmp . '/.agents/skills/greeting/SKILL.md'), $output);
         Assert::false(\is_dir($this->tmp . '/.agents/skills/Über'), $output);
-        Assert::true(\str_contains($output, 'is not ASCII'), $output);
+        Assert::true(\str_contains(
+            $output,
+            'skill directory "Über" is not ASCII, which needs PHP\'s mbstring and intl extensions to spot '
+                . 'a namesake differing in case or Unicode composition, and is not installed',
+        ), $output);
     }
 }
