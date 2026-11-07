@@ -42,10 +42,14 @@ final readonly class SkillEnumerator
     private const RESERVED_DEVICE_NAME = '/^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]) *(?:\..*)?$/iuD';
 
     /**
+     * @param bool|null $foldsUnicode whether {@see SkillConflict::collisionKey()} folds Unicode;
+     *        `null` asks {@see SkillConflict::foldsUnicode()}
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private SkillFrontmatterReader $frontmatterReader = new SkillFrontmatterReader(),
+        private ?bool $foldsUnicode = null,
     ) {}
 
     /**
@@ -175,7 +179,7 @@ final readonly class SkillEnumerator
                     $allowlistSeen[$donor->packageName][$canonicalName] = true;
                 }
 
-                $refusal = self::refusedDirectoryName($entry);
+                $refusal = self::refusedDirectoryName($entry, $this->foldsUnicode);
                 if ($refusal !== null) {
                     // Reported only for a directory that is a skill: a declared
                     // source may hold `.github` or other plain directories.
@@ -277,9 +281,9 @@ final readonly class SkillEnumerator
      *
      * @psalm-pure
      */
-    private static function isPortableDirName(string $name): bool
+    private static function isPortableDirName(string $name, ?bool $foldsUnicode): bool
     {
-        return self::refusedDirectoryName($name) === null
+        return self::refusedDirectoryName($name, $foldsUnicode) === null
             && (int) \preg_match_all('/./su', $name) <= self::MAX_NAME_LENGTH;
     }
 
@@ -363,14 +367,14 @@ final readonly class SkillEnumerator
         if (
             \is_string($declared)
             && \preg_match(self::SAFE_SKILL_NAME, $declared) === 1
-            && self::isPortableDirName($declared)
+            && self::isPortableDirName($declared, $this->foldsUnicode)
         ) {
             return [$declared, null];
         }
 
         $slashAt = \strrpos($donor->packageName, '/');
         $fallback = $slashAt === false ? $donor->packageName : \substr($donor->packageName, $slashAt + 1);
-        if (!self::isPortableDirName($fallback)) {
+        if (!self::isPortableDirName($fallback, $this->foldsUnicode)) {
             $skipped[] = new SkillNotice(
                 $donor->packageName,
                 \sprintf('the root SKILL.md has no usable name; set a `name` in its frontmatter that %s', self::nameRule()),

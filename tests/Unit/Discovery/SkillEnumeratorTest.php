@@ -406,9 +406,19 @@ final class SkillEnumeratorTest
         $name = \str_repeat('ü', 40);
         $donor = $this->makeRootSkillDonor('acme/' . $name, '# No frontmatter');
 
-        $result = (new SkillEnumerator())->enumerate([$donor]);
+        $result = (new SkillEnumerator(foldsUnicode: true))->enumerate([$donor]);
 
         Assert::same($result->skills[0]->name, $name);
+    }
+
+    public function enumerationRefusesNonAsciiNamesWhenUnicodeCaseCannotBeFolded(): void
+    {
+        $donor = $this->makeDonor('acme/unicode', 'skills', ['Über/SKILL.md' => '# Über']);
+
+        $result = (new SkillEnumerator(foldsUnicode: false))->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::same(\count($result->skipped), 1);
     }
 
     public function refusedDirectoriesThatAreNotSelectedSkillsStayQuiet(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Acceptance;
 
 use Internal\Path;
+use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSkillsJson;
 use LLM\Skills\Tests\Testo\Filesystem;
@@ -189,8 +190,9 @@ final class SkillsDirSourceTest
     ])]
     public function skillNamesDifferingOnlyByUnicodeCaseConflict(): void
     {
-        if (!\function_exists('mb_convert_case')) {
-            throw new SkipTest('mbstring is not available');
+        // Without both extensions the non-ASCII names are refused before they can clash.
+        if (!SkillConflict::foldsUnicode()) {
+            throw new SkipTest('mbstring or intl is not available');
         }
 
         $process = $this->runUpdate();
@@ -391,6 +393,11 @@ final class SkillsDirSourceTest
     ])]
     public function namesFileSystemsKeepApartDoNotConflict(): void
     {
+        // Without both extensions `straße` is refused rather than installed.
+        if (!SkillConflict::foldsUnicode()) {
+            throw new SkipTest('mbstring or intl is not available');
+        }
+
         // Full case folding maps `ß` to `ss`; file systems do not.
         $process = $this->runUpdate();
 
