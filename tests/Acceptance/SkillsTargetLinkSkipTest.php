@@ -139,6 +139,29 @@ final class SkillsTargetLinkSkipTest
         Assert::false(\str_contains($out, ' MOD'), 'a skill the sync leaves alone is not drift. stdout: ' . $out);
     }
 
+    #[WithSkillsJson(self::DIR_SOURCE)]
+    public function aSkillDirectoryLinkedToItsOwnSourceCountsAsInPlace(): void
+    {
+        $source = Info::PROJECT_DIR . '/local-skills/dir-hello';
+        $original = \file_get_contents($source . '/SKILL.md');
+        \mkdir(self::TARGET_DIR, 0o777, true);
+        if (!Filesystem::makeDirLink($source, self::TARGET_DIR . '/dir-hello')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        $update = $this->composer('skills:update');
+        $show = $this->composer('skills:show');
+
+        Assert::same($update->getExitCode(), 0, 'stderr: ' . $update->getErrorOutput());
+        Assert::true(\str_contains($update->getOutput(), '[copy] dir-hello'), $update->getOutput());
+        Assert::false(
+            \str_contains($update->getErrorOutput(), 'a link inside the target'),
+            'a link to the skill\'s own source is not a skipped link. stderr: ' . $update->getErrorOutput(),
+        );
+        Assert::same(\file_get_contents($source . '/SKILL.md'), $original);
+        Assert::false(\str_contains($show->getOutput(), 'target-is-link'), $show->getOutput());
+    }
+
     public function showStillFlagsAConflictOnALinkedSkillDirectory(): void
     {
         \mkdir(self::TARGET_DIR, 0o777, true);
