@@ -747,6 +747,13 @@ skill, not a skill of its own. Its target directory is the `name` from the front
 package name: the `composer.json` `name`, an entry's `package`, or else the repository or directory
 name. When neither can be a directory name, the skill is skipped with a warning.
 
+In a remote or `dir` repository, a skill under a hidden directory, such as a committed installed
+copy in `.claude/skills/`, gives way to a visible skill of its name in `skills/` or
+`resources/skills/`, and of several hidden copies of one skill only one is installed. Two visible
+skills of one name still conflict. Without a root `SKILL.md`, a skill in a hidden container stops
+the search for skills outside the conventional folders, so a visible `pdf/` next to
+`.claude/skills/pdf/` is not found and the hidden copy is installed.
+
 A skill is never installed, from any donor, when its directory name is hidden (starts with a dot),
 looks like a Windows short name (`SKILLS~1`), or is a name Windows rewrites or rejects, such as
 `foo.` or `con`.

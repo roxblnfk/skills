@@ -265,6 +265,36 @@ final class SourceProviderTest
         Assert::same($names, ['helper', 'pdf']);
     }
 
+    public function aCopyInAHiddenDirectoryGivesWayToTheVisibleSkillWithoutARootSkillMd(): void
+    {
+        $extracted = $this->makeExtracted('repo-with-installed-copy');
+        $this->writeSkill($extracted, 'skills/pdf');
+        $this->writeSkill($extracted, '.claude/skills/pdf');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/repo')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->source, 'skills');
+        $dirs = $result->donors[0]->discoveredSkillDirs ?? [];
+        Assert::count($dirs, 1);
+        Assert::same($dirs[0]->parent()->name(), 'skills');
+        Assert::same($dirs[0]->parent()->parent()->name(), $extracted->name());
+    }
+
+    public function twoHiddenCopiesOfOneSkillJoinOnceWithoutARootSkillMd(): void
+    {
+        $extracted = $this->makeExtracted('repo-with-two-hidden-copies');
+        $this->writeSkill($extracted, 'skills/pdf');
+        $this->writeSkill($extracted, '.agents/skills/helper');
+        $this->writeSkill($extracted, '.claude/skills/helper');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/repo')->discover($this->projectRoot());
+
+        $names = \array_map(static fn(Path $dir): string => $dir->name(), $result->donors[0]->discoveredSkillDirs ?? []);
+        \sort($names);
+        Assert::same($names, ['helper', 'pdf']);
+    }
+
     public function aShallowSkillOutranksTheRootEvenWhenADeeperOneOfItsNameIsInstalled(): void
     {
         $extracted = $this->makeExtracted('catalog-shallow-and-resources');
