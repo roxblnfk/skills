@@ -7,9 +7,12 @@ namespace LLM\Skills\Add;
 use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Config\AddOptions;
+use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Exception\MalformedVendorConfig;
+use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\SourceEntry;
+use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapter;
@@ -25,6 +28,7 @@ use LLM\Skills\Discovery\Provider\Source\RefResolver;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
 use LLM\Skills\Discovery\SkillEnumerator;
+use LLM\Skills\Sync\SyncPlanner;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -78,6 +82,8 @@ final readonly class AddRunner
         private DonorArchiveInspector $inspector = new DonorArchiveInspector(),
         private SkillEnumerator $enumerator = new SkillEnumerator(),
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
+        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private SyncPlanner $planner = new SyncPlanner(),
     ) {}
 
     /**
@@ -342,6 +348,7 @@ final readonly class AddRunner
             $inspection,
             $resolved,
             $this->writer->allowlistAfterUpsert($projectRoot, $entry),
+            $this->syncTarget($projectRoot),
         );
         if ($unnamed !== null) {
             $io->writeError(\sprintf('<error>[llm/skills] dir %s: %s</error>', $spelling, $unnamed));
@@ -513,6 +520,23 @@ final readonly class AddRunner
     }
 
     /**
+     * The target the follow-up sync writes to, or `null` when the project
+     * config is malformed, which that sync reports itself. Read from
+     * `skills.json` alone: the entry is written there, and the sync then
+     * ignores an inline `extra.skills` block.
+     */
+    private function syncTarget(Path $projectRoot): ?Path
+    {
+        try {
+            $project = $this->projectMapper->forProject($projectRoot, null)->config;
+
+            return $this->planner->target($project, SyncOptions::default(), $projectRoot);
+        } catch (MalformedProjectConfig) {
+            return null;
+        }
+    }
+
+    /**
      * Why the sync would install nothing from an accepted donor, or `null` when
      * it installs something. The sync skips a rejected `extra.skills` block,
      * refuses unsafe directory names and a root skill with no usable name, and
@@ -520,9 +544,14 @@ final readonly class AddRunner
      * registering the donor would write an entry that never copies anything.
      *
      * @param list<non-empty-string>|null $skillFilter the allowlist the entry is written with
+     * @param Path|null $target the sync target, whose installed copies a donor containing it does not own
      */
-    private function installsNothing(DonorArchiveInspection $inspection, Path $root, ?array $skillFilter): ?string
-    {
+    private function installsNothing(
+        DonorArchiveInspection $inspection,
+        Path $root,
+        ?array $skillFilter,
+        ?Path $target = null,
+    ): ?string {
         $packageName = $inspection->packageName;
         if ($packageName === null) {
             return null;
@@ -553,13 +582,18 @@ final readonly class AddRunner
             return null;
         }
 
-        $result = $this->enumerator->enumerate(\array_map(
+        $donors = \array_map(
             static fn(VendorConfig $donor): VendorConfig => $donor->withSkillFilter($skillFilter),
             $donors,
-        ));
+        );
+        $result = $this->enumerator->enumerate($donors, $target);
 
         if ($result->skills !== []) {
             return null;
+        }
+
+        if ($target !== null && $this->enumerator->enumerate($donors)->skills !== []) {
+            return \sprintf('%s: its only skills are the copies installed in the target %s', $packageName, $target);
         }
 
         if (isset($result->skipped[0])) {

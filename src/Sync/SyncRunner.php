@@ -234,7 +234,7 @@ final readonly class SyncRunner
             $io->write('<comment>[dry-run] no files will be written</comment>');
         }
 
-        $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
+        $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors, $plan->target);
         $this->emitWarnings($io, $enumeration->warnings);
         foreach ($enumeration->skipped as $notice) {
             $io->writeError('<warning>[skip] ' . $notice->describe() . '</warning>');
@@ -303,6 +303,7 @@ final readonly class SyncRunner
             bystanders: $options->isScoped()
                 ? $this->skillEnumerator->enumerate(
                     $this->planner->bystanders($plan, $allDonors, $project, $options, $builtin, $projectRoot, $directDeps),
+                    $plan->target,
                 )->skills
                 : [],
         );

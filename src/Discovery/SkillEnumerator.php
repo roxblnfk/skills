@@ -6,6 +6,7 @@ namespace LLM\Skills\Discovery;
 
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Filesystem\PathContainment;
 
 /**
  * Looks inside each donor's source directory and lists the immediate
@@ -24,6 +25,10 @@ use LLM\Skills\Config\VendorConfig;
  * Failures are soft: a missing or unreadable `source` directory becomes
  * a warning and that donor is dropped from the result. The caller (or
  * `-v` verbosity) decides whether to print the warning.
+ *
+ * A donor whose tree contains the sync target, such as the project itself
+ * registered as a `dir` source, has no skills in the target: what sits there
+ * are installed copies, whichever donor they came from.
  */
 final readonly class SkillEnumerator
 {
@@ -80,8 +85,10 @@ final readonly class SkillEnumerator
 
     /**
      * @param list<VendorConfig> $donors
+     * @param Path|null $target the sync target, left out of each donor that contains it; `null` when
+     *        no target is known
      */
-    public function enumerate(array $donors): SkillEnumerationResult
+    public function enumerate(array $donors, ?Path $target = null): SkillEnumerationResult
     {
         $skills = [];
         $warnings = [];
@@ -146,8 +153,15 @@ final readonly class SkillEnumerator
                 }
             }
             $filterSet = $filter === null ? null : \array_fill_keys($filter, true);
+            $excludedTarget = $target !== null && self::containsTarget($donor, $target) ? $target : null;
 
             foreach ($candidates as [$entry, $skillPath, $rename]) {
+                // Resolved, not spelled: an alias such as `.claude/skills` links
+                // into the target, and its entries are installed copies too.
+                if ($excludedTarget !== null && PathContainment::isWithin(Path::create($skillPath), $excludedTarget)) {
+                    continue;
+                }
+
                 // A renamed root skill is known by the name it is installed
                 // under: its frontmatter name was rejected.
                 $canonicalName = $rename === null
@@ -235,6 +249,19 @@ final readonly class SkillEnumerator
             skipped: $skipped,
             renamed: $renamed,
         );
+    }
+
+    /**
+     * `true` when the target lies below the directory the donor is scanned
+     * from. A donor that is the target or lies within it keeps its skills
+     * there: they are sources, which the sync keeps and never copies onto
+     * themselves.
+     */
+    private static function containsTarget(VendorConfig $donor, Path $target): bool
+    {
+        $scanRoot = $donor->discoveredSkillDirs === null ? $donor->sourcePath() : $donor->packageRoot;
+
+        return PathContainment::isWithin($target, $scanRoot) && !PathContainment::isWithin($scanRoot, $target);
     }
 
     /**

@@ -110,11 +110,7 @@ final readonly class SyncPlanner
         // ancestor (e.g. a monorepo root) so writes can legitimately reach
         // a shared directory above the project.
         $root = $this->resolveContainmentRoot($project, $projectRoot);
-
-        $rawTarget = $options->targetOverride ?? $project->target;
-        $target = $this->resolveTarget($project, $options, $root);
-        $this->assertNotProjectRoot($target, $root, 'target', $rawTarget);
-        $this->assertWithinProject($target, $root, 'target', $rawTarget);
+        $target = $this->checkedTarget($project, $options, $root);
 
         return new SyncPlan(
             approvedDonors: $approved,
@@ -123,6 +119,19 @@ final readonly class SyncPlanner
             aliases: $this->resolveAliases($project, $options, $root, $target),
             filteredOutDonors: $filteredOut,
         );
+    }
+
+    /**
+     * The target {@see self::plan()} resolves, for a caller that needs it
+     * without planning a sync.
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    public function target(ProjectConfig $project, SyncOptions $options, Path $projectRoot): Path
+    {
+        return $this->checkedTarget($project, $options, $this->resolveContainmentRoot($project, $projectRoot));
     }
 
     /**
@@ -425,6 +434,23 @@ final readonly class SyncPlanner
         $raw = $options->targetOverride ?? $project->target;
 
         return $this->resolvePath($raw, $root);
+    }
+
+    /**
+     * @param Path $root the containment root
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function checkedTarget(ProjectConfig $project, SyncOptions $options, Path $root): Path
+    {
+        $rawTarget = $options->targetOverride ?? $project->target;
+        $target = $this->resolveTarget($project, $options, $root);
+        $this->assertNotProjectRoot($target, $root, 'target', $rawTarget);
+        $this->assertWithinProject($target, $root, 'target', $rawTarget);
+
+        return $target;
     }
 
     /**
