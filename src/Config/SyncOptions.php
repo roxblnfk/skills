@@ -94,6 +94,27 @@ final readonly class SyncOptions
     }
 
     /**
+     * These options over the whole donor set: no package or `--from` filter.
+     *
+     * @psalm-mutation-free
+     */
+    public function unscoped(): self
+    {
+        return new self(
+            packageFilters: [],
+            extraTrusted: $this->extraTrusted,
+            targetOverride: $this->targetOverride,
+            interactive: $this->interactive,
+            dryRun: $this->dryRun,
+            discovery: $this->discovery,
+            aliasOverrides: $this->aliasOverrides,
+            autoMigrate: $this->autoMigrate,
+            fromFilter: null,
+            clean: $this->clean,
+        );
+    }
+
+    /**
      * @param non-empty-string $packageName
      *
      * @psalm-mutation-free

@@ -126,6 +126,73 @@ final readonly class SyncPlanner
     }
 
     /**
+     * Reject paths that resolve outside the project root.
+     *
+     * The project's own `composer.json` is trusted input (the user
+     * wrote it), so this is not a sandbox boundary against malicious
+     * actors — it's a footgun guard. A typo like `target: "../.."`
+     * or a CLI argument like `--target=/etc/passwd` would otherwise
+     * happily start writing files (or planting junctions) outside
+     * the project. Donor packages are already pinned to their own
+     * roots ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper},
+     * {@see \LLM\Skills\Discovery\SkillTreeScanner}); this check
+     * brings the project side in line with that posture.
+     *
+     * Containment is checked literally (a path equal to the root, or one
+     * whose string is prefixed by `root + separator`), not via a
+     * {@see Path::match()} `root/*` glob: a project directory whose name
+     * contains `*`, `?` or `[]` must be treated as an ordinary path, not a
+     * wildcard. {@see Path} has already normalised separators and collapsed
+     * `..`; {@see self::pathsEqual()} adds the Windows case-insensitivity.
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    /**
+     * Donor rows a full run approves that the scoped `$scoped` plan leaves out.
+     * A scoped run writing a namesake of one of their skills would overwrite
+     * it, so their skills join its conflict check. Rows, not package names: two
+     * `sources[]` entries of different `from` may resolve to one package name,
+     * and `--from` keeps only one of them.
+     *
+     * @param list<VendorConfig> $donors every donor, before the `--from` filter
+     * @param list<non-empty-string> $directDependencies
+     *
+     * @return list<VendorConfig>
+     *
+     * @psalm-mutation-free
+     */
+    public function bystanders(
+        SyncPlan $scoped,
+        array $donors,
+        ProjectConfig $project,
+        SyncOptions $options,
+        TrustedVendors $builtin,
+        Path $projectRoot,
+        array $directDependencies = [],
+    ): array {
+        try {
+            $full = $this->plan($donors, $project, $options->unscoped(), $builtin, $projectRoot, $directDependencies);
+        } catch (MalformedProjectConfig) {
+            return [];
+        }
+
+        $rowKey = static fn(VendorConfig $donor): string => \implode("\0", [
+            $donor->packageName,
+            $donor->provenance,
+            (string) $donor->packageRoot,
+            $donor->source,
+        ]);
+        $inScope = \array_fill_keys(\array_map($rowKey, $scoped->approvedDonors), true);
+
+        return \array_values(\array_filter(
+            $full->approvedDonors,
+            static fn(VendorConfig $donor): bool => !isset($inScope[$rowKey($donor)]),
+        ));
+    }
+
+    /**
      * Literal path equality, honouring the platform's filesystem case
      * sensitivity (case-insensitive on Windows). Unlike {@see Path::match()}
      * this treats `*`, `?` and `[]` as ordinary characters, so paths whose
@@ -197,35 +264,6 @@ final readonly class SyncPlanner
         return false;
     }
 
-    /**
-     * Reject paths that resolve outside the project root.
-     *
-     * The project's own `composer.json` is trusted input (the user
-     * wrote it), so this is not a sandbox boundary against malicious
-     * actors — it's a footgun guard. A typo like `target: "../.."`
-     * or a CLI argument like `--target=/etc/passwd` would otherwise
-     * happily start writing files (or planting junctions) outside
-     * the project. Donor packages are already pinned to their own
-     * roots ({@see \LLM\Skills\Config\Mapper\VendorConfigMapper},
-     * {@see \LLM\Skills\Discovery\SkillTreeScanner}); this check
-     * brings the project side in line with that posture.
-     *
-     * Containment is checked literally (a path equal to the root, or one
-     * whose string is prefixed by `root + separator`), not via a
-     * {@see Path::match()} `root/*` glob: a project directory whose name
-     * contains `*`, `?` or `[]` must be treated as an ordinary path, not a
-     * wildcard. {@see Path} has already normalised separators and collapsed
-     * `..`; {@see self::pathsEqual()} adds the Windows case-insensitivity.
-     *
-     * @param non-empty-string $context human-readable label of the config field, e.g. `target`
-     *        or `alias[0]`; goes into the error message
-     * @param non-empty-string $raw the user-supplied value, included verbatim in the error so
-     *        the user can locate the offending entry in their config
-     *
-     * @throws MalformedProjectConfig
-     *
-     * @psalm-mutation-free
-     */
     private function assertWithinProject(
         Path $resolved,
         Path $projectRoot,

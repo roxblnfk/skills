@@ -31,6 +31,13 @@ use LLM\Skills\Discovery\Skill;
  *                    still ran over them, so their content is a merge of the
  *                    leftovers and the donor — a silent partial wipe would
  *                    look exactly like a successful clean install.
+ * - `keptSources`  — names the caller asked to purge but the purge left in
+ *                    place, because the directory is or holds the source of a
+ *                    skill being synced. Surfaced so the skipped deletion is
+ *                    not mistaken for a clean reinstall.
+ * - `targetAsSource` — names of skills whose source directory is the target
+ *                    itself, left out of `copied` because there is nowhere to
+ *                    copy them to.
  *
  * Discovery-time warnings (missing source dir, malformed extra, etc.) are
  * **not** part of this report — they happen earlier in the pipeline and
@@ -47,6 +54,8 @@ final readonly class SyncReport
      * @param list<string> $truncatedDirs
      * @param list<non-empty-string> $removed
      * @param list<non-empty-string> $removalFailures
+     * @param list<non-empty-string> $keptSources
+     * @param list<non-empty-string> $targetAsSource
      *
      * @psalm-mutation-free
      */
@@ -57,6 +66,8 @@ final readonly class SyncReport
         public array $truncatedDirs = [],
         public array $removed = [],
         public array $removalFailures = [],
+        public array $keptSources = [],
+        public array $targetAsSource = [],
     ) {}
 
     /**

@@ -85,6 +85,8 @@ final readonly class SyncRunner
      * @param mixed $extra raw `composer.json` `extra` field, or `null` when no
      *        `composer.json` is around (standalone-mode bin run). Drives the legacy
      *        inline `extra.skills` fallback when `skills.json` is absent.
+     * @param \Closure():void|null $onConflicts invoked when the run aborts on skill-name conflicts,
+     *        which leaves the target untouched
      */
     public function run(
         Path $projectRoot,
@@ -92,6 +94,7 @@ final readonly class SyncRunner
         mixed $extra,
         IOInterface $io,
         SyncOptions $options,
+        ?\Closure $onConflicts = null,
     ): int {
         // Auto-migration is part of the write-mode contract: any
         // `skills:update` (or `post-update-cmd` auto-sync invocation)
@@ -177,6 +180,7 @@ final readonly class SyncRunner
             $options,
         );
         $donors = [...$discovery->donors, ...$discoveryResolution->included];
+        $allDonors = $donors;
 
         // `--from=<id>` narrows the sync to a single
         // provider's donors. Provenance is tagged at the source
@@ -232,14 +236,22 @@ final readonly class SyncRunner
 
         $enumeration = $this->skillEnumerator->enumerate($plan->approvedDonors);
         $this->emitWarnings($io, $enumeration->warnings);
+        foreach ($enumeration->skipped as $notice) {
+            $io->writeError('<warning>[skip] ' . $notice->describe() . '</warning>');
+        }
+        foreach ($enumeration->renamed as $notice) {
+            $io->writeError('<warning>[rename] ' . $notice->describe() . '</warning>');
+        }
 
         $purge = [];
         if ($options->clean) {
             // A donor that dropped out contributes no skills, so an unscoped
             // wipe would delete its installed copies with nothing to put back.
-            // Two channels lose a donor this way: a `sources[]` entry that
-            // never resolved, and one whose source directory turned out to be
-            // missing or unreadable.
+            // A donor is lost this way when a `sources[]` entry never resolved or
+            // its `extra.skills` block was rejected, and when its skills could
+            // not be enumerated (see `droppedDonors`). A vendor package with a
+            // rejected block is left out: the user cannot fix it, and it would
+            // block every full `--clean`.
             //
             // Only an unscoped run is at risk. A scoped one deletes a subset of
             // what it is about to write (see {@see PurgePlanner}), so a donor
@@ -250,6 +262,10 @@ final readonly class SyncRunner
                 ...\array_map(
                     static fn(SourceFailure $f): string => $f->label,
                     $discovery->failures,
+                ),
+                ...\array_map(
+                    static fn(MalformedDonor $donor): string => $donor->packageName,
+                    \array_filter($discovery->malformed, static fn(MalformedDonor $donor): bool => $donor->declared),
                 ),
                 ...$enumeration->droppedDonors,
             ];
@@ -284,6 +300,11 @@ final readonly class SyncRunner
             $plan->target,
             dryRun: $options->dryRun,
             purge: $purge,
+            bystanders: $options->isScoped()
+                ? $this->skillEnumerator->enumerate(
+                    $this->planner->bystanders($plan, $allDonors, $project, $options, $builtin, $projectRoot, $directDeps),
+                )->skills
+                : [],
         );
 
         if ($report->hasConflicts()) {
@@ -291,7 +312,7 @@ final readonly class SyncRunner
                 $io->writeError(\sprintf(
                     '<error>[conflict] skill "%s" declared by: %s</error>',
                     $conflict->name,
-                    \implode(', ', $conflict->packages),
+                    \implode(', ', $conflict->declarations()),
                 ));
             }
             $io->writeError('<error>Sync aborted due to skill-name conflicts; nothing was written.</error>');
@@ -301,6 +322,7 @@ final readonly class SyncRunner
             // would cost the user an extra round trip.
             $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
             $this->emitTrailingDiagnostics($io, $plan, $discoveryResolution->excluded);
+            $onConflicts?->__invoke();
             return Command::FAILURE;
         }
 
@@ -310,6 +332,13 @@ final readonly class SyncRunner
         $this->emitSkippedLinkWarnings($io, $report->skippedLinks);
         $this->emitTruncatedDirWarnings($io, $report->truncatedDirs);
         $this->emitRemovalFailures($io, $report->removalFailures);
+        $this->emitKeptSources($io, $report->keptSources);
+        foreach ($report->targetAsSource as $name) {
+            $io->writeError(\sprintf(
+                '<warning>[skip] %s: its source is the target directory itself, so there is nowhere to copy it.</warning>',
+                $name,
+            ));
+        }
 
         $verb = $options->dryRun ? 'would sync' : 'synced';
         $io->write(\sprintf(
@@ -359,16 +388,21 @@ final readonly class SyncRunner
     ): ?array {
         $purge = $this->purgePlanner->plan($installed, $incoming, $options->isScoped());
 
-        if ($purge === [] || $options->dryRun || !$options->interactive) {
+        // The prompt lists only what will really be deleted. The full list goes
+        // on to the engine, which keeps the source holders again and reports
+        // them once the sync has actually run.
+        [$deletable] = $this->purgePlanner->partitionSourceHolders($purge, $incoming, $plan->target);
+
+        if ($deletable === [] || $options->dryRun || !$options->interactive) {
             return $purge;
         }
 
         $io->write(\sprintf(
             '<comment>[llm/skills] --clean will delete %d installed skill(s) under %s:</comment>',
-            \count($purge),
+            \count($deletable),
             (string) $plan->target,
         ));
-        foreach ($purge as $installed) {
+        foreach ($deletable as $installed) {
             $io->write('  <comment>' . $installed->name . '</comment>');
         }
 
@@ -652,6 +686,19 @@ final readonly class SyncRunner
             $io->writeError(\sprintf(
                 '<error>[remove-failed] %s could not be fully deleted; what remains was merged '
                 . 'with the donor copy, not replaced by it.</error>',
+                $name,
+            ));
+        }
+    }
+
+    /**
+     * @param list<non-empty-string> $names
+     */
+    private function emitKeptSources(IOInterface $io, array $names): void
+    {
+        foreach ($names as $name) {
+            $io->writeError(\sprintf(
+                '<warning>[kept] %s holds the source of a skill being synced, so it was not removed.</warning>',
                 $name,
             ));
         }
