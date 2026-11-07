@@ -756,7 +756,11 @@ the search for skills outside the conventional folders, so a visible `pdf/` next
 
 A skill is never installed, from any donor, when its directory name is hidden (starts with a dot),
 looks like a Windows short name (`SKILLS~1`), or is a name Windows rewrites or rejects, such as
-`foo.` or `con`.
+`foo.` or `con`. A non-ASCII name such as `Über` is also skipped unless PHP has both the
+`mbstring` and `intl` extensions: without `mbstring` a namesake differing only in letter case
+(`über`) would not be reported as a conflict, and without `intl` neither would one differing only
+in Unicode composition. The Symfony polyfills that Composer ships stand in for `intl` here, but not
+for `mbstring`.
 
 Auto-discovered donors still pass through the trust filter unless they were named on the CLI.
 A junction or symlink that escapes the package root is silently rejected.

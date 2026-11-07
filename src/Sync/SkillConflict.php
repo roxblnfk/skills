@@ -35,7 +35,8 @@ final readonly class SkillConflict
      * fold letter case, and macOS also treats composed and decomposed Unicode
      * as one name. Folding is one character to one, as file systems do: `ß`
      * stays apart from `ss`. It needs the `intl` and `mbstring` extensions;
-     * without them only ASCII case is folded.
+     * without them only ASCII case is folded, which is why discovery refuses
+     * non-ASCII names unless {@see self::foldsUnicode()} holds.
      *
      * @psalm-pure
      *
@@ -56,9 +57,26 @@ final readonly class SkillConflict
             }
         }
 
-        return \function_exists('mb_convert_case')
+        // Composer loads symfony/polyfill-mbstring, which defines
+        // `mb_convert_case()` but not this constant; its own fold mode is
+        // full folding, which would merge `straße` and `strasse`.
+        return \defined('MB_CASE_FOLD_SIMPLE')
             ? \mb_convert_case($name, \MB_CASE_FOLD_SIMPLE, 'UTF-8')
             : \strtolower($name);
+    }
+
+    /**
+     * Whether {@see self::collisionKey()} folds every name the way the file
+     * systems do. Without `mbstring` `Über` and `über` get distinct keys, and
+     * without `intl` so do the composed and decomposed spellings of `ü`.
+     *
+     * @psalm-pure
+     *
+     * @psalm-suppress ImpureFunctionCall extension availability does not change within a run
+     */
+    public static function foldsUnicode(): bool
+    {
+        return \class_exists(\Normalizer::class) && \defined('MB_CASE_FOLD_SIMPLE');
     }
 
     /**

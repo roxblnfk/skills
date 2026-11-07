@@ -7,6 +7,7 @@ namespace LLM\Skills\Discovery;
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Filesystem\PathContainment;
+use LLM\Skills\Sync\SkillConflict;
 
 /**
  * Looks inside each donor's source directory and lists the immediate
@@ -48,10 +49,14 @@ final readonly class SkillEnumerator
     private const RESERVED_DEVICE_NAME = '/^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]) *(?:\..*)?$/iuD';
 
     /**
+     * @param bool|null $foldsUnicode whether {@see SkillConflict::collisionKey()} folds Unicode;
+     *        `null` asks {@see SkillConflict::foldsUnicode()}
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private SkillFrontmatterReader $frontmatterReader = new SkillFrontmatterReader(),
+        private ?bool $foldsUnicode = null,
     ) {}
 
     /**
@@ -67,10 +72,15 @@ final readonly class SkillEnumerator
      * - Windows strips a trailing dot or space, so `foo.` would land in another
      *   skill's `foo`; it rejects device names and some characters outright,
      *   which would abort the sync halfway. A regex error counts as a refusal.
+     * - A non-ASCII name could share a directory with another spelling that
+     *   conflict detection cannot tell apart when `$foldsUnicode` is `false`.
+     *
+     * @param bool|null $foldsUnicode whether {@see SkillConflict::collisionKey()} folds Unicode;
+     *        `null` asks {@see SkillConflict::foldsUnicode()}
      *
      * @psalm-pure
      */
-    public static function refusedDirectoryName(string $name): ?string
+    public static function refusedDirectoryName(string $name, ?bool $foldsUnicode = null): ?string
     {
         return match (true) {
             $name === '' || $name[0] === '.' => 'is hidden',
@@ -81,6 +91,9 @@ final readonly class SkillEnumerator
                 'holds a character Windows does not allow in a directory name',
             \in_array($name[-1], ['.', ' '], true) => 'ends in a dot or space, which Windows strips',
             \preg_match(self::RESERVED_DEVICE_NAME, $name) !== 0 => 'is a Windows device name',
+            \preg_match('/[^\x00-\x7f]/', $name) !== 0 && !($foldsUnicode ?? SkillConflict::foldsUnicode()) =>
+                'is not ASCII, which needs PHP\'s mbstring and intl extensions to spot a namesake '
+                . 'differing in case or Unicode composition',
             default => null,
         };
     }
@@ -185,7 +198,7 @@ final readonly class SkillEnumerator
                     $allowlistSeen[$donor->packageName][$canonicalName] = true;
                 }
 
-                $refusal = self::refusedDirectoryName($entry);
+                $refusal = self::refusedDirectoryName($entry, $this->foldsUnicode);
                 if ($refusal !== null) {
                     // Reported only for a directory that is a skill: a declared
                     // source may hold `.github` or other plain directories.
@@ -310,9 +323,9 @@ final readonly class SkillEnumerator
      *
      * @psalm-pure
      */
-    private static function isPortableDirName(string $name): bool
+    private static function isPortableDirName(string $name, ?bool $foldsUnicode): bool
     {
-        return self::refusedDirectoryName($name) === null
+        return self::refusedDirectoryName($name, $foldsUnicode) === null
             && (int) \preg_match_all('/./su', $name) <= self::MAX_NAME_LENGTH;
     }
 
@@ -396,14 +409,14 @@ final readonly class SkillEnumerator
         if (
             \is_string($declared)
             && \preg_match(self::SAFE_SKILL_NAME, $declared) === 1
-            && self::isPortableDirName($declared)
+            && self::isPortableDirName($declared, $this->foldsUnicode)
         ) {
             return [$declared, null];
         }
 
         $slashAt = \strrpos($donor->packageName, '/');
         $fallback = $slashAt === false ? $donor->packageName : \substr($donor->packageName, $slashAt + 1);
-        if (!self::isPortableDirName($fallback)) {
+        if (!self::isPortableDirName($fallback, $this->foldsUnicode)) {
             $skipped[] = new SkillNotice(
                 $donor->packageName,
                 \sprintf('the root SKILL.md has no usable name; set a `name` in its frontmatter that %s', self::nameRule()),

@@ -45,6 +45,10 @@
         "testo/testo": "0.10 - 1",
         "vimeo/psalm": "^7"
     },
+    "suggest": {
+        "ext-intl": "Detects skill names that differ only in Unicode composition; without it or its Symfony polyfill non-ASCII skill names are skipped",
+        "ext-mbstring": "Detects skill names that differ only in non-ASCII letter case; without it non-ASCII skill names are skipped"
+    },
     "repositories": [
         {
             "type": "vcs",

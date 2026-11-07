@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillNotice;
+use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Core\Exception\SkipTest;
@@ -360,7 +361,41 @@ final class SkillEnumeratorTest
     #[DataSet(['a.b'])]
     public function portableDirectoryNamesAreAccepted(string $name): void
     {
-        Assert::null(SkillEnumerator::refusedDirectoryName($name));
+        Assert::null(SkillEnumerator::refusedDirectoryName($name, foldsUnicode: true));
+    }
+
+    public function nonAsciiNamesAreRefusedWhenUnicodeCaseCannotBeFolded(): void
+    {
+        Assert::true(\str_contains(
+            (string) SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false),
+            'is not ASCII',
+        ));
+        Assert::true(\str_contains(
+            (string) SkillEnumerator::refusedDirectoryName("u\u{0308}ber", foldsUnicode: false),
+            'is not ASCII',
+        ));
+    }
+
+    public function theNonAsciiRefusalNamesBothExtensionsAndBothRisks(): void
+    {
+        Assert::same(
+            SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false),
+            'is not ASCII, which needs PHP\'s mbstring and intl extensions to spot a namesake '
+                . 'differing in case or Unicode composition',
+        );
+    }
+
+    #[DataSet(['greeting'])]
+    #[DataSet(['Refactor_Legacy'])]
+    #[DataSet(['a.b'])]
+    public function asciiNamesAreAcceptedWhenUnicodeCaseCannotBeFolded(string $name): void
+    {
+        Assert::null(SkillEnumerator::refusedDirectoryName($name, foldsUnicode: false));
+    }
+
+    public function nonAsciiNamesAreAcceptedExactlyWhenUnicodeIsFolded(): void
+    {
+        Assert::same(SkillEnumerator::refusedDirectoryName('Über') === null, SkillConflict::foldsUnicode());
     }
 
     public function aDonorWhoseSkillsAreAllRefusedIsDropped(): void
@@ -393,9 +428,19 @@ final class SkillEnumeratorTest
         $name = \str_repeat('ü', 40);
         $donor = $this->makeRootSkillDonor('acme/' . $name, '# No frontmatter');
 
-        $result = (new SkillEnumerator())->enumerate([$donor]);
+        $result = (new SkillEnumerator(foldsUnicode: true))->enumerate([$donor]);
 
         Assert::same($result->skills[0]->name, $name);
+    }
+
+    public function enumerationRefusesNonAsciiNamesWhenUnicodeCaseCannotBeFolded(): void
+    {
+        $donor = $this->makeDonor('acme/unicode', 'skills', ['Über/SKILL.md' => '# Über']);
+
+        $result = (new SkillEnumerator(foldsUnicode: false))->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::same(\count($result->skipped), 1);
     }
 
     public function refusedDirectoriesThatAreNotSelectedSkillsStayQuiet(): void

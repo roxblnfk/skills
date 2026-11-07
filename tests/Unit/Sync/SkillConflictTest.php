@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Sync;
 
 use LLM\Skills\Sync\SkillConflict;
+use LLM\Skills\Tests\Testo\PhpWithoutMbstring;
+use Symfony\Component\Process\Process;
 use Testo\Assert;
 use Testo\Core\Exception\SkipTest;
 use Testo\Test;
@@ -44,7 +46,8 @@ final class SkillConflictTest
 
     public function unicodeNamesDifferingByCaseShareAKey(): void
     {
-        if (!\function_exists('mb_convert_case')) {
+        // The mbstring polyfill defines `mb_convert_case()` but not the simple fold mode.
+        if (!\defined('MB_CASE_FOLD_SIMPLE')) {
             throw new SkipTest('mbstring is not available');
         }
 
@@ -53,11 +56,50 @@ final class SkillConflictTest
 
     public function namesFileSystemsKeepApartKeepDistinctKeys(): void
     {
-        if (!\function_exists('mb_convert_case')) {
+        // The mbstring polyfill defines `mb_convert_case()` but not the simple fold mode.
+        if (!\defined('MB_CASE_FOLD_SIMPLE')) {
             throw new SkipTest('mbstring is not available');
         }
 
         Assert::notSame(SkillConflict::collisionKey('straße'), SkillConflict::collisionKey('strasse'));
+    }
+
+    public function unicodeSpellingsShareAKeyWheneverUnicodeIsFolded(): void
+    {
+        if (!SkillConflict::foldsUnicode()) {
+            throw new SkipTest('mbstring or intl is not available');
+        }
+
+        Assert::same(SkillConflict::collisionKey("\u{00DC}ber"), SkillConflict::collisionKey("u\u{0308}ber"));
+    }
+
+    /**
+     * The polyfill Composer loads defines `mb_convert_case()` without the
+     * simple fold mode; only a separate PHP process can run without the extension.
+     */
+    public function onlyAsciiCaseIsFoldedWhenMbstringIsReplacedByItsPolyfill(): void
+    {
+        $php = PhpWithoutMbstring::commandOrSkip();
+        $probe = new Process([...$php, '-r', \sprintf(
+            <<<'PHP'
+                require %s;
+                use LLM\Skills\Sync\SkillConflict;
+                echo json_encode([
+                    function_exists('mb_convert_case'),
+                    SkillConflict::foldsUnicode(),
+                    SkillConflict::collisionKey('Greeting'),
+                    SkillConflict::collisionKey('Über') === SkillConflict::collisionKey('über'),
+                ]);
+                PHP,
+            \var_export(\dirname(__DIR__, 3) . '/vendor/autoload.php', true),
+        )]);
+        $probe->run();
+
+        Assert::same(
+            \json_decode($probe->getOutput(), true),
+            [true, false, 'greeting', false],
+            $probe->getErrorOutput(),
+        );
     }
 
     public function composedAndDecomposedSpellingsShareAKey(): void
