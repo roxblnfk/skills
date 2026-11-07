@@ -15,11 +15,12 @@ namespace LLM\Skills\Filesystem;
  * reports as a link.
  *
  * Detection has to cope with an NTFS directory junction (`mklink /J`),
- * which a vendor package can ship without administrator rights. On the
- * Windows PHP build this project targets a junction returns `false` from
- * {@see \is_link()}, {@see \is_dir()} and {@see \is_file()} alike, and
- * {@see \readlink()} on an ordinary directory returns the directory's own
- * path rather than `false` — so neither of those is a reliable signal.
+ * which a vendor package can ship without administrator rights. On Windows
+ * a junction returns `false` from {@see \is_link()}, while {@see \is_dir()}
+ * reports it as a directory on some PHP builds and as nothing at all on
+ * others, and {@see \readlink()} on an ordinary directory returns the
+ * directory's own path rather than `false` — so none of those is a reliable
+ * signal.
  * The dependable one is that {@see \realpath()} resolves a junction to a
  * path other than its own literal location.
  */

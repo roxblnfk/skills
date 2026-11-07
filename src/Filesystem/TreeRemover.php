@@ -40,8 +40,8 @@ final readonly class TreeRemover
     {
         if (LinkGuard::isLink($path)) {
             // A directory link needs rmdir and a file link needs unlink, and
-            // on the Windows build a junction answers false to is_dir as well
-            // as is_file — so try both rather than branching on a stat.
+            // whether is_dir sees a junction depends on the PHP build — so try
+            // both rather than branching on a stat.
             return @\rmdir($path) || @\unlink($path);
         }
 
