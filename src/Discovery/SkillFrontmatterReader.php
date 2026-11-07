@@ -19,10 +19,10 @@ use Internal\Path;
  *
  *     # Body content begins here.
  *
- * The parser is deliberately minimal: it understands flat `key: value`
- * pairs, with optional surrounding `"` or `'` on the value. Multi-line
- * scalars, sequences, anchors, and nested mappings are out of scope —
- * skill frontmatter in practice is a flat string-only dictionary.
+ * The parser is deliberately minimal: it understands top-level `key: value`
+ * pairs, with optional surrounding `"` or `'` on the value and a trailing
+ * `# comment`. Multi-line scalars, sequences and anchors are out of scope,
+ * and nested mappings are skipped; the first occurrence of a key wins.
  *
  * Reading is best-effort:
  *
@@ -90,20 +90,23 @@ final readonly class SkillFrontmatterReader
 
         $out = [];
         foreach ($lines as $line) {
-            if (!\preg_match('/^\\s*([A-Za-z_][A-Za-z0-9_-]*)\\s*:\\s*(.*)$/', $line, $kv)) {
+            // Indented lines belong to a nested mapping, such as a `name` under
+            // `metadata:`, and must not override the skill's own keys.
+            if (!\preg_match('/^([A-Za-z_][A-Za-z0-9_-]*)[ \\t]*:[ \\t]*(.*)$/', $line, $kv)) {
                 continue;
             }
             /** @var non-empty-string $key */
             $key = $kv[1];
+            if (isset($out[$key])) {
+                continue;
+            }
             $value = \rtrim($kv[2]);
-            // Strip a single layer of matching surrounding quotes if any.
-            if (\strlen($value) >= 2
-                && (
-                    ($value[0] === '"' && \str_ends_with($value, '"'))
-                    || ($value[0] === "'" && \str_ends_with($value, "'"))
-                )
-            ) {
-                $value = \substr($value, 1, -1);
+            // A quoted value ends at its closing quote, past `\"` or `''` escapes.
+            if (\preg_match('/\\A(?:"((?:[^"\\\\]|\\\\.)*)"|\'((?:[^\']|\'\')*)\')(?:[ \\t]+#.*)?\\z/', $value, $quoted)) {
+                $value = ($quoted[2] ?? '') !== '' ? $quoted[2] : $quoted[1];
+            } else {
+                // A YAML comment starts at a `#` preceded by whitespace.
+                $value = \rtrim(\preg_replace('/(?:\\A|[ \\t]+)#.*\\z/', '', $value) ?? $value);
             }
             $out[$key] = $value;
         }

@@ -69,6 +69,18 @@ final readonly class SkillTreeScanner
     public const FALLBACK_MAX_DEPTH = 5;
 
     /**
+     * `true` when `$dir` holds a `SKILL.md` that is a regular file. A linked
+     * `SKILL.md` does not count: the copy never follows links, so such a skill
+     * would be installed without its `SKILL.md`.
+     */
+    public static function holdsSkillMd(Path $dir): bool
+    {
+        $file = (string) $dir->join('SKILL.md');
+
+        return \is_file($file) && !LinkGuard::isLink($file);
+    }
+
+    /**
      * @return list<DiscoveredSkill>
      */
     public function scan(Path $packageRoot): array
@@ -78,6 +90,45 @@ final readonly class SkillTreeScanner
             return [];
         }
 
+        $found = $this->collectFromContainers($packageRoot, $rootReal);
+        if ($found === []) {
+            // Nothing in the conventional spots — cast a wider, bounded net.
+            $this->scanFallback($packageRoot, $rootReal, '', 0, $found);
+        }
+
+        return \array_values($found);
+    }
+
+    /**
+     * Skills at most `$maxDepth` levels below the package root, found by the
+     * fallback recursion's rules whether or not a container holds skills: the
+     * hidden directories it skips include the agent install containers, so an
+     * installed copy there cannot hide what the package itself ships.
+     *
+     * @param positive-int $maxDepth
+     *
+     * @return list<DiscoveredSkill>
+     */
+    public function scanShallow(Path $packageRoot, int $maxDepth): array
+    {
+        $rootReal = \realpath((string) $packageRoot);
+        if ($rootReal === false || $rootReal === '') {
+            return [];
+        }
+
+        $found = [];
+        $this->scanFallback($packageRoot, $rootReal, '', 0, $found, $maxDepth);
+
+        return \array_values($found);
+    }
+
+    /**
+     * @param non-empty-string $rootReal realpath of the package root
+     *
+     * @return array<string, DiscoveredSkill> keyed by the skill dir's realpath
+     */
+    private function collectFromContainers(Path $packageRoot, string $rootReal): array
+    {
         /** @var array<string, DiscoveredSkill> $found keyed by the skill dir's realpath to dedupe */
         $found = [];
 
@@ -90,7 +141,7 @@ final readonly class SkillTreeScanner
             foreach ($this->immediateSubdirs((string) $containerDir) as $name) {
                 $skillDir = $containerDir->join($name);
 
-                if ($this->hasSkillMd($skillDir)) {
+                if (self::holdsSkillMd($skillDir)) {
                     // Flat layout: <container>/<name>/SKILL.md. Found a skill —
                     // do not descend (shadowing).
                     $this->record($found, $rootReal, $skillDir, $name, $container);
@@ -100,19 +151,14 @@ final readonly class SkillTreeScanner
                 // Catalog layout: <container>/<category>/<name>/SKILL.md.
                 foreach ($this->immediateSubdirs((string) $skillDir) as $leaf) {
                     $leafDir = $skillDir->join($leaf);
-                    if ($this->hasSkillMd($leafDir)) {
+                    if (self::holdsSkillMd($leafDir)) {
                         $this->record($found, $rootReal, $leafDir, $leaf, $container . '/' . $name);
                     }
                 }
             }
         }
 
-        if ($found === []) {
-            // Nothing in the conventional spots — cast a wider, bounded net.
-            $this->scanFallback($packageRoot, $rootReal, '', 0, $found);
-        }
-
-        return \array_values($found);
+        return $found;
     }
 
     /**
@@ -124,6 +170,7 @@ final readonly class SkillTreeScanner
      * @param string $relPrefix relative path (from the package root) of `$dir`; `''` at the root
      * @param int $depth levels below the package root for `$dir`
      * @param array<string, DiscoveredSkill> $found
+     * @param int $maxDepth deepest level below the package root a skill directory is looked for at
      *
      * @param-out array<string, DiscoveredSkill> $found
      */
@@ -133,8 +180,9 @@ final readonly class SkillTreeScanner
         string $relPrefix,
         int $depth,
         array &$found,
+        int $maxDepth = self::FALLBACK_MAX_DEPTH,
     ): void {
-        if ($depth >= self::FALLBACK_MAX_DEPTH) {
+        if ($depth >= $maxDepth) {
             return;
         }
 
@@ -154,7 +202,7 @@ final readonly class SkillTreeScanner
                 continue;
             }
 
-            if ($this->hasSkillMd($child)) {
+            if (self::holdsSkillMd($child)) {
                 // A skill's parent is the container we group it under; the root
                 // itself surfaces as "." since a donor source must be non-empty.
                 $container = $relPrefix === '' ? '.' : $relPrefix;
@@ -163,7 +211,7 @@ final readonly class SkillTreeScanner
             }
 
             $childPrefix = $relPrefix === '' ? $name : $relPrefix . '/' . $name;
-            $this->scanFallback($child, $rootReal, $childPrefix, $depth + 1, $found);
+            $this->scanFallback($child, $rootReal, $childPrefix, $depth + 1, $found, $maxDepth);
         }
     }
 
@@ -221,11 +269,6 @@ final readonly class SkillTreeScanner
         }
 
         return $out;
-    }
-
-    private function hasSkillMd(Path $dir): bool
-    {
-        return \is_file((string) $dir->join('SKILL.md'));
     }
 
     /**

@@ -36,4 +36,14 @@ final class VendorConfigTest
             (string) $root->join('resources/skills'),
         );
     }
+
+    public function copiesKeepTheRootSkillFlag(): void
+    {
+        $cfg = new VendorConfig('acme/foo', Path::create(__DIR__), '.', rootSkill: true);
+
+        Assert::true($cfg->withProvenance('github')->rootSkill);
+        Assert::true($cfg->asImplicitlyTrusted()->rootSkill);
+        Assert::true($cfg->withDeclaredBy(['acme/bar'])->rootSkill);
+        Assert::true($cfg->withSkillFilter(['foo'])->rootSkill);
+    }
 }

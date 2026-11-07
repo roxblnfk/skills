@@ -15,6 +15,8 @@ use LLM\Skills\Discovery\Provider\Source\SourceProvider;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Core\Exception\SkipTest;
+use Testo\Data\DataSet;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -163,6 +165,298 @@ final class SourceProviderTest
         Assert::count($result->donors, 1);
         Assert::same($result->donors[0]->packageName, 'acme/example-skill');
         Assert::same($result->donors[0]->source, '.');
+        Assert::true($result->donors[0]->rootSkill);
+        Assert::same($result->failures, []);
+    }
+
+    #[DataSet(['pdf'], name: 'one level down')]
+    #[DataSet(['examples/demo'], name: 'two levels down')]
+    #[DataSet(['skills/pdf'], name: 'flat skills container')]
+    public function aShallowSkillTurnsARootIndexIntoACatalog(string $skillDir): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-root-index');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, $skillDir);
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::false($result->donors[0]->rootSkill);
+        Assert::same(
+            \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []),
+            [(string) $extracted . '/' . $skillDir],
+        );
+    }
+
+    #[DataSet(['.claude/skills/dev-helper'], name: 'an installed copy in an agent directory')]
+    #[DataSet(['skills/.template'], name: 'a refused skill in a container')]
+    public function aContainerSkillThatCannotOutrankTheRootDoesNotHideAShallowOne(string $other): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-agent-copy');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'pdf');
+        $this->writeSkill($extracted, $other);
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::false($result->donors[0]->rootSkill);
+        $dirs = \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []);
+        Assert::true(\in_array((string) $extracted . '/pdf', $dirs, true), 'Got: ' . \implode(', ', $dirs));
+    }
+
+    #[DataSet(['dist/pdf'], name: 'a build copy two levels down')]
+    #[DataSet(['pdf'], name: 'a top-level copy')]
+    public function aShallowCopyDoesNotDuplicateAContainerSkill(string $copy): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-shallow-copy');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'skills/pdf');
+        $this->writeSkill($extracted, $copy);
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::same(
+            \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []),
+            [(string) $extracted . '/skills/pdf'],
+        );
+    }
+
+    public function twoShallowNamesakesBothJoinTheCatalog(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-shallow-namesakes');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'skills/x');
+        $this->writeSkill($extracted, 'a/pdf');
+        $this->writeSkill($extracted, 'b/pdf');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        $names = \array_map(static fn(Path $dir): string => $dir->name(), $result->donors[0]->discoveredSkillDirs ?? []);
+        \sort($names);
+        Assert::same($names, ['pdf', 'pdf', 'x'], 'one namesake must not hide the other');
+    }
+
+    public function aCopyInANestedHiddenDirectoryGivesWayToTheVisibleSkill(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-archived-copy');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'skills/pdf');
+        $this->writeSkill($extracted, 'skills/.archive/pdf');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        $dirs = $result->donors[0]->discoveredSkillDirs ?? [];
+        Assert::count($dirs, 1);
+        Assert::same($dirs[0]->parent()->name(), 'skills');
+    }
+
+    public function twoHiddenCopiesOfOneSkillJoinTheCatalogOnce(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-two-hidden-copies');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'pdf');
+        $this->writeSkill($extracted, '.agents/skills/helper');
+        $this->writeSkill($extracted, '.claude/skills/helper');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        $names = \array_map(static fn(Path $dir): string => $dir->name(), $result->donors[0]->discoveredSkillDirs ?? []);
+        \sort($names);
+        Assert::same($names, ['helper', 'pdf']);
+    }
+
+    public function aShallowSkillOutranksTheRootEvenWhenADeeperOneOfItsNameIsInstalled(): void
+    {
+        $extracted = $this->makeExtracted('catalog-shallow-and-resources');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'pdf');
+        $this->writeSkill($extracted, 'resources/skills/pdf');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::false($result->donors[0]->rootSkill);
+        Assert::count($result->donors[0]->discoveredSkillDirs ?? [], 1);
+    }
+
+    public function anIndexAboveContainerSkillsIsNotASkillOfItsOwn(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-container-index');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        \mkdir((string) $extracted . '/skills', 0o777, true);
+        \file_put_contents((string) $extracted . '/skills/SKILL.md', "---\nname: skills-index\n---\nindex");
+        $this->writeSkill($extracted, 'skills/pdf');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::same(
+            \array_map(static fn(Path $dir): string => $dir->name(), $result->donors[0]->discoveredSkillDirs ?? []),
+            ['pdf'],
+        );
+    }
+
+    public function aContainerSpelledInAnotherCaseIsListedOnce(): void
+    {
+        $extracted = $this->makeExtracted('catalog-capital-container');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'Skills/pdf');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::count($result->donors[0]->discoveredSkillDirs ?? [], 1);
+    }
+
+    public function aCommittedInstalledCopyDoesNotDuplicateACatalogSkill(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-installed-copy');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'pdf');
+        $this->writeSkill($extracted, '.claude/skills/pdf');
+        $this->writeSkill($extracted, '.claude/skills/dev-helper');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        $dirs = \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []);
+        \sort($dirs);
+        Assert::same($dirs, [
+            (string) $extracted . '/.claude/skills/dev-helper',
+            (string) $extracted . '/pdf',
+        ]);
+    }
+
+    #[DataSet(['resources/skills/pdf'], name: 'resources container')]
+    #[DataSet(['skills/php/testing'], name: 'catalog category')]
+    #[DataSet(['skills/lang/php/testing'], name: 'deep catalog')]
+    #[DataSet(['skills/.system/foo'], name: 'hidden category')]
+    public function aDeeperSkillIsContentOfTheRootSkill(string $skillDir): void
+    {
+        $extracted = $this->makeExtracted('root-skill-with-deep-skill');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: example\n---\nbody");
+        $this->writeSkill($extracted, $skillDir);
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/example')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::true($result->donors[0]->rootSkill);
+        Assert::same(\array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []), [(string) $extracted]);
+        Assert::same($result->failures, []);
+    }
+
+    public function rejectsARepositoryWhoseRootSkillMdIsALink(): void
+    {
+        $extracted = $this->makeExtracted('root-skill-link');
+        \file_put_contents($this->tmp . '/shared.md', "---\nname: example\n---\nbody");
+        if (!@\symlink($this->tmp . '/shared.md', (string) $extracted->join('SKILL.md'))) {
+            throw new SkipTest('platform refuses file symlink creation');
+        }
+
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/example-skill');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::same($result->donors, []);
+        Assert::count($result->failures, 1);
+    }
+
+    #[DataSet(['.agents/skills/installed'])]
+    #[DataSet(['.claude/skills/installed'])]
+    #[DataSet(['.cursor/skills/installed'])]
+    public function rootSkillMdWinsOverAgentInstallDirectories(string $installed): void
+    {
+        $extracted = $this->makeExtracted('root-skill-with-installs');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: example\n---\nbody");
+        $this->writeSkill($extracted, $installed);
+
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/example-skill');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::true($result->donors[0]->rootSkill);
+    }
+
+    public function publishedSkillsKeepTheSkillsOfAgentDirectories(): void
+    {
+        $extracted = $this->makeExtracted('published-and-agent-dirs');
+        $this->writeSkill($extracted, 'skills/a');
+        $this->writeSkill($extracted, '.claude/skills/b');
+
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/catalog');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::count($result->donors[0]->discoveredSkillDirs ?? [], 2);
+    }
+
+    public function aShallowSkillWithItsOwnComposerJsonStillMakesACatalog(): void
+    {
+        $extracted = $this->makeExtracted('catalog-skill-with-composer-json');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'skills/foo');
+        \file_put_contents((string) $extracted . '/skills/foo/composer.json', '{}');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::false($result->donors[0]->rootSkill);
+    }
+
+    #[DataSet(['skills/.template'], name: 'hidden skill directory')]
+    #[DataSet(['skills/TEMPLA~1'], name: 'short-name skill directory')]
+    public function aSkillTheSyncRefusesDoesNotOutrankTheRootSkill(string $skillDir): void
+    {
+        $extracted = $this->makeExtracted('root-with-refused-skill');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: example\n---\nbody");
+        $this->writeSkill($extracted, $skillDir);
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/example')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::true($result->donors[0]->rootSkill);
+    }
+
+    #[DataSet(['skills/a/b/c/d/e'], name: 'deeper than the scan reaches')]
+    #[DataSet(['skills/x/y/z'], name: 'inside a container with its own composer.json')]
+    public function aRootSkillStaysWhenTheScanFindsNoPublishedSkill(string $skillDir): void
+    {
+        $extracted = $this->makeExtracted('root-with-unreachable-skill');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: example\n---\nbody");
+        $this->writeSkill($extracted, $skillDir);
+        \file_put_contents((string) $extracted . '/skills/composer.json', '{}');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/example')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::true($result->donors[0]->rootSkill);
+        Assert::same($result->failures, []);
+    }
+
+    public function aCatalogKeepsItsDeeperSkillsOnceAShallowOneOutranksTheRoot(): void
+    {
+        $extracted = $this->makeExtracted('catalog-shallow-and-deep');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'skills/pdf');
+        $this->writeSkill($extracted, 'skills/office/docx');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::false($result->donors[0]->rootSkill);
+        $names = \array_map(static fn(Path $dir): string => $dir->name(), $result->donors[0]->discoveredSkillDirs ?? []);
+        \sort($names);
+        Assert::same($names, ['docx', 'pdf']);
+    }
+
+    public function conventionalSkillsWinOverARootSkillMd(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-root-index');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeSkill($extracted, 'skills/a');
+        $this->writeSkill($extracted, 'skills/b');
+
+        $provider = $this->providerReturning($extracted, packageHint: 'acme/catalog');
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->source, 'skills');
+        Assert::count($result->donors[0]->discoveredSkillDirs ?? [], 2);
+        Assert::false($result->donors[0]->rootSkill);
         Assert::same($result->failures, []);
     }
 
@@ -310,6 +604,20 @@ final class SourceProviderTest
         Assert::count($result->malformed, 1);
         Assert::same($result->malformed[0]->packageName, 'acme/pkg');
         Assert::true(\str_contains($result->malformed[0]->reason, 'extra.skills.source'));
+        Assert::true($result->malformed[0]->declared, 'a `sources[]` entry is the user\'s to fix');
+    }
+
+    public function aRejectedBundleAVendorPackageDeclaresIsNotTheUsers(): void
+    {
+        $extracted = $this->makeExtracted(
+            'vendor-bundle',
+            \json_encode(['name' => 'acme/pkg', 'extra' => ['skills' => ['source' => 42]]]),
+        );
+
+        $result = $this->providerReturning($extracted, declaredBy: ['acme/declarer'])->discover($this->projectRoot());
+
+        Assert::count($result->malformed, 1);
+        Assert::false($result->malformed[0]->declared);
     }
 
     public function producesDonorOnHappyPath(): void
@@ -663,12 +971,19 @@ final class SourceProviderTest
      *         so the auto-discovery fallback in {@see SourceProvider} can pick it
      *         up. Defaults to a non-null hint so existing tests keep working.
      */
-    private function providerReturning(Path $extracted, ?string $packageHint = 'acme/pkg'): SourceProvider
-    {
+    /**
+     * @param list<non-empty-string> $declaredBy
+     */
+    private function providerReturning(
+        Path $extracted,
+        ?string $packageHint = 'acme/pkg',
+        array $declaredBy = [],
+    ): SourceProvider {
         $ref = new RemoteDonorRef(
             url: 'https://example.com/repo.git',
             ref: 'v1.0.0',
             packageHint: $packageHint,
+            declaredBy: $declaredBy,
         );
         $fetcher = new class($extracted) implements RemoteFetcher {
             public function __construct(private readonly Path $extracted) {}
