@@ -310,12 +310,17 @@ final readonly class SyncEngine
     /**
      * Gives `$path` an inode of its own when it is a hard link, so the copy
      * replaces the file instead of truncating an inode another name shares,
-     * possibly outside the target.
+     * possibly outside the target. A directory is never a hard link, though on
+     * POSIX its link count is two or more.
      *
      * @return bool `true` when `$path` can be written without reaching another name
      */
     private function detachHardLink(string $path): bool
     {
+        if (\is_dir($path)) {
+            return true;
+        }
+
         $stat = @\stat($path);
         if ($stat === false || $stat['nlink'] <= 1) {
             return true;

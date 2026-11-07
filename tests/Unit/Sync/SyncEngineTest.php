@@ -622,6 +622,20 @@ final class SyncEngineTest
         Assert::same($report->linkedDestinations, []);
     }
 
+    public function aDirectoryWhereTheDonorShipsAFileIsNotReportedAsALink(): void
+    {
+        // A POSIX directory has a link count of two or more, as a hard-linked file does.
+        $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'notes' => 'donor notes']);
+        \mkdir($this->targetPath('pdf/notes'), 0o777, true);
+        \file_put_contents($this->targetPath('pdf/notes/mine.md'), 'mine');
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same($report->linkedDestinations, []);
+        Assert::same(\file_get_contents($this->targetPath('pdf/SKILL.md')), 'donor version');
+        Assert::same(\file_get_contents($this->targetPath('pdf/notes/mine.md')), 'mine');
+    }
+
     public function stopsAtTheDepthCapAndReportsTheTruncationPoint(): void
     {
         // A tree deeper than the copy backstop must still copy what it can
