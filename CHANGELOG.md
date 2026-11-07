@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.16.0](https://github.com/roxblnfk/skills/compare/1.15.0...1.16.0) (2026-11-07)
+
+
+### Features
+
+* **filesystem:** compare directories by identity, not by spelling ([99001a0](https://github.com/roxblnfk/skills/commit/99001a09eee624bf59cfd3584cb3cd5b18aa535d))
+* **sync:** fold skill names into collision keys ([9d0b5bb](https://github.com/roxblnfk/skills/commit/9d0b5bb27dd9e55d969eece3ebdd195c13450dd5))
+
+
+### Bug Fixes
+
+* **add:** refuse an entry that would install nothing ([ee178b1](https://github.com/roxblnfk/skills/commit/ee178b1e8ea871fe3203e9978934d2062560c481))
+* **discovery:** accept a remote repository whose root is the skill ([56dfa5d](https://github.com/roxblnfk/skills/commit/56dfa5d1b5f2bab402a1ca0bcc0f2dcbdfe79dae))
+* **discovery:** install a repository with a root SKILL.md as one skill ([fca6d1a](https://github.com/roxblnfk/skills/commit/fca6d1ac08f49651c1517ad29868b2144053e71c))
+* **discovery:** leave the target out of a donor that contains it ([#63](https://github.com/roxblnfk/skills/issues/63)) ([0f885b3](https://github.com/roxblnfk/skills/commit/0f885b32a040126585a41ead3d05aed5da435222)), closes [#57](https://github.com/roxblnfk/skills/issues/57)
+* **discovery:** let a hidden copy give way without a root SKILL.md ([2d78945](https://github.com/roxblnfk/skills/commit/2d789450843d18cbb9d5d61f32241db5a1ec9a94)), closes [#56](https://github.com/roxblnfk/skills/issues/56)
+* **discovery:** refuse non-ASCII skill names when Unicode case cannot be folded ([#64](https://github.com/roxblnfk/skills/issues/64)) ([df13f30](https://github.com/roxblnfk/skills/commit/df13f3027298c6922d1899ad46a9d4b7e564e0e6)), closes [#58](https://github.com/roxblnfk/skills/issues/58)
+* **show:** flag a conflict on a skill whose source is the target ([39c2ec0](https://github.com/roxblnfk/skills/commit/39c2ec0feb1d4c9465b38c4be421f4b191646362))
+* **show:** keep a conflicting skill listed when its directory is a link ([4fb5c50](https://github.com/roxblnfk/skills/commit/4fb5c5040b494cfb71e5405f628e8ab20452fb44))
+* **show:** list a skill linked inside the target as skipped ([f10dd0a](https://github.com/roxblnfk/skills/commit/f10dd0ae2b1b54b23ffaa69832599859f5fbb1ce))
+* **show:** report what the sync does ([bf514b7](https://github.com/roxblnfk/skills/commit/bf514b79d8f64e4687b9ec6e722572c2cd73963f))
+* **sync:** do not report a directory in the target as a hard link ([7659436](https://github.com/roxblnfk/skills/commit/765943647491d74faa264a9a3bbc721039935f5d))
+* **sync:** never overwrite a source or another donor's skill ([3cf5b05](https://github.com/roxblnfk/skills/commit/3cf5b054ec1551cb8d72dbe359f170a68a1a2f19))
+* **sync:** never write through a link inside the target ([3ab868b](https://github.com/roxblnfk/skills/commit/3ab868bc0eb5f5b92f445183bf16e8f4db33c6ba))
+* **sync:** replace a hard-linked file instead of writing into it ([6962312](https://github.com/roxblnfk/skills/commit/696231228cb8f2002d23f9527e82e47cba4916d5))
+* **sync:** report a link deeper in a skill with one path separator ([466bf6e](https://github.com/roxblnfk/skills/commit/466bf6e11a1c5f08611829c069dff921817af5a4))
+
+
+### Documentation
+
+* describe how links in the target show up in a dry run and skills:show ([0968be3](https://github.com/roxblnfk/skills/commit/0968be37c2abfca9a72e007e055d7efe36870777))
+* describe root skills, refused names and the safety of a sync ([82399b0](https://github.com/roxblnfk/skills/commit/82399b04123201e35e6c2eff1d25b40193be0f41))
+* drop the `--no-scripts` opt-out claim for auto-sync ([#51](https://github.com/roxblnfk/skills/issues/51)) ([32d24f6](https://github.com/roxblnfk/skills/commit/32d24f6cbf4d5bcbcb592df46ee4a1b092f98719))
+* name the linked skill directory a sync counts as in place ([f12eef8](https://github.com/roxblnfk/skills/commit/f12eef8193252264c3b175e4cd2188d33554534a))
+* name where a hidden copy gives way to a visible skill ([9088e4b](https://github.com/roxblnfk/skills/commit/9088e4bf9e244cd82e6ded7bfc01a36734e65fb8))
+* note that a clean dry run assumes a linked skill can be removed ([66e2062](https://github.com/roxblnfk/skills/commit/66e20629abdbdd5a9270cafb27df59a7f5dd808d))
+* re-wrap the clean refusal note and temper the dir donor claim ([8e119d4](https://github.com/roxblnfk/skills/commit/8e119d44eff50e0601bc9d768284d95ae80cf65b))
+* say which linked skill directories the drift check still compares ([09910c9](https://github.com/roxblnfk/skills/commit/09910c9161411dbc28da18845227edfbb0a33d0f))
+
+
+### Code Refactoring
+
+* **test:** name the extension-free PHP helper after both extensions it drops ([79bc8f7](https://github.com/roxblnfk/skills/commit/79bc8f7de2b1b8d1541d2c511f18f07824d0ffb7))
+
 ## [1.15.0](https://github.com/roxblnfk/skills/compare/1.14.0...1.15.0) (2026-10-15)
 
 
