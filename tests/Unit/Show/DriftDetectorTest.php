@@ -138,6 +138,18 @@ final class DriftDetectorTest
         Assert::false((new DriftDetector())->differs($donor, $installed));
     }
 
+    public function ignoresLinksInTheTargetTheSyncNeverWritesThrough(): void
+    {
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting', 'scripts/run.sh' => 'donor']);
+        $installed = $this->makeDir('installed', ['SKILL.md' => '# Greeting']);
+        $this->makeDir('elsewhere', ['other.sh' => 'mine']);
+        if (!Filesystem::makeDirLink($this->tmp . '/elsewhere', (string) $installed . '/scripts')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        Assert::false((new DriftDetector())->differs($donor, $installed));
+    }
+
     public function stopsAtTheDepthTheSyncCopiesTo(): void
     {
         $deep = \str_repeat('d/', SyncEngine::MAX_COPY_DEPTH) . 'beyond.md';

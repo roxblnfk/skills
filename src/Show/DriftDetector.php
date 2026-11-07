@@ -45,9 +45,11 @@ final readonly class DriftDetector
     }
 
     /**
-     * Walks exactly what {@see SyncEngine} copies: links are skipped and the
-     * walk stops at the same depth, so content the sync never writes is never
-     * expected in the target.
+     * Walks exactly what {@see SyncEngine} copies: links in the donor and in
+     * the target are skipped and the walk stops at the same depth, so content
+     * the sync never writes is never expected in the target. A skill whose own
+     * directory in the target is a link is never synced, so callers leave it
+     * out instead of asking.
      *
      * @param DirectoryIdentity|null $excludedDir the target when the donor contains it
      * @param int $depth levels below the skill root for `$donorDir`
@@ -73,7 +75,7 @@ final readonly class DriftDetector
             $donorPath = $donorDir . \DIRECTORY_SEPARATOR . $entry;
             $installedPath = $installedDir . \DIRECTORY_SEPARATOR . $entry;
 
-            if (LinkGuard::isLink($donorPath)) {
+            if (LinkGuard::isLink($donorPath) || LinkGuard::isLink($installedPath)) {
                 continue;
             }
 
