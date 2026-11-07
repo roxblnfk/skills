@@ -48,8 +48,9 @@ final readonly class DriftDetector
      * Walks exactly what {@see SyncEngine} copies: links in the donor and in
      * the target are skipped and the walk stops at the same depth, so content
      * the sync never writes is never expected in the target. A skill whose own
-     * directory in the target is a link is never synced, so callers leave it
-     * out instead of asking.
+     * directory in the target is a link elsewhere is never synced, so callers
+     * leave it out instead of asking; one linked to the skill's own source
+     * counts as in place and is compared like any other.
      *
      * @param DirectoryIdentity|null $excludedDir the target when the donor contains it
      * @param int $depth levels below the skill root for `$donorDir`
