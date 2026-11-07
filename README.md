@@ -777,11 +777,13 @@ A junction or symlink that escapes the package root is silently rejected.
   `pdf/scripts`, is left as it is: nothing is copied into it, and each one is reported as a
   `[skip]` line on every sync. A skill whose directory is such a link is not counted as synced,
   and `skills:show` lists it under `Skipped:` as `target-is-link` instead of comparing it with
-  the donor. `--dry-run` reports a linked skill directory; a link deeper inside a skill is
-  reported by the real run only, since a dry run does not walk the skills. When `--clean`
-  deletes a linked skill, it removes the link itself, never what it points at, and installs a
-  fresh copy in its place. A hard-linked file in the target is replaced with a new file, so its
-  other names keep their content.
+  the donor. The exception is a skill directory linked to that skill's own source: it already
+  holds what the donor ships, so it counts as in place, with no `[skip]` line. `--dry-run`
+  reports a linked skill directory; a link deeper inside a skill is reported by the real run
+  only, since a dry run does not walk the skills. When `--clean` deletes a linked skill, it
+  removes the link itself, never what it points at, and installs a fresh copy in its place. A
+  hard-linked file in the target is replaced with a new file, so its other names keep their
+  content.
 - **Transactional on conflicts.** If two donors declare a skill with the same directory name,
   sync aborts *before* touching the filesystem; nothing is written. Every offending package is
   listed in the output. A scoped run (`skills:update <package>`, `--from`, the sync after
