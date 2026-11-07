@@ -11,7 +11,6 @@ use LLM\Skills\Discovery\SkillNotice;
 use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
-use Testo\Core\Exception\SkipTest;
 use Testo\Data\DataSet;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
@@ -355,6 +354,14 @@ final class SkillEnumeratorTest
         ));
     }
 
+    public function theNonAsciiRefusalNamesBothRisks(): void
+    {
+        $reason = (string) SkillEnumerator::refusedDirectoryName('Über', foldsUnicode: false);
+
+        Assert::true(\str_contains($reason, 'mbstring or intl'), $reason);
+        Assert::true(\str_contains($reason, 'letter case or Unicode composition'), $reason);
+    }
+
     #[DataSet(['greeting'])]
     #[DataSet(['Refactor_Legacy'])]
     #[DataSet(['a.b'])]
@@ -363,13 +370,9 @@ final class SkillEnumeratorTest
         Assert::null(SkillEnumerator::refusedDirectoryName($name, foldsUnicode: false));
     }
 
-    public function nonAsciiNamesAreAcceptedWhenTheExtensionsAreLoaded(): void
+    public function nonAsciiNamesAreAcceptedExactlyWhenUnicodeIsFolded(): void
     {
-        if (!SkillConflict::foldsUnicode()) {
-            throw new SkipTest('mbstring or intl is not available');
-        }
-
-        Assert::null(SkillEnumerator::refusedDirectoryName('Über'));
+        Assert::same(SkillEnumerator::refusedDirectoryName('Über') === null, SkillConflict::foldsUnicode());
     }
 
     public function aDonorWhoseSkillsAreAllRefusedIsDropped(): void
