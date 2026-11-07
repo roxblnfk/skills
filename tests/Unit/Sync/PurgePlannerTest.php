@@ -8,16 +8,76 @@ use Internal\Path;
 use LLM\Skills\Discovery\InstalledSkill;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Sync\PurgePlanner;
+use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Test;
 
 /**
- * Tests the scoped / unscoped split in {@see PurgePlanner}. No filesystem is
- * involved: the planner is a pure set operation over names.
+ * Tests the scoped / unscoped split in {@see PurgePlanner}. Pairing by exact
+ * name needs no filesystem; pairing a differently cased name asks the file
+ * system, so those tests build a real target.
  */
 #[Test]
 final class PurgePlannerTest
 {
+    public function scopedRunPairsADifferentlyCasedNameOnlyWhenItIsTheSameDirectory(): void
+    {
+        $target = \sys_get_temp_dir() . '/llm-skills-purge-' . \bin2hex(\random_bytes(6));
+        \mkdir($target . '/Foo', 0o777, true);
+        try {
+            $installed = new InstalledSkill(name: 'Foo', dir: Path::create($target . '/Foo'));
+            $caseInsensitive = \is_dir($target . '/foo');
+
+            $purge = (new PurgePlanner())->plan([$installed], [$this->incoming('foo')], scoped: true);
+
+            // A case-insensitive target writes `foo` into `Foo`; a case-sensitive
+            // one keeps `Foo` as another skill's directory.
+            Assert::same($this->names($purge), $caseInsensitive ? ['Foo'] : []);
+        } finally {
+            Filesystem::removeRecursive($target);
+        }
+    }
+
+    public function sourceHoldersAreKeptOutOfThePurge(): void
+    {
+        $target = \sys_get_temp_dir() . '/llm-skills-purge-' . \bin2hex(\random_bytes(6));
+        \mkdir($target . '/hand-made', 0o777, true);
+        \mkdir($target . '/other', 0o777, true);
+        try {
+            $holder = new InstalledSkill(name: 'hand-made', dir: Path::create($target . '/hand-made'));
+            $other = new InstalledSkill(name: 'other', dir: Path::create($target . '/other'));
+            $source = new Skill(
+                name: 'hand-made',
+                canonicalName: 'hand-made',
+                sourceDir: Path::create($target . '/hand-made'),
+                packageName: 'project/hand-made',
+            );
+
+            [$deletable, $kept] = (new PurgePlanner())->partitionSourceHolders(
+                [$holder, $other],
+                [$source, $this->incoming('greeting')],
+                Path::create($target),
+            );
+
+            Assert::same($this->names($deletable), ['other']);
+            Assert::same($this->names($kept), ['hand-made']);
+        } finally {
+            Filesystem::removeRecursive($target);
+        }
+    }
+
+    public function sourcesOutsideTheTargetKeepNothing(): void
+    {
+        [$deletable, $kept] = (new PurgePlanner())->partitionSourceHolders(
+            [$this->installed('greeting')],
+            [$this->incoming('greeting')],
+            Path::create('/target'),
+        );
+
+        Assert::same($this->names($deletable), ['greeting']);
+        Assert::same($kept, []);
+    }
+
     public function unscopedRunPurgesEverythingInstalled(): void
     {
         $purge = (new PurgePlanner())->plan(

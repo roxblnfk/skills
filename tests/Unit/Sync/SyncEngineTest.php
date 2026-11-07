@@ -83,6 +83,100 @@ final class SyncEngineTest
         Assert::true(\is_file($this->targetPath('refactor/SKILL.md')));
     }
 
+    public function neverCopiesTheTargetIntoASkillWhoseSourceContainsIt(): void
+    {
+        $donorRoot = $this->tmp . '/project';
+        \mkdir($donorRoot . '/.agents/skills/other', 0o777, true);
+        \file_put_contents($donorRoot . '/SKILL.md', '# Root');
+        \file_put_contents($donorRoot . '/.agents/notes.md', 'notes');
+        \file_put_contents($donorRoot . '/.agents/skills/other/SKILL.md', '# Other');
+        $skill = new Skill(
+            name: 'root',
+            canonicalName: 'root',
+            sourceDir: Path::create($donorRoot),
+            packageName: 'acme/root',
+        );
+
+        $report = (new SyncEngine())->sync([$skill], Path::create($donorRoot . '/.agents/skills'));
+
+        Assert::true($report->isSuccess());
+        Assert::same($report->truncatedDirs, []);
+        Assert::true(\is_file($donorRoot . '/.agents/skills/root/SKILL.md'));
+        Assert::true(\is_file($donorRoot . '/.agents/skills/root/.agents/notes.md'));
+        Assert::false(\file_exists($donorRoot . '/.agents/skills/root/.agents/skills'));
+    }
+
+    public function neverCopiesTheTargetIntoItselfWhenTheSourceIsTheTarget(): void
+    {
+        $target = $this->tmp . '/target';
+        \mkdir($target . '/other', 0o777, true);
+        \file_put_contents($target . '/SKILL.md', '# Root');
+        $skill = new Skill(
+            name: 'root',
+            canonicalName: 'root',
+            sourceDir: Path::create($target),
+            packageName: 'acme/root',
+        );
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::true($report->isSuccess());
+        Assert::same($report->truncatedDirs, []);
+        Assert::same($report->copied, []);
+        Assert::same($report->targetAsSource, ['root']);
+        Assert::false(\file_exists($target . '/root/root'));
+        Assert::false(\file_exists($target . '/root/other'));
+    }
+
+    public function namesDifferingOnlyByCaseConflict(): void
+    {
+        $a = $this->makeSkill('acme/one', 'Helper', ['SKILL.md' => '# A']);
+        $b = $this->makeSkill('acme/two', 'helper', ['SKILL.md' => '# B']);
+
+        $report = (new SyncEngine())->sync([$a, $b], $this->target());
+
+        Assert::false($report->isSuccess());
+        Assert::count($report->conflicts, 1);
+        Assert::same($report->conflicts[0]->name, 'Helper');
+        Assert::same($report->conflicts[0]->packages, ['acme/one', 'acme/two']);
+        Assert::false(\is_dir($this->targetPath('helper')));
+    }
+
+    public function keepsASkillWhoseSourceIsItsOwnInstalledDirectory(): void
+    {
+        $installed = $this->installTarget('my-skill', ['SKILL.md' => '# Mine', 'notes/a.md' => 'notes']);
+        $skill = new Skill(
+            name: 'my-skill',
+            canonicalName: 'my-skill',
+            sourceDir: $installed->dir,
+            packageName: 'project/my-skill',
+        );
+
+        $report = (new SyncEngine())->sync([$skill], $this->target(), purge: [$installed]);
+
+        Assert::true($report->isSuccess());
+        Assert::same($report->removed, []);
+        Assert::same($report->keptSources, ['my-skill']);
+        Assert::same(\file_get_contents($this->targetPath('my-skill/SKILL.md')), '# Mine');
+        Assert::same(\file_get_contents($this->targetPath('my-skill/notes/a.md')), 'notes');
+    }
+
+    public function dryRunDoesNotPlanToPurgeASkillSource(): void
+    {
+        $installed = $this->installTarget('my-skill', ['SKILL.md' => '# Mine']);
+        $skill = new Skill(
+            name: 'renamed',
+            canonicalName: 'renamed',
+            sourceDir: Path::create((string) $installed->dir . '/'),
+            packageName: 'project/my-skill',
+        );
+
+        $report = (new SyncEngine())->sync([$skill], $this->target(), dryRun: true, purge: [$installed]);
+
+        Assert::same($report->removed, []);
+        Assert::same($report->keptSources, ['my-skill']);
+    }
+
     public function copiesNestedFilesRecursively(): void
     {
         $skill = $this->makeSkill('acme/pro', 'refactor', [

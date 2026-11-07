@@ -7,7 +7,9 @@ namespace LLM\Skills\Sync;
 use Internal\Path;
 use LLM\Skills\Discovery\InstalledSkill;
 use LLM\Skills\Discovery\Skill;
+use LLM\Skills\Filesystem\DirectoryIdentity;
 use LLM\Skills\Filesystem\LinkGuard;
+use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Filesystem\TreeRemover;
 
 /**
@@ -41,13 +43,14 @@ final readonly class SyncEngine
      * an undetected reparse-point cycle terminates deterministically rather
      * than recursing until the stack or the path length gives out.
      */
-    private const MAX_COPY_DEPTH = 32;
+    public const MAX_COPY_DEPTH = 32;
 
     /**
      * @psalm-mutation-free
      */
     public function __construct(
         private TreeRemover $remover = new TreeRemover(),
+        private PurgePlanner $purgePlanner = new PurgePlanner(),
     ) {}
 
     /**
@@ -58,13 +61,35 @@ final readonly class SyncEngine
      *        have been written and deleted.
      * @param list<InstalledSkill> $purge installed skills to delete before copying; `[]` leaves the
      *        target's existing content in place, which is the default non-destructive merge
+     * @param list<Skill> $bystanders skills of donors a scoped run leaves out, checked for conflicts only:
+     *        writing a namesake of one would overwrite what a full run installs there
      */
-    public function sync(array $skills, Path $target, bool $dryRun = false, array $purge = []): SyncReport
-    {
-        $conflicts = $this->detectConflicts($skills);
+    public function sync(
+        array $skills,
+        Path $target,
+        bool $dryRun = false,
+        array $purge = [],
+        array $bystanders = [],
+    ): SyncReport {
+        $conflicts = $this->detectConflicts([...$skills, ...$bystanders]);
         if ($conflicts !== []) {
             return new SyncReport(copied: [], conflicts: $conflicts);
         }
+
+        [$purge, $kept] = $this->purgePlanner->partitionSourceHolders($purge, $skills, $target);
+        $keptSources = \array_map(static fn(InstalledSkill $s): string => $s->name, $kept);
+
+        // A source that is the target itself has nowhere to be copied to.
+        $targetAsSource = [];
+        $copyable = [];
+        foreach ($skills as $skill) {
+            if (PathContainment::isSame($target, $skill->sourceDir)) {
+                $targetAsSource[] = $skill->name;
+            } else {
+                $copyable[] = $skill;
+            }
+        }
+        $skills = $copyable;
 
         $removed = [];
         $removalFailures = [];
@@ -79,10 +104,21 @@ final readonly class SyncEngine
                 }
             }
 
+            if ($skills !== []) {
+                // Created up front so the target resolves for the containment check.
+                $this->ensureDirectory((string) $target);
+            }
+            $targetIdentity = DirectoryIdentity::of($target);
             foreach ($skills as $skill) {
+                $destination = $target->join($skill->name);
+                if (PathContainment::isSame($destination, $skill->sourceDir)) {
+                    // Already in place; copying a file onto itself truncates it.
+                    continue;
+                }
                 $this->copyTree(
                     (string) $skill->sourceDir,
-                    (string) $target->join($skill->name),
+                    (string) $destination,
+                    PathContainment::isWithin($target, $skill->sourceDir) ? $targetIdentity : null,
                     0,
                     $skippedLinks,
                     $truncatedDirs,
@@ -99,10 +135,15 @@ final readonly class SyncEngine
             truncatedDirs: $truncatedDirs,
             removed: $removed,
             removalFailures: $removalFailures,
+            keptSources: $keptSources,
+            targetAsSource: $targetAsSource,
         );
     }
 
     /**
+     * Names are compared under {@see SkillConflict::collisionKey()}: two names
+     * one file system stores as the same directory would merge into it.
+     *
      * @param list<Skill> $skills
      *
      * @return list<SkillConflict>
@@ -111,16 +152,21 @@ final readonly class SyncEngine
      */
     private function detectConflicts(array $skills): array
     {
-        /** @var array<non-empty-string, list<non-empty-string>> $byName */
-        $byName = [];
+        /** @var array<string, list<non-empty-string>> $packagesByKey */
+        $packagesByKey = [];
+        /** @var array<string, non-empty-list<non-empty-string>> $namesByKey */
+        $namesByKey = [];
         foreach ($skills as $skill) {
-            $byName[$skill->name][] = $skill->packageName;
+            $key = SkillConflict::collisionKey($skill->name);
+            $packagesByKey[$key][] = $skill->packageName;
+            $namesByKey[$key][] = $skill->name;
         }
 
         $conflicts = [];
-        foreach ($byName as $name => $packages) {
+        foreach ($packagesByKey as $key => $packages) {
             if (\count($packages) > 1) {
-                $conflicts[] = new SkillConflict(name: $name, packages: $packages);
+                $names = $namesByKey[$key];
+                $conflicts[] = new SkillConflict(name: $names[0], packages: $packages, names: $names);
             }
         }
 
@@ -143,6 +189,14 @@ final readonly class SyncEngine
      * contents were left uncopied is appended to `$truncatedDirs` for the same
      * reason: a truncated copy the user cannot see is a debugging trap too.
      *
+     * The target directory is never copied: a donor that contains it, such as a
+     * root skill whose directory is the project, would otherwise copy the target
+     * into one of its own skills, and again on every level below. Matching the
+     * target itself is enough, since links are never followed and so nothing
+     * inside it is reachable any other way.
+     *
+     * @param DirectoryIdentity|null $excludedDir the target when the skill source
+     *        contains it, `null` when the source cannot reach it
      * @param int $depth levels below the skill root for `$src`; the recursion
      *        stops at {@see self::MAX_COPY_DEPTH} as a cycle backstop
      * @param list<string> $skippedLinks source paths of skipped links, accumulated across the tree
@@ -155,6 +209,7 @@ final readonly class SyncEngine
     private function copyTree(
         string $src,
         string $dst,
+        ?DirectoryIdentity $excludedDir,
         int $depth,
         array &$skippedLinks,
         array &$truncatedDirs,
@@ -184,7 +239,10 @@ final readonly class SyncEngine
             }
 
             if (\is_dir($s)) {
-                $this->copyTree($s, $d, $depth + 1, $skippedLinks, $truncatedDirs);
+                if ($excludedDir?->matches(Path::create($s)) === true) {
+                    continue;
+                }
+                $this->copyTree($s, $d, $excludedDir, $depth + 1, $skippedLinks, $truncatedDirs);
             } else {
                 \copy($s, $d);
             }
