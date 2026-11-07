@@ -272,7 +272,8 @@ final readonly class ReportFormatter
             SkipReason::SkillRefused,
             SkipReason::TargetIsSource => '<bg=yellow;fg=black;options=bold>',
             // User self-excluded — muted neutral.
-            SkipReason::FilteredOut => '<bg=white;fg=black>',
+            SkipReason::FilteredOut,
+            SkipReason::TargetIsLink => '<bg=white;fg=black>',
             // Auto-discovery candidate the user has not opted in to — cyan
             // to differentiate from anything action-required.
             SkipReason::NotDeclared => '<bg=cyan;fg=black>',

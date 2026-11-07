@@ -58,4 +58,11 @@ enum SkipReason: string
      * sync has nowhere to copy it, so it is never installed.
      */
     case TargetIsSource = 'target-is-source';
+
+    /**
+     * A skill whose directory in the target is a symlink or junction, such as
+     * `.agents/skills/pdf` pointing at a local checkout. The sync never writes
+     * through a link, so the skill is left as it is, whatever it holds.
+     */
+    case TargetIsLink = 'target-is-link';
 }

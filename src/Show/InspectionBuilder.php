@@ -17,6 +17,7 @@ use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
+use LLM\Skills\Filesystem\LinkGuard;
 use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Sync\SkillConflict;
 use LLM\Skills\Sync\SyncEngine;
@@ -118,17 +119,30 @@ final readonly class InspectionBuilder
         $installed = $this->installedScanner->scan($plan->target) ?? [];
         $installedByKey = $this->indexInstalledByKey($installed);
 
-        // A skill whose source is the target is skipped by the sync, so it is
-        // listed as skipped rather than as a skill waiting to be written.
-        $targetSources = [];
+        // A skill the sync leaves out, because its source is the target or its
+        // directory in the target is a link it never writes through, is listed
+        // as skipped rather than as a skill waiting to be written or drifted.
+        $leftOut = [];
         $listedSkills = [];
         foreach ($approvedSkills as $skill) {
+            $destination = $plan->target->join($skill->name);
             if (PathContainment::isSame($plan->target, $skill->sourceDir)) {
-                $targetSources[] = new SkippedDonor(
+                $leftOut[] = new SkippedDonor(
                     packageName: $skill->packageName,
                     reason: SkipReason::TargetIsSource,
                     detail: \sprintf(
                         'skill "%s": its source is the target directory itself, so there is nowhere to copy it',
+                        $skill->name,
+                    ),
+                );
+            } elseif (!PathContainment::isSame($destination, $skill->sourceDir)
+                && LinkGuard::isLink((string) $destination)
+            ) {
+                $leftOut[] = new SkippedDonor(
+                    packageName: $skill->packageName,
+                    reason: SkipReason::TargetIsLink,
+                    detail: \sprintf(
+                        'skill "%s": its directory in the target is a symlink/junction, which the sync never writes through',
                         $skill->name,
                     ),
                 );
@@ -154,7 +168,7 @@ final readonly class InspectionBuilder
             $plan,
             $resolution->excluded,
         );
-        \array_push($skipped, ...$targetSources);
+        \array_push($skipped, ...$leftOut);
 
         return new InspectionReport(
             target: $plan->target,
