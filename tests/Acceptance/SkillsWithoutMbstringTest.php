@@ -9,7 +9,6 @@ use LLM\Skills\Tests\Testo\Filesystem;
 use LLM\Skills\Tests\Testo\PhpWithoutMbstring;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
-use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -48,7 +47,7 @@ final class SkillsWithoutMbstringTest
 
     public function syncInstallsAsciiSkillsAndSkipsTheRest(): void
     {
-        $php = PhpWithoutMbstring::command() ?? throw new SkipTest('mbstring or intl is compiled into PHP');
+        $php = PhpWithoutMbstring::commandOrSkip();
         $process = new Process(
             [...$php, BinSkillsRunner::BIN_PATH, 'update', '--no-interaction', '--no-ansi'],
             cwd: $this->tmp,

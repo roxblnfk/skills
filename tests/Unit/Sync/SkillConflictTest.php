@@ -79,7 +79,7 @@ final class SkillConflictTest
      */
     public function onlyAsciiCaseIsFoldedWhenMbstringIsReplacedByItsPolyfill(): void
     {
-        $php = PhpWithoutMbstring::command() ?? throw new SkipTest('mbstring or intl is compiled into PHP');
+        $php = PhpWithoutMbstring::commandOrSkip();
         $probe = new Process([...$php, '-r', \sprintf(
             <<<'PHP'
                 require %s;

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Testo;
 
 use Symfony\Component\Process\Process;
+use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 
 /**
  * Starts the running PHP binary as a server without the mbstring and intl
@@ -18,10 +20,32 @@ final class PhpWithoutMbstring
     private static array|false|null $command = false;
 
     /**
-     * @return list<string>|null the command prefix, or `null` when mbstring or intl is
-     *         compiled into this PHP and cannot be left out
+     * The command prefix, or a skip when this PHP cannot run without the
+     * extensions. A skip in CI would hide that the polyfill path went untested,
+     * so with the `CI` environment variable set the test fails instead.
+     *
+     * @return list<string>
      */
-    public static function command(): ?array
+    public static function commandOrSkip(): array
+    {
+        $command = self::command();
+        if ($command !== null) {
+            return $command;
+        }
+
+        $reason = 'mbstring or intl is compiled into PHP, or openssl cannot be loaded without php.ini';
+        if (\in_array(\getenv('CI'), [false, '', '0', 'false'], true)) {
+            throw new SkipTest($reason);
+        }
+
+        Assert::fail($reason . '; CI must run this test on a PHP that loads them as shared extensions');
+    }
+
+    /**
+     * @return list<string>|null the command prefix, or `null` when mbstring or intl is
+     *         compiled into this PHP and cannot be left out, or openssl cannot be loaded back
+     */
+    private static function command(): ?array
     {
         if (self::$command !== false) {
             return self::$command;
