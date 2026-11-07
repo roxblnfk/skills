@@ -727,6 +727,31 @@ final class SkillsRootSkillTest
         );
     }
 
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './.agents/skills'],
+        ],
+        'trusted' => ['acme/skills-basic'],
+    ])]
+    public function showFlagsAConflictOnARootSkillWhoseSourceIsTheTarget(): void
+    {
+        \mkdir(self::TARGET_DIR, 0o777, true);
+        \file_put_contents(self::TARGET_DIR . '/SKILL.md', "---\nname: greeting\n---\nbody\n");
+
+        $update = ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:update', timeout: 60, mustSucceed: false);
+        $show = ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:show', timeout: 60, mustSucceed: false);
+        $out = $show->getOutput();
+
+        Assert::notSame($update->getExitCode(), 0, 'the conflict aborts the sync. ' . $this->diagnostics($update));
+        Assert::same($show->getExitCode(), 0, $this->diagnostics($show));
+        Assert::true(
+            \preg_match('/ !! +greeting +with acme\/skills-basic/', $out) === 1,
+            'show must flag the root skill whose conflict aborts the sync. ' . $this->diagnostics($show),
+        );
+        Assert::false(\str_contains($out, 'target-is-source'), $this->diagnostics($show));
+    }
+
     private static function clean(): void
     {
         Filesystem::removeRecursive(self::AGENTS_DIR);
