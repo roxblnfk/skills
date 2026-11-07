@@ -6,7 +6,7 @@ namespace LLM\Skills\Tests\Acceptance;
 
 use LLM\Skills\Tests\Testo\Composer\BinSkillsRunner;
 use LLM\Skills\Tests\Testo\Filesystem;
-use LLM\Skills\Tests\Testo\PhpWithoutMbstring;
+use LLM\Skills\Tests\Testo\PhpWithoutUnicodeExtensions;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
 use Testo\Lifecycle\AfterTest;
@@ -47,7 +47,7 @@ final class SkillsWithoutMbstringTest
 
     public function syncInstallsAsciiSkillsAndSkipsTheRest(): void
     {
-        $php = PhpWithoutMbstring::commandOrSkip();
+        $php = PhpWithoutUnicodeExtensions::commandOrSkip();
         $process = new Process(
             [...$php, BinSkillsRunner::BIN_PATH, 'update', '--no-interaction', '--no-ansi'],
             cwd: $this->tmp,

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Sync;
 
 use LLM\Skills\Sync\SkillConflict;
-use LLM\Skills\Tests\Testo\PhpWithoutMbstring;
+use LLM\Skills\Tests\Testo\PhpWithoutUnicodeExtensions;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
 use Testo\Core\Exception\SkipTest;
@@ -79,7 +79,7 @@ final class SkillConflictTest
      */
     public function onlyAsciiCaseIsFoldedWhenMbstringIsReplacedByItsPolyfill(): void
     {
-        $php = PhpWithoutMbstring::commandOrSkip();
+        $php = PhpWithoutUnicodeExtensions::commandOrSkip();
         $probe = new Process([...$php, '-r', \sprintf(
             <<<'PHP'
                 require %s;

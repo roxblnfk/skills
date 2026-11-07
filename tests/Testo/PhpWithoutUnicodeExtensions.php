@@ -9,12 +9,12 @@ use Testo\Assert;
 use Testo\Core\Exception\SkipTest;
 
 /**
- * Starts the running PHP binary as a server without the mbstring and intl
- * extensions would run it: `-n` skips php.ini and every extension it loads.
- * openssl is loaded back when `-n` drops it, since Composer's HTTP client
- * refuses to start without it.
+ * Builds the command prefix that runs the current PHP binary the way a server
+ * without the mbstring and intl extensions would: `-n` skips php.ini and every
+ * extension it loads. openssl is loaded back when `-n` drops it, since
+ * Composer's HTTP client refuses to start without it.
  */
-final class PhpWithoutMbstring
+final class PhpWithoutUnicodeExtensions
 {
     /** @var list<string>|false|null `false` until probed */
     private static array|false|null $command = false;
