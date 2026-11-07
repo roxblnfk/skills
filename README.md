@@ -772,6 +772,12 @@ A junction or symlink that escapes the package root is silently rejected.
   are left alone (your local notes survive). Files the donor *does* ship are overwritten — the
   donor is the source of truth.
 - **Idempotent.** Running `skills:update` twice produces the same state with no errors.
+- **Never writes through a link in the target.** A symlink or junction inside the target, such
+  as `.agents/skills/pdf` pointing at a local checkout of your own skill, or a linked
+  `pdf/scripts`, is left as it is: nothing is copied into it, and each one is reported as a
+  `[skip]` line. A skill whose directory is such a link is not counted as synced. When `--clean`
+  deletes such a skill, it removes the link itself, never what it points at, and installs a
+  fresh copy in its place.
 - **Transactional on conflicts.** If two donors declare a skill with the same directory name,
   sync aborts *before* touching the filesystem; nothing is written. Every offending package is
   listed in the output. A scoped run (`skills:update <package>`, `--from`, the sync after
