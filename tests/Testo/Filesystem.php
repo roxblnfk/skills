@@ -55,6 +55,20 @@ final class Filesystem
     }
 
     /**
+     * Make the existing, empty directory `$dir` case-sensitive where the platform
+     * folds case by default: on Windows via `fsutil`, which NTFS honours per
+     * directory. A no-op elsewhere and on failure; callers check the outcome.
+     */
+    public static function makeCaseSensitive(string $dir): void
+    {
+        if (\DIRECTORY_SEPARATOR !== '\\' || !\function_exists('exec')) {
+            return;
+        }
+
+        @\exec(\sprintf('fsutil.exe file setCaseSensitiveInfo "%s" enable 2>NUL', \str_replace('/', '\\', $dir)));
+    }
+
+    /**
      * Create a directory link at `$link` pointing at `$target`, honestly — a
      * native symlink where the platform allows it, otherwise an NTFS junction
      * (`mklink /J`, which needs no elevation and is exactly the reparse point
