@@ -267,8 +267,10 @@ final readonly class ReportFormatter
             SkipReason::Malformed,
             SkipReason::SourceMissing,
             SkipReason::SourceFailed => '<bg=red;fg=white;options=bold>',
-            // Trust decision required — yellow warning.
-            SkipReason::Untrusted => '<bg=yellow;fg=black;options=bold>',
+            // Trust decision required, or a skill the donor must rename — yellow warning.
+            SkipReason::Untrusted,
+            SkipReason::SkillRefused,
+            SkipReason::TargetIsSource => '<bg=yellow;fg=black;options=bold>',
             // User self-excluded — muted neutral.
             SkipReason::FilteredOut => '<bg=white;fg=black>',
             // Auto-discovery candidate the user has not opted in to — cyan

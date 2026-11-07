@@ -14,9 +14,10 @@ use LLM\Skills\Discovery\Skill;
  *
  * - {@see $status} answers "would the next `skills:update` change this
  *   skill's bytes on disk?"
- * - {@see $conflictWith} is non-null when **another trusted donor**
- *   declares a skill with the same directory name. The conflict aborts
- *   sync, so the formatter shows it inline next to both contenders.
+ * - {@see $conflictWith} is non-null when another trusted donor, or this
+ *   donor a second time, declares a skill with the same directory name,
+ *   compared case-insensitively. The conflict aborts sync,
+ *   so the formatter shows it inline next to both contenders.
  *
  * @psalm-immutable
  */
@@ -25,8 +26,8 @@ final readonly class SkillInspection
     /**
      * @param Skill $skill donor-side skill candidate
      * @param SyncStatus $status what `update` would do to this skill
-     * @param non-empty-string|null $conflictWith Composer name of the other contender,
-     *        or `null` if there is no conflict
+     * @param non-empty-string|null $conflictWith Composer name of the other contender (this
+     *        donor's own name when both spellings come from it), or `null` if there is no conflict
      * @param string|null $description short one-line description extracted from the donor-side `SKILL.md`
      *        frontmatter (`description:` key). `null` when the file has no frontmatter or no `description` key.
      *
