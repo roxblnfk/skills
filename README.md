@@ -635,7 +635,7 @@ composer skills:add D:\team\skills --from=dir
 ```
 
 - **Path resolution.** A relative `path` resolves from the project root (the same anchor `target` uses); absolute paths (including Windows drive letters) are honoured as-is. `..` segments and locations outside the project root are allowed — a `sources[]` entry is an explicit act of trust. The stored `path` is kept as typed (normalised to forward slashes).
-- **A directory that contains the target.** The skills in the target are installed copies, so they never count as skills of a donor whose directory holds the target, such as the project itself (`{"from": "dir", "path": "."}`). `skills:add` refuses such a directory when those copies are all it has. A donor that is the target, or lies inside it, keeps its skills there: they are sources, and the sync leaves them in place.
+- **A directory that contains the target.** The skills in the target are installed copies, so they never count as skills of a donor whose directory holds the target, such as the project itself (`{"from": "dir", "path": "."}`). Discovery looks past them: a conventional container that holds nothing but the target's copies counts as empty, so the donor's own skills are still found wherever they sit, `my-skills/foo/` included. A skill kept only in the target, hand-written or not, is therefore no skill of that donor: an allowlist naming it reports it as not found, and an unscoped `--clean` deletes it. `skills:add` refuses the directory when the copies in the target are all the skills it has. A donor that is the target, or lies inside it, keeps its skills there: they are sources, and the sync leaves them in place.
 - **Package name.** The donor's name is the entry's `package` override if present, else the directory's own `composer.json` `name`, else it is derived from the resolved path as `<parent>/<basename>` lowercased (e.g. `.../testo/skills` → `testo/skills`).
 - **Implicit trust.** Like every `sources[]` entry, a `dir` donor is trusted by declaration — you typed the path, so its skills sync without a `trusted` listing.
 - `url`, `host`, and `ref` are not applicable and are rejected (there is no host and no version concept); the per-entry `skills` allowlist behaves exactly as for other adapters. A `path` that does not exist at sync time degrades to a `-v` warning and is skipped, but an explicit `skills:add` of a missing directory is refused up front (a missing directory at add time is a typo).
@@ -797,7 +797,10 @@ donor's skills with it.
 > **Unscoped `--clean` deletes skills you wrote by hand** if they live in the target directory.
 > Nothing on disk distinguishes them from a synced copy. In an interactive terminal the command
 > lists what it is about to remove and asks first; under `--no-interaction` (CI, `post-update-cmd`)
-> it proceeds without asking.
+> it proceeds without asking. This holds even when the directory holding the target is itself
+> registered as a donor, such as the project with `{"from": "dir", "path": "."}`: whatever sits in
+> the target counts as an installed copy, never as that donor's skill, so keep hand-written
+> skills outside the target, for example in `skills/` or `my-skills/`.
 
 Three things `--clean` refuses or leaves alone:
 
