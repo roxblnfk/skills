@@ -361,6 +361,23 @@ final class SkillsJsonWriterTest
         Assert::same($sources[0]['ref'] ?? null, 'v2.0.0');
     }
 
+    public function allowlistAfterUpsertMatchesWhatTheUpsertWrites(): void
+    {
+        $writer = new SkillsJsonWriter();
+        $root = Path::create($this->tmp);
+
+        Assert::same($writer->allowlistAfterUpsert($root, self::entry('acme/skills', skills: ['alpha'])), ['alpha']);
+
+        $writer->upsertSource($root, self::entry('acme/skills', skills: ['alpha']));
+
+        Assert::same($writer->allowlistAfterUpsert($root, self::entry('acme/skills')), ['alpha']);
+        Assert::same(
+            $writer->allowlistAfterUpsert($root, self::entry('acme/skills', skills: ['beta'])),
+            ['alpha', 'beta'],
+        );
+        Assert::null($writer->allowlistAfterUpsert($root, self::entry('acme/other')));
+    }
+
     public function skillsFieldIsEmittedAfterRefInTheCanonicalKeyOrder(): void
     {
         (new SkillsJsonWriter())->upsertSource(

@@ -7,7 +7,10 @@ namespace LLM\Skills\Add;
 use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Config\AddOptions;
+use LLM\Skills\Config\Exception\MalformedVendorConfig;
+use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\SourceEntry;
+use LLM\Skills\Config\VendorConfig;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapter;
 use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
@@ -15,11 +18,13 @@ use LLM\Skills\Discovery\Provider\Source\Adapter\ParsedAddInput;
 use LLM\Skills\Discovery\Provider\Source\Adapter\RemoteResolveException;
 use LLM\Skills\Discovery\Provider\Source\Adapter\UnknownAdapterException;
 use LLM\Skills\Discovery\Provider\Source\DirDonorRef;
+use LLM\Skills\Discovery\Provider\Source\DonorArchiveInspection;
 use LLM\Skills\Discovery\Provider\Source\DonorArchiveInspector;
 use LLM\Skills\Discovery\Provider\Source\DonorArchiveRejection;
 use LLM\Skills\Discovery\Provider\Source\RefResolver;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
+use LLM\Skills\Discovery\SkillEnumerator;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -71,6 +76,8 @@ final readonly class AddRunner
         private SkillsJsonWriter $writer = new SkillsJsonWriter(),
         private RefResolver $refResolver = new RefResolver(),
         private DonorArchiveInspector $inspector = new DonorArchiveInspector(),
+        private SkillEnumerator $enumerator = new SkillEnumerator(),
+        private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
     ) {}
 
     /**
@@ -139,19 +146,9 @@ final readonly class AddRunner
             return Command::FAILURE;
         }
 
-        $donorPackageName = $this->inspectArchive(
-            $extractedRoot,
-            $io,
-            $adapter->id(),
-            $parsed,
-        );
-        if ($donorPackageName === null) {
-            return Command::FAILURE;
-        }
-
-        // Step 6: upsert into skills.json. The `--skill` allowlist (if
-        // any) is forwarded verbatim; the writer's upsert logic merges
-        // it with whatever names already lived in a matching entry.
+        // The `--skill` allowlist (if any) is forwarded verbatim; the writer's
+        // upsert logic merges it with whatever names already lived in a
+        // matching entry.
         $entry = new SourceEntry(
             from: $parsed->from,
             package: $parsed->package,
@@ -161,6 +158,18 @@ final readonly class AddRunner
             skills: $options->skills,
         );
 
+        $donorPackageName = $this->inspectArchive(
+            $extractedRoot,
+            $io,
+            $adapter->id(),
+            $parsed,
+            $this->writer->allowlistAfterUpsert($projectRoot, $entry),
+        );
+        if ($donorPackageName === null) {
+            return Command::FAILURE;
+        }
+
+        // Step 6: upsert into skills.json.
         try {
             $this->writer->upsertSource($projectRoot, $entry);
         } catch (\Throwable $e) {
@@ -319,9 +328,6 @@ final readonly class AddRunner
             return Command::FAILURE;
         }
 
-        /** @var non-empty-string $donorPackageName the inspector always names an accepted donor */
-        $donorPackageName = $inspection->packageName;
-
         $entry = new SourceEntry(
             from: ProviderId::DIR,
             package: null,
@@ -331,6 +337,19 @@ final readonly class AddRunner
             skills: $options->skills,
             path: $spelling,
         );
+
+        $unnamed = $this->installsNothing(
+            $inspection,
+            $resolved,
+            $this->writer->allowlistAfterUpsert($projectRoot, $entry),
+        );
+        if ($unnamed !== null) {
+            $io->writeError(\sprintf('<error>[llm/skills] dir %s: %s</error>', $spelling, $unnamed));
+            return Command::FAILURE;
+        }
+
+        /** @var non-empty-string $donorPackageName the inspector always names an accepted donor */
+        $donorPackageName = $inspection->packageName;
 
         try {
             $this->writer->upsertSource($projectRoot, $entry);
@@ -463,6 +482,8 @@ final readonly class AddRunner
      * package name; `skills:add` only needs the name, so it treats them
      * alike. A rejection is reported to the console and yields `null`.
      *
+     * @param list<non-empty-string>|null $skillFilter the allowlist the entry is written with
+     *
      * @return non-empty-string|null donor package name, or `null` if the archive cannot be used
      */
     private function inspectArchive(
@@ -470,6 +491,7 @@ final readonly class AddRunner
         IOInterface $io,
         string $adapterId,
         ParsedAddInput $parsed,
+        ?array $skillFilter,
     ): ?string {
         $inspection = $this->inspector->inspect($extractedRoot, $parsed->package);
 
@@ -481,7 +503,70 @@ final readonly class AddRunner
             return null;
         }
 
+        $unnamed = $this->installsNothing($inspection, $extractedRoot, $skillFilter);
+        if ($unnamed !== null) {
+            $io->writeError('<error>[llm/skills] ' . $unnamed . '</error>');
+            return null;
+        }
+
         return $inspection->packageName;
+    }
+
+    /**
+     * Why the sync would install nothing from an accepted donor, or `null` when
+     * it installs something. The sync skips a rejected `extra.skills` block,
+     * refuses unsafe directory names and a root skill with no usable name, and
+     * keeps only the skills on the entry's allowlist; when that leaves nothing,
+     * registering the donor would write an entry that never copies anything.
+     *
+     * @param list<non-empty-string>|null $skillFilter the allowlist the entry is written with
+     */
+    private function installsNothing(DonorArchiveInspection $inspection, Path $root, ?array $skillFilter): ?string
+    {
+        $packageName = $inspection->packageName;
+        if ($packageName === null) {
+            return null;
+        }
+
+        if ($inspection->isComposerShaped) {
+            try {
+                $donors = $this->vendorMapper->fromExtra($packageName, $root, $inspection->extra);
+            } catch (MalformedVendorConfig $e) {
+                return $e->getMessage();
+            }
+        } else {
+            $source = $inspection->source;
+            if ($source === null) {
+                return null;
+            }
+            $donors = [new VendorConfig(
+                packageName: $packageName,
+                packageRoot: $root,
+                source: $source,
+                discoveredSkillDirs: $inspection->discoveredSkillDirs,
+                rootSkill: $inspection->isRootSkill,
+            )];
+        }
+
+        // An empty allowlist keeps a donor on file with nothing pulled, by intent.
+        if ($skillFilter === []) {
+            return null;
+        }
+
+        $result = $this->enumerator->enumerate(\array_map(
+            static fn(VendorConfig $donor): VendorConfig => $donor->withSkillFilter($skillFilter),
+            $donors,
+        ));
+
+        if ($result->skills !== []) {
+            return null;
+        }
+
+        if (isset($result->skipped[0])) {
+            return $result->skipped[0]->describe();
+        }
+
+        return $result->warnings[0] ?? $packageName . ': nothing to install';
     }
 
     /**

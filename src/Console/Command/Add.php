@@ -80,6 +80,7 @@ final class Add extends Command
         );
 
         $runner = new AddRunner($registry, $fetcher);
+        $skillsJsonBefore = PostAddSync::snapshot($projectRoot);
         $donorPackageName = null;
         $exit = $runner->run(
             $projectRoot,
@@ -98,7 +99,7 @@ final class Add extends Command
         // `extra` from — PostAddSync falls through with `null`, which the
         // mapper treats the same as an empty `extra.skills` block. Only
         // the just-registered donor source will sync.
-        return PostAddSync::run($projectRoot, $composer, $io, $donorPackageName);
+        return PostAddSync::run($projectRoot, $composer, $io, $donorPackageName, $skillsJsonBefore);
     }
 
     /**
