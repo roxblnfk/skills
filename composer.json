@@ -36,25 +36,17 @@
         "internal/path": "^1.4"
     },
     "require-dev": {
+        "bamarni/composer-bin-plugin": "^1.8",
         "buggregator/trap": "^1.16",
         "composer/composer": "^2.10.3",
-        "infection/infection": "dev-testo-bridge-82 as 0.32.6",
         "roxblnfk/unpoly": "^1.8",
-        "spiral/code-style": "^2.3",
         "testo/bridge-infection": "0.1 - 1",
-        "testo/testo": "0.10 - 1",
-        "vimeo/psalm": "^7"
+        "testo/testo": "0.10 - 1"
     },
     "suggest": {
         "ext-intl": "Detects skill names that differ only in Unicode composition; without it or its Symfony polyfill non-ASCII skill names are skipped",
         "ext-mbstring": "Detects skill names that differ only in non-ASCII letter case; without it non-ASCII skill names are skipped"
     },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/roxblnfk/infection"
-        }
-    ],
     "minimum-stability": "dev",
     "prefer-stable": true,
     "autoload": {
@@ -68,20 +60,25 @@
         }
     },
     "extra": {
-        "class": "LLM\\Skills\\Composer\\SkillsPlugin"
+        "class": "LLM\\Skills\\Composer\\SkillsPlugin",
+        "bamarni-bin": {
+            "bin-links": true,
+            "forward-command": false,
+            "target-directory": "tools"
+        }
     },
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "infection/extension-installer": true
+            "bamarni/composer-bin-plugin": true
         }
     },
     "scripts": {
-        "cs:diff": "php-cs-fixer fix --dry-run -v --diff",
-        "cs:fix": "php-cs-fixer fix -v",
-        "psalm": "psalm",
-        "psalm:baseline": "psalm --set-baseline=psalm-baseline.xml",
-        "psalm:ci": "psalm --output-format=github --shepherd --show-info=false --stats --threads=4",
+        "cs:diff": "php-cs-fixer fix --dry-run -v --diff --config=tools/code-style/.php-cs-fixer.dist.php",
+        "cs:fix": "php-cs-fixer fix -v --config=tools/code-style/.php-cs-fixer.dist.php",
+        "psalm": "psalm -c tools/psalm/psalm.xml",
+        "psalm:baseline": "psalm -c tools/psalm/psalm.xml --set-baseline=tools/psalm/psalm-baseline.xml",
+        "psalm:ci": "psalm -c tools/psalm/psalm.xml --output-format=github --shepherd --show-info=false --stats --threads=4",
         "test": [
             "@putenv XDEBUG_MODE=coverage",
             "testo"
@@ -93,12 +90,12 @@
         ],
         "infect": [
             "@putenv XDEBUG_MODE=coverage",
-            "infection --configuration=infection.json  --threads=max"
+            "infection --threads=max"
         ],
         "infect:ci": [
             "@putenv TESTO_CI=1",
             "@putenv XDEBUG_MODE=coverage",
-            "infection --ansi --configuration=infection.json --logger-github  --threads=max --show-mutations=0"
+            "infection --ansi --logger-github --threads=max --show-mutations=0"
         ]
     }
 }

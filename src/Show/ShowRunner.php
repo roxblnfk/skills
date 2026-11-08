@@ -159,7 +159,7 @@ final readonly class ShowRunner
         $skills = \is_array($extra['skills'] ?? null) ? $extra['skills'] : [];
 
         $present = [];
-        foreach (\LLM\Skills\Config\Mapper\ProjectConfigMapper::PROJECT_KEYS as $key) {
+        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
             if (\array_key_exists($key, $skills)) {
                 $present[] = $key;
             }

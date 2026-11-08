@@ -41,6 +41,7 @@ final readonly class SkillConflict
      * @psalm-pure
      *
      * @psalm-suppress ImpureFunctionCall extension availability does not change within a run
+     * @psalm-suppress ImpureMethodCall Normalizer::normalize() depends only on its arguments
      */
     public static function collisionKey(string $name): string
     {

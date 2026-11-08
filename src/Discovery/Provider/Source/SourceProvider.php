@@ -157,7 +157,7 @@ final readonly class SourceProvider implements DonorProvider
      * the consumer project, so the `directDependencies` channel
      * (rooted in Composer's `require` / `require-dev` semantics)
      * does not apply. Implicit-trust for `sources[]` entries flows
-     * through {@see \LLM\Skills\Config\VendorConfig::$implicitTrust}
+     * through {@see VendorConfig::$implicitTrust}
      * instead — set in {@see self::discover()} on every donor this
      * provider emits — which the planner checks before consulting
      * the trust list.

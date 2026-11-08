@@ -8,14 +8,15 @@ installs them into the consumer project (default `.agents/skills/`, configurable
 - Root namespace: `LLM\Skills\` (PSR-4 → `src/`)
 - Test namespace: `LLM\Skills\Tests\` (PSR-4 → `tests/`)
 - Test framework: **testo** (not PHPUnit) — config in `testo.php`
-- Mutation testing: **infection** with the `testo` test framework — config in `infection.json`
-- Static analysis: **psalm** — config in `psalm.xml`
-- Code style: **php-cs-fixer** with the `spiral/code-style` ruleset
+- Mutation testing: **infection** with the `testo` test framework — config in `infection.json5`, installed in `tools/infection/`
+- Static analysis: **psalm** — config in `tools/psalm/psalm.xml`
+- Code style: **php-cs-fixer** with the `spiral/code-style` ruleset — config in `tools/code-style/.php-cs-fixer.dist.php`
 
 ## Common Tasks (composer scripts)
 
 | Task                | Command                       |
 |---------------------|-------------------------------|
+| Install QA tools    | `composer bin all install`    |
 | Run tests           | `composer test`               |
 | Static analysis     | `composer psalm`              |
 | Code style — diff   | `composer cs:diff`            |

@@ -5,16 +5,19 @@ on:  # yamllint disable-line rule:truthy
     paths:
       - 'src/**'
       - 'bin/skills'
-      - 'psalm*'
+      - 'tools/psalm/**'
       - 'composer.*'
   push:
     paths:
       - 'src/**'
       - 'bin/skills'
-      - 'psalm*'
+      - 'tools/psalm/**'
       - 'composer.*'
 
 name: 🔍 Static analysis
+
+permissions:
+  contents: read
 
 jobs:
   psalm:
@@ -35,6 +38,8 @@ jobs:
     steps:
       - name: 📦 Check out the codebase
         uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: 🛠️ Setup PHP
         uses: shivammathur/setup-php@v2
@@ -49,6 +54,9 @@ jobs:
         uses: ramsey/composer-install@v3
         with:
           dependency-versions: ${{ matrix.dependencies }}
+
+      - name: 📥 Install vimeo/psalm
+        run: composer bin psalm install --no-interaction --no-progress
 
       - name: 🔍 Run static analysis using vimeo/psalm
         run: composer psalm:ci

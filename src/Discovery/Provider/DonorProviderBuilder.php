@@ -15,8 +15,8 @@ use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Source\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Source\Http\ComposerHttpClient;
 use LLM\Skills\Discovery\Provider\Source\HttpArchiveFetcher;
-use LLM\Skills\Discovery\Provider\Source\SourceProvider;
 use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
+use LLM\Skills\Discovery\Provider\Source\SourceProvider;
 use LLM\Skills\Discovery\Provider\Source\VendorDeclaredRefSource;
 
 /**

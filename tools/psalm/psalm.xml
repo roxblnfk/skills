@@ -1,11 +1,17 @@
 <?xml version="1.0"?>
+<!--
+    Lives next to the isolated Psalm install in tools/psalm/. resolveFromConfigFile is off, so paths
+    below resolve against the project root (where `composer psalm` runs) and Psalm loads the
+    project's own vendor/autoload.php from there.
+-->
 <psalm xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns="https://getpsalm.org/schema/config"
        xsi:schemaLocation="https://getpsalm.org/schema/config vendor/vimeo/psalm/config.xsd"
        errorLevel="1"
+       resolveFromConfigFile="false"
        findUnusedBaselineEntry="false"
        findUnusedCode="false"
-       errorBaseline="psalm-baseline.xml"
+       errorBaseline="tools/psalm/psalm-baseline.xml"
 >
     <issueHandlers>
         <RedundantConditionGivenDocblockType errorLevel="suppress"/>

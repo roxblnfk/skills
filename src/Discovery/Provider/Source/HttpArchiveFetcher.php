@@ -67,6 +67,8 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
      *         pass an explicit unpacker to pin the strategy.
      *
      * @psalm-mutation-free
+     *
+     * @psalm-suppress ImpureMethodCall the default factory only stores environment probes; nothing runs until detect()
      */
     public function __construct(
         private HttpClient $http,
