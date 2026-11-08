@@ -14,3 +14,7 @@
 !/CHANGELOG.md
 !/CLAUDE.md
 !/LICENSE.md
+
+# Tools installed via bamarni/composer-bin-plugin.
+/tools/*/vendor/
+/tools/*/composer.lock

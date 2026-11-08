@@ -8,10 +8,10 @@ use Internal\Path;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
-use LLM\Skills\Discovery\SourceFailure;
 use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Source\Adapter\RemoteResolveException;
 use LLM\Skills\Discovery\Provider\Source\Adapter\UnknownAdapterException;
+use LLM\Skills\Discovery\SourceFailure;
 
 /**
  * {@see DonorRefSource} backed by the project's `skills.json`
@@ -22,9 +22,9 @@ use LLM\Skills\Discovery\Provider\Source\Adapter\UnknownAdapterException;
  * 1. Resolve project config (best-effort — malformed config produces
  *    an empty stream; the {@see \LLM\Skills\Sync\SyncRunner} surfaces
  *    the real error on its own config read).
- * 2. For each {@see \LLM\Skills\Config\SourceEntry}, look up the
+ * 2. For each {@see SourceEntry}, look up the
  *    adapter via {@see HostAdapterRegistry}.
- * 3. Ask the adapter to {@see \LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapter::resolve()}
+ * 3. Ask the adapter to {@see Adapter\HostAdapter::resolve()}
  *    the entry into a fetchable {@see RemoteDonorRef} — concrete
  *    archive URL plus concrete tag / branch / SHA.
  * 4. Yield the ref. Resolution errors (unknown adapter, no matching

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Config;
 
 /**
- * Result of {@see \LLM\Skills\Config\Mapper\ProjectConfigMapper::forProject()}.
+ * Result of {@see Mapper\ProjectConfigMapper::forProject()}.
  *
  * Bundles the resolved {@see ProjectConfig} with the list of inline
  * `extra.skills` keys that were shadowed because a `skills.json` file

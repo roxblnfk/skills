@@ -62,7 +62,7 @@ final readonly class InspectionBuilder
      *        {@see \LLM\Skills\Discovery\Provider\ComposerProvider}); future
      *        GitHub / npm / skills.sh providers plug in here
      * @param ProjectConfig $project pre-resolved project config. The caller
-     *        ({@see \LLM\Skills\Show\ShowRunner}) loads it via
+     *        ({@see ShowRunner}) loads it via
      *        {@see \LLM\Skills\Config\Mapper\ProjectConfigMapper::forProject()}
      *        so it can surface the `skills.json` shadowing warning through IO;
      *        the builder itself stays pure (no IO).
@@ -235,7 +235,7 @@ final readonly class InspectionBuilder
      *
      * @return non-empty-string|null
      */
-    private function detectAliasDrift(\Internal\Path $alias, string|false $resolvedTarget): ?string
+    private function detectAliasDrift(Path $alias, string|false $resolvedTarget): ?string
     {
         $aliasStr = (string) $alias;
         if (!\file_exists($aliasStr) && !\is_link($aliasStr)) {
@@ -499,7 +499,7 @@ final readonly class InspectionBuilder
         array $enumerationWarnings,
         array $droppedDonors,
         array $refusedSkills,
-        \LLM\Skills\Sync\SyncPlan $plan,
+        SyncPlan $plan,
         array $unactivatedDiscoverable,
     ): array {
         $result = [];

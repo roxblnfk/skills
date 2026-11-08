@@ -17,7 +17,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  * subdirectory per skill.
  *
  * Malformed donor configs do **not** abort sync; the mapper throws
- * {@see \LLM\Skills\Config\Exception\MalformedVendorConfig} and the command
+ * {@see Exception\MalformedVendorConfig} and the command
  * skips the offending package with a `-v` warning.
  *
  * @psalm-immutable

@@ -25,8 +25,8 @@ use LLM\Skills\Discovery\Provider\Source\DonorArchiveInspection;
 use LLM\Skills\Discovery\Provider\Source\DonorArchiveInspector;
 use LLM\Skills\Discovery\Provider\Source\DonorArchiveRejection;
 use LLM\Skills\Discovery\Provider\Source\RefResolver;
-use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
+use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Sync\SyncPlanner;
 use Symfony\Component\Console\Command\Command;
@@ -97,7 +97,7 @@ final readonly class AddRunner
      *         `$entry->package` — that field stores the adapter's
      *         identifier (e.g. the GitHub `<owner>/<repo>` path), which
      *         can differ from the package's `name`. The donor's
-     *         {@see \LLM\Skills\Config\VendorConfig::$packageName} is
+     *         {@see VendorConfig::$packageName} is
      *         what the planner filters on, so the entrypoint needs the
      *         composer.json `name` to scope the post-add sync correctly.
      */

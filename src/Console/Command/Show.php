@@ -76,7 +76,7 @@ final class Show extends Command
 
     /**
      * Best-effort {@see Factory::create()}. See the twin in
-     * {@see \LLM\Skills\Console\Command\Sync} for the rationale.
+     * {@see Sync} for the rationale.
      */
     private static function tryBootstrapComposer(ConsoleIO $io): ?Composer
     {

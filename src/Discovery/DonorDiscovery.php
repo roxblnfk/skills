@@ -13,7 +13,7 @@ use LLM\Skills\Config\VendorConfig;
 
 /**
  * Walks Composer's local repository and maps every package's
- * `extra.skills` block into {@see \LLM\Skills\Config\VendorConfig} rows —
+ * `extra.skills` block into {@see VendorConfig} rows —
  * one per declared source directory.
  *
  * Non-donors (no `extra.skills` block) are skipped silently. Donors with
