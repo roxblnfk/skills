@@ -11,6 +11,7 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedVendorConfig;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
+use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
@@ -60,6 +61,8 @@ final class VendorDeclaredRefSource implements DonorRefSource
     private array $lastFailures = [];
 
     /**
+     * @param mixed $extra the root package's `extra`, read when there is no `skills.json`
+     *
      * @psalm-mutation-free
      */
     public function __construct(
@@ -67,6 +70,8 @@ final class VendorDeclaredRefSource implements DonorRefSource
         private readonly HostAdapterRegistry $registry,
         private readonly VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
         private readonly ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private readonly ?\DateTimeImmutable $now = null,
+        private readonly mixed $extra = null,
     ) {}
 
     /**
@@ -116,9 +121,15 @@ final class VendorDeclaredRefSource implements DonorRefSource
     {
         $this->lastFailures = [];
 
-        if ($this->composer === null || !$this->vendorSourcesEnabled($projectRoot)) {
+        if ($this->composer === null) {
             return;
         }
+
+        $project = $this->projectConfig($projectRoot);
+        if ($project === null || !$project->vendorSources) {
+            return;
+        }
+        $now = $this->now ?? new \DateTimeImmutable();
 
         /**
          * Declarations surviving the per-package parse, merged across
@@ -231,7 +242,13 @@ final class VendorDeclaredRefSource implements DonorRefSource
             );
 
             try {
-                $resolved = $adapter->resolve($effective);
+                // `self.version` follows the version Composer already installed.
+                $resolved = $adapter->resolve(
+                    $effective,
+                    $entry->ref === SourceEntry::SELF_VERSION
+                        ? null
+                        : $project->cooldown?->cutoffFor($entry->package, $now),
+                );
             } catch (RemoteResolveException $e) {
                 $this->lastFailures[] = new SourceFailure(
                     label: $this->entryLabel($declaredBy, $entry),
@@ -269,7 +286,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
     #[\Override]
     public function hasRefs(Path $projectRoot): bool
     {
-        if ($this->composer === null || !$this->vendorSourcesEnabled($projectRoot)) {
+        if ($this->composer === null || $this->projectConfig($projectRoot)?->vendorSources !== true) {
             return false;
         }
 
@@ -281,16 +298,15 @@ final class VendorDeclaredRefSource implements DonorRefSource
     }
 
     /**
-     * Whether the project allows vendor-declared external sources.
-     * Best-effort read: a malformed project config answers `false`
-     * here and the runner surfaces the real error on its own read.
+     * Best-effort read: a malformed project config answers `null` and the
+     * runner surfaces the real error on its own read.
      */
-    private function vendorSourcesEnabled(Path $projectRoot): bool
+    private function projectConfig(Path $projectRoot): ?ProjectConfig
     {
         try {
-            return $this->projectMapper->forProject($projectRoot, null)->config->vendorSources;
+            return $this->projectMapper->forProject($projectRoot, $this->extra)->config;
         } catch (\Throwable) {
-            return false;
+            return null;
         }
     }
 

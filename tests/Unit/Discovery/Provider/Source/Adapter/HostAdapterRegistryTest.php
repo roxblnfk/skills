@@ -115,7 +115,7 @@ final class HostAdapterRegistryTest
             }
 
             #[\Override]
-            public function resolve(SourceEntry $entry): RemoteDonorRef
+            public function resolve(SourceEntry $entry, ?\DateTimeImmutable $notAfter = null): RemoteDonorRef
             {
                 throw new \LogicException('not used in registry tests');
             }

@@ -58,6 +58,7 @@ final readonly class ExternalProjectConfigLoader
         'path-from-root',
         'local',
         'vendor-sources',
+        'cooldown',
         'sources',
         'remote',
         ...ProjectConfigMapper::SKILLS_JSON_ONLY_KEYS,

@@ -12,6 +12,7 @@ use LLM\Skills\Discovery\Provider\Source\Http\HttpException;
 use LLM\Skills\Discovery\Provider\Source\Http\HttpResponse;
 use Testo\Assert;
 use Testo\Codecov\Covers;
+use Testo\Data\DataSet;
 use Testo\Expect;
 use Testo\Test;
 
@@ -421,7 +422,461 @@ final class GithubAdapterTest
         );
     }
 
+    // ── resolve: cooldown ──────────────────────────────────────────
+
+    public function cooldownTagWhoseCommitWasNotOnTheDefaultBranchIsSkipped(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0', 'v1.1.0']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.1.0') => self::compareResponse('diverged', \sha1('v1.1.0')),
+            self::compareUrl('refs/tags/v1.0.0') => self::compareResponse('ahead', \sha1('v1.0.0')),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, 'v1.0.0');
+        Assert::same($ref->url, 'https://api.github.com/repos/acme/skills/zipball/' . \sha1('v1.0.0'));
+        Assert::same($http->callCount(), 5);
+    }
+
+    public function cooldownTagAtTheDefaultBranchStateIsPicked(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0', 'v1.1.0']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.1.0') => self::compareResponse('identical', \sha1('v1.1.0')),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, 'v1.1.0');
+    }
+
+    public function cooldownFailsWhenNoTagIsOldEnough(): void
+    {
+        // No stub for the default branch's head: a fallback would hit an unstubbed URL.
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.0.0') => self::compareResponse('diverged', \sha1('v1.0.0')),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)->withMessageContaining(
+            'cooldown: no tag was on the default branch at 2026-11-01 00:00 UTC',
+        );
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownStableTierDoesNotFallBackToPrerelease(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0', 'v1.1.0-rc.1']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.0.0') => self::compareResponse('diverged', \sha1('v1.0.0')),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)->withMessageContaining('cooldown: no tag was on');
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownConstraintPicksHighestMatchingTagOldEnough(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0', 'v1.5.0', 'v2.0.0']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.5.0') => self::compareResponse('diverged', \sha1('v1.5.0')),
+            self::compareUrl('refs/tags/v1.0.0') => self::compareResponse('ahead', \sha1('v1.0.0')),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: '^1.0'), self::cutoff());
+
+        Assert::same($ref->ref, 'v1.0.0');
+        Assert::same($ref->url, 'https://api.github.com/repos/acme/skills/zipball/' . \sha1('v1.0.0'));
+    }
+
+    public function cooldownConstraintFailsWhenNoMatchingTagIsOldEnough(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.5.0', 'v2.0.0']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.5.0') => self::compareResponse('diverged', \sha1('v1.5.0')),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('cooldown: no tag matching ^1.0 was on the default branch at');
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: '^1.0'), self::cutoff());
+    }
+
+    public function cooldownCascadePicksPrereleaseWhenTheRepositoryHasNoStableTag(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0-rc.1', 'v1.0.0-rc.2']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.0.0-rc.2') => self::compareResponse('diverged', \sha1('v1.0.0-rc.2')),
+            self::compareUrl('refs/tags/v1.0.0-rc.1') => self::compareResponse('ahead', \sha1('v1.0.0-rc.1')),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, 'v1.0.0-rc.1');
+    }
+
+    public function cooldownChecksAtMostTenCandidates(): void
+    {
+        $tags = [];
+        $responses = self::defaultBranchAtCutoff();
+        for ($minor = 0; $minor <= 10; ++$minor) {
+            $tags[] = 'v1.' . $minor . '.0';
+            if ($minor > 0) {
+                $responses[self::compareUrl('refs/tags/v1.' . $minor . '.0')] = self::compareResponse('diverged');
+            }
+        }
+        $responses[self::TAGS_URL] = self::tagsResponse($tags);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('was on the default branch at 2026-11-01 00:00 UTC (checked the 10 highest candidates)');
+
+        (new GithubAdapter(new InMemoryHttpClient($responses)))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownExactConstraintIsChecked(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse(['v1.0.0', 'v1.5.0']),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl('refs/tags/v1.5.0') => self::compareResponse('diverged'),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('cooldown: no tag matching =1.5.0 was on the default branch at 2026-11-01 00:00 UTC');
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: '=1.5.0'), self::cutoff());
+    }
+
+    public function cooldownBranchTakesAPushExactlyAtTheCutoff(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([
+                ['2026-11-01T00:00:01Z', self::sha('a')],
+                ['2026-11-01T00:00:00Z', self::sha('b')],
+            ]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('b'));
+    }
+
+    public function cooldownBranchResolvesToCommitAtCutoff(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([
+                ['2026-11-05T10:00:00Z', self::sha('a')],
+                ['2026-10-30T10:00:00Z', self::sha('b')],
+                ['2026-10-01T10:00:00Z', self::sha('c')],
+            ]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('b'));
+        Assert::same($ref->url, 'https://api.github.com/repos/acme/skills/zipball/' . self::sha('b'));
+    }
+
+    public function cooldownBranchFollowsNextActivityPage(): void
+    {
+        $page2 = 'https://api.github.com/repositories/1/activity?ref=refs%2Fheads%2Fmain&after=cursor';
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([['2026-11-05T10:00:00Z', self::sha('a')]], next: $page2),
+            $page2 => self::activityResponse([['2026-10-30T10:00:00Z', self::sha('b')]]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('b'));
+    }
+
+    public function cooldownBranchDeletedAtCutoffFails(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([
+                ['2026-11-05T10:00:00Z', self::sha('a')],
+                ['2026-10-30T10:00:00Z', self::sha('0')],
+                ['2026-10-01T10:00:00Z', self::sha('c')],
+            ]),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('cooldown: branch "main" did not exist at 2026-11-01 00:00 UTC');
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownBranchOlderThanTheLogResolvesToTheStateBeforeItsOldestEvent(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([
+                ['2026-11-05T10:00:00Z', self::sha('a'), self::sha('b')],
+                ['2026-11-03T10:00:00Z', self::sha('b'), self::sha('c')],
+            ]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('c'));
+    }
+
+    public function cooldownBranchCreatedAfterTheCutoffFails(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([
+                ['2026-11-05T10:00:00Z', self::sha('a'), self::sha('0')],
+            ]),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('cooldown: branch "main" did not exist at 2026-11-01 00:00 UTC');
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownBranchWithoutRecordedActivityResolvesToItsHead(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([]),
+            'https://api.github.com/repos/acme/skills/git/matching-refs/heads/main' => self::refsResponse([
+                'refs/heads/main' => self::sha('d'),
+            ]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('d'));
+    }
+
+    public function cooldownMissingBranchFails(): void
+    {
+        $http = new InMemoryHttpClient([
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([]),
+            'https://api.github.com/repos/acme/skills/git/matching-refs/heads/main' => self::refsResponse([]),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)->withMessageContaining('branch "main" does not exist');
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownBranchHistoryIsReadUpToTenPages(): void
+    {
+        $responses = [
+            self::TAGS_URL => self::tagsResponse([]),
+            'https://api.github.com/repos/acme/skills' => self::okJson(['default_branch' => 'main']),
+        ];
+        $url = self::activityUrl('main');
+        for ($page = 1; $page <= 10; ++$page) {
+            $next = 'https://api.github.com/repositories/1/activity?page=' . ($page + 1);
+            $responses[$url] = self::activityResponse([['2026-11-05T10:00:00Z', self::sha('a')]], next: $next);
+            $url = $next;
+        }
+
+        Expect::exception(RemoteResolveException::class)
+            ->withMessageContaining('cooldown: the push history of branch "main" since 2026-11-01 00:00 UTC is longer than 10 pages');
+
+        (new GithubAdapter(new InMemoryHttpClient($responses)))->resolve(self::entry('acme/skills'), self::cutoff());
+    }
+
+    public function cooldownVerbatimBranchIsDated(): void
+    {
+        $http = new InMemoryHttpClient([
+            'https://api.github.com/repos/acme/skills/git/matching-refs/heads/release%2F1.x' => self::refsResponse([
+                'refs/heads/release/1.x' => self::sha('e'),
+                'refs/heads/release/1.x-old' => self::sha('f'),
+            ]),
+            self::activityUrl('release/1.x') => self::activityResponse([['2026-10-30T10:00:00Z', self::sha('b')]]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: 'release/1.x'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('b'));
+    }
+
+    public function cooldownBranchWinsOverATagOfTheSameName(): void
+    {
+        $http = new InMemoryHttpClient([
+            'https://api.github.com/repos/acme/skills/git/matching-refs/heads/main' => self::refsResponse([
+                'refs/heads/main' => self::sha('a'),
+            ]),
+            self::activityUrl('main') => self::activityResponse([['2026-10-30T10:00:00Z', self::sha('b')]]),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: 'main'), self::cutoff());
+
+        Assert::same($ref->ref, self::sha('b'));
+    }
+
+    #[DataSet(['v1.2.3'], name: 'tag')]
+    #[DataSet(['refs/heads/main'], name: 'full branch ref')]
+    #[DataSet(['HEAD'], name: 'HEAD')]
+    #[DataSet(['abc1234'], name: 'short SHA')]
+    #[DataSet(['eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'], name: 'full SHA')]
+    public function cooldownRefOtherThanABranchNameIsFetchedAtItsCommitWhenThatWasOnTheDefaultBranch(string $verbatim): void
+    {
+        $http = new InMemoryHttpClient([
+            ...self::noBranchNamed($verbatim),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl($verbatim) => self::compareResponse('ahead', self::sha('e')),
+        ]);
+
+        $ref = (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: $verbatim), self::cutoff());
+
+        Assert::same($ref->ref, $verbatim);
+        Assert::same($ref->url, 'https://api.github.com/repos/acme/skills/zipball/' . self::sha('e'));
+    }
+
+    #[DataSet(['v1.2.3', 'diverged'], name: 'moved tag')]
+    #[DataSet(['refs/pull/1/head', 'behind'], name: 'pull request head')]
+    #[DataSet(['HEAD', 'behind'], name: 'HEAD moved since the cutoff')]
+    public function cooldownRefOtherThanABranchNameFailsWhenItsCommitWasNotOnTheDefaultBranch(string $verbatim, string $status): void
+    {
+        $http = new InMemoryHttpClient([
+            ...self::noBranchNamed($verbatim),
+            ...self::defaultBranchAtCutoff(),
+            self::compareUrl($verbatim) => self::compareResponse($status),
+        ]);
+
+        Expect::exception(RemoteResolveException::class)->withMessageContaining(
+            'cooldown: "' . $verbatim . '" was not on the default branch at 2026-11-01 00:00 UTC',
+        );
+
+        (new GithubAdapter($http))->resolve(self::entry('acme/skills', ref: $verbatim), self::cutoff());
+    }
+
     // ── helpers ────────────────────────────────────────────────────
+
+    private const TAGS_URL = 'https://api.github.com/repos/acme/skills/tags?per_page=100';
+    private const REPO_URL = 'https://api.github.com/repos/acme/skills';
+
+    private static function cutoff(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('2026-11-01T00:00:00Z');
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private static function sha(string $digit): string
+    {
+        return \str_repeat($digit, 40);
+    }
+
+    private static function activityUrl(string $branch): string
+    {
+        return 'https://api.github.com/repos/acme/skills/activity?ref='
+            . \rawurlencode('refs/heads/' . $branch) . '&direction=desc&per_page=100';
+    }
+
+    /**
+     * @param list<array{0: string, 1: string, 2?: string}> $events `[timestamp, after, before]`, newest first
+     */
+    private static function activityResponse(array $events, ?string $next = null): HttpResponse
+    {
+        return self::okJsonList(
+            \array_map(
+                static fn(array $event): array => [
+                    'timestamp' => $event[0],
+                    'after' => $event[1],
+                    'before' => $event[2] ?? self::sha('9'),
+                    'activity_type' => 'push',
+                ],
+                $events,
+            ),
+            $next,
+        );
+    }
+
+    /**
+     * @param array<string, string> $refs ref name => commit SHA
+     */
+    private static function refsResponse(array $refs): HttpResponse
+    {
+        $items = [];
+        foreach ($refs as $ref => $sha) {
+            $items[] = ['ref' => $ref, 'object' => ['sha' => $sha, 'type' => 'commit']];
+        }
+        return self::okJsonList($items);
+    }
+
+    /**
+     * The default branch `main` pointed at `sha('b')` at the cutoff.
+     *
+     * @return array<string, HttpResponse>
+     */
+    private static function defaultBranchAtCutoff(): array
+    {
+        return [
+            self::REPO_URL => self::okJson(['default_branch' => 'main']),
+            self::activityUrl('main') => self::activityResponse([
+                ['2026-11-05T10:00:00Z', self::sha('a'), self::sha('b')],
+                ['2026-10-30T10:00:00Z', self::sha('b')],
+            ]),
+        ];
+    }
+
+    /**
+     * Compares `$ref` with the default branch at the cutoff, see {@see defaultBranchAtCutoff()}.
+     */
+    private static function compareUrl(string $ref): string
+    {
+        return self::REPO_URL . '/compare/' . \rawurlencode($ref) . '...' . self::sha('b') . '?per_page=1';
+    }
+
+    private static function compareResponse(string $status, ?string $base = null): HttpResponse
+    {
+        return self::okJson(['status' => $status, 'base_commit' => ['sha' => $base ?? self::sha('e')]]);
+    }
+
+    /**
+     * @return array<string, HttpResponse>
+     */
+    private static function noBranchNamed(string $ref): array
+    {
+        if (\preg_match('/^[0-9a-f]{40}$/', $ref) === 1) {
+            return [];
+        }
+        return [self::REPO_URL . '/git/matching-refs/heads/' . \rawurlencode($ref) => self::refsResponse([])];
+    }
+
+    /**
+     * @param list<array<string, mixed>> $items
+     */
+    private static function okJsonList(array $items, ?string $next = null): HttpResponse
+    {
+        return new HttpResponse(
+            statusCode: 200,
+            body: \json_encode($items, \JSON_THROW_ON_ERROR),
+            headers: $next === null ? [] : ['link' => '<' . $next . '>; rel="next", <' . $next . '&last>; rel="last"'],
+        );
+    }
 
     private static function adapter(): GithubAdapter
     {
