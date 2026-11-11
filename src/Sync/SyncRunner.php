@@ -394,7 +394,7 @@ final readonly class SyncRunner
                 $link,
             ));
         }
-        $this->emitRemovalFailures($io, $report->removalFailures);
+        $this->emitRemovalFailures($io, $report->removalFailures, $clean?->failsOnRemovalError() === true);
         $this->emitKeptSources($io, $report->keptSources);
         foreach ($report->targetAsSource as $name) {
             $io->writeError(\sprintf(
@@ -769,14 +769,19 @@ final readonly class SyncRunner
 
     /**
      * @param list<non-empty-string> $failures
+     * @param bool $fatal whether the failures fail the run, which styles them as errors
+     *        rather than warnings
      */
-    private function emitRemovalFailures(IOInterface $io, array $failures): void
+    private function emitRemovalFailures(IOInterface $io, array $failures, bool $fatal): void
     {
+        $tag = $fatal ? 'error' : 'warning';
         foreach ($failures as $name) {
             $io->writeError(\sprintf(
-                '<error>[remove-failed] %s could not be fully deleted; what remains was merged '
-                . 'with the donor copy, not replaced by it.</error>',
+                '<%s>[remove-failed] %s could not be fully deleted; what remains was merged '
+                . 'with the donor copy, not replaced by it.</%s>',
+                $tag,
                 $name,
+                $tag,
             ));
         }
     }

@@ -692,7 +692,38 @@ final class InitRunnerTest
             new InitOptions(presets: new InitPresets(clean: false)),
         );
 
-        Assert::false($this->readSkillsJson()['clean'] ?? false);
+        Assert::false(
+            \array_key_exists('clean', $this->readSkillsJson()),
+            '`false` is the default and is not written out',
+        );
+    }
+
+    public function aNonInteractiveForcedReRunKeepsCleanForTheSameTarget(): void
+    {
+        // This path removes the old file before anything else reads it.
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, new InitOptions(force: true));
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function theSameTargetSpelledDifferentlyKeepsClean(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true, quick: true, presets: new InitPresets(target: './.agents/skills/')),
+        );
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
     }
 
     public function givenValuesReachTheStandaloneStub(): void
