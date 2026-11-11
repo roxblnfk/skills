@@ -563,8 +563,9 @@ final readonly class InitRunner
 
     /**
      * The `clean` an existing `skills.json` sets, with the directory its
-     * target resolves to. `null` when there is no such file, it does not
-     * parse, it leaves `clean` out, or its target does not resolve.
+     * target resolves to; a file that leaves `clean` out chose `false`. `null`
+     * when there is no such file, it does not parse, its `clean` is not a
+     * boolean, or its target does not resolve.
      *
      * @param non-empty-string $file
      *
@@ -586,8 +587,10 @@ final readonly class InitRunner
         if (!\is_array($decoded)) {
             return null;
         }
+        // An absent key is the off the file was written with: init leaves the
+        // default out rather than writing `false`.
         /** @var mixed $clean */
-        $clean = $decoded['clean'] ?? null;
+        $clean = $decoded['clean'] ?? false;
         if (!\is_bool($clean)) {
             return null;
         }

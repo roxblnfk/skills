@@ -726,6 +726,18 @@ final class InitRunnerTest
         Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
     }
 
+    public function aForcedReRunKeepsCleanOffWhenTheFileLeftItOut(): void
+    {
+        // An empty target would otherwise get clean proposed — the state of a
+        // fresh clone whose target is not committed.
+        \file_put_contents($this->tmp . '/skills.json', '{"target": ".agents/skills"}');
+
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, new InitOptions(force: true));
+
+        Assert::false(\array_key_exists('clean', $this->readSkillsJson()), $io->getOutput());
+    }
+
     public function aForcedReRunAtACustomPathKeepsCleanForTheSameTarget(): void
     {
         \mkdir($this->tmp . '/config');
