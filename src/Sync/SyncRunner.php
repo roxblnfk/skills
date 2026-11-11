@@ -271,7 +271,8 @@ final readonly class SyncRunner
             // its `extra.skills` block was rejected, and when its skills could
             // not be enumerated (see `droppedDonors`). A vendor package with a
             // rejected block is left out: the user cannot fix it, and it would
-            // block every full `--clean`.
+            // block every full `--clean`, or keep a clean from `skills.json`
+            // narrowed for good, so orphans would never leave the target.
             //
             // Only an unscoped run is at risk. A scoped one deletes a subset of
             // what it is about to write (see {@see PurgePlanner}), so a donor
@@ -452,7 +453,7 @@ final readonly class SyncRunner
             return false;
         }
 
-        return (string) $configured === (string) $target || PathContainment::isSame($configured, $target);
+        return PathContainment::isSameLocation($configured, $target);
     }
 
     /**

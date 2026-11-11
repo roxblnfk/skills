@@ -445,8 +445,8 @@ final readonly class InitRunner
     /**
      * The `clean` value to propose for a target: `true` when it holds no
      * skills yet, so nothing there can be lost to a wipe. A target that
-     * already holds skills keeps the merge, with a notice saying why; so does
-     * one that cannot be resolved or read.
+     * already holds skills keeps the merge, with a notice saying why. One
+     * that cannot be listed keeps it too, silently: the sync reports it.
      *
      * @param non-empty-string $target as written to `skills.json`
      */
@@ -553,7 +553,7 @@ final readonly class InitRunner
 
         if (
             $previous !== null
-            && ((string) $previous['dir'] === (string) $dir || PathContainment::isSame($previous['dir'], $dir))
+            && PathContainment::isSameLocation($previous['dir'], $dir)
         ) {
             return $previous['clean'];
         }
@@ -583,14 +583,19 @@ final readonly class InitRunner
         } catch (\JsonException) {
             return null;
         }
-        if (!\is_array($decoded) || !\is_bool($decoded['clean'] ?? null)) {
+        if (!\is_array($decoded)) {
+            return null;
+        }
+        /** @var mixed $clean */
+        $clean = $decoded['clean'] ?? null;
+        if (!\is_bool($clean)) {
             return null;
         }
 
         /** @var array<string, mixed> $decoded */
         $dir = $this->targetDir($projectRoot, self::targetOf($decoded), self::pathFromRoot($decoded));
 
-        return $dir === null ? null : ['clean' => (bool) $decoded['clean'], 'dir' => $dir];
+        return $dir === null ? null : ['clean' => $clean, 'dir' => $dir];
     }
 
     /**

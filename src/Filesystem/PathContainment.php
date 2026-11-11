@@ -66,4 +66,14 @@ final class PathContainment
     {
         return self::isWithin($a, $b) && self::isWithin($b, $a);
     }
+
+    /**
+     * `true` when both paths name the same location: spelled the same once
+     * normalised, which also covers a directory not created yet, or resolving
+     * to the same existing directory or file.
+     */
+    public static function isSameLocation(Path $a, Path $b): bool
+    {
+        return (string) $a === (string) $b || self::isSame($a, $b);
+    }
 }
