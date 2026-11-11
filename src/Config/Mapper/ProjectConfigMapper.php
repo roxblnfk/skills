@@ -101,6 +101,29 @@ final readonly class ProjectConfigMapper
     ];
 
     /**
+     * Project keys read from `skills.json` only. Inline `extra.skills`
+     * describes the package to its consumers, so a consumer-side switch
+     * there is ignored like any other unknown inline key, and migration
+     * leaves it behind.
+     *
+     * @var list<non-empty-string>
+     */
+    public const SKILLS_JSON_ONLY_KEYS = [
+        'clean',
+    ];
+
+    /**
+     * Every key `skills.json` is written with, in the order generated
+     * files list them.
+     *
+     * @var list<non-empty-string>
+     */
+    public const SKILLS_JSON_KEYS = [
+        ...self::PROJECT_KEYS,
+        ...self::SKILLS_JSON_ONLY_KEYS,
+    ];
+
+    /**
      * @psalm-mutation-free
      */
     public function __construct(
@@ -125,7 +148,7 @@ final readonly class ProjectConfigMapper
     {
         $external = $this->externalLoader->load($projectRoot);
         if ($external !== null) {
-            $mapped = $this->mapSkillsBlock($external, 'skills.json');
+            $mapped = $this->mapSkillsBlock($external, 'skills.json', external: true);
             $ignored = $this->collectIgnoredInlineKeys($extra);
 
             return new ProjectConfigResolution(
@@ -223,7 +246,7 @@ final readonly class ProjectConfigMapper
             throw new MalformedProjectConfig('extra.skills must be an object');
         }
 
-        return $this->mapSkillsBlock($skills, 'extra.skills');
+        return $this->mapSkillsBlock($skills, 'extra.skills', external: false);
     }
 
     /**
@@ -233,12 +256,14 @@ final readonly class ProjectConfigMapper
      *
      * @param array<array-key, mixed> $skills
      * @param non-empty-string $prefix human-readable origin of the block, e.g. `extra.skills` or `skills.json`
+     * @param bool $external whether the block comes from `skills.json`, the only place
+     *        {@see self::SKILLS_JSON_ONLY_KEYS} are read from
      *
      * @throws MalformedProjectConfig
      *
      * @psalm-mutation-free
      */
-    private function mapSkillsBlock(array $skills, string $prefix): MappedSkillsBlock
+    private function mapSkillsBlock(array $skills, string $prefix, bool $external): MappedSkillsBlock
     {
         $target = $skills['target'] ?? ProjectConfig::DEFAULT_TARGET;
         if (!\is_string($target) || $target === '') {
@@ -267,6 +292,13 @@ final readonly class ProjectConfigMapper
         if (!\is_bool($vendorSources)) {
             throw new MalformedProjectConfig(
                 self::field($prefix, 'vendor-sources') . ' must be a boolean',
+            );
+        }
+
+        $clean = $external && \array_key_exists('clean', $skills) ? $skills['clean'] : false;
+        if (!\is_bool($clean)) {
+            throw new MalformedProjectConfig(
+                self::field($prefix, 'clean') . ' must be a boolean',
             );
         }
 
@@ -327,6 +359,7 @@ final readonly class ProjectConfigMapper
             sources: $sources,
             dependencies: $dependencies,
             vendorSources: $vendorSources,
+            clean: $clean,
         );
 
         return new MappedSkillsBlock($config, $usedDeprecatedSourcesKey, $usedDeprecatedDependencyKeys);

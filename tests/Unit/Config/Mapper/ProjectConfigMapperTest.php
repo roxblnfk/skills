@@ -1618,6 +1618,67 @@ final class ProjectConfigMapperTest
         Assert::true(\in_array('vendor-sources', $resolution->ignoredInlineKeys, true));
     }
 
+    // ── clean toggle ──
+
+    public function cleanDefaultsToFalse(): void
+    {
+        $this->writeSkillsJson(['target' => '.agents/skills']);
+
+        $config = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null)->config;
+
+        Assert::false($config->clean);
+    }
+
+    public function cleanTrueInSkillsJsonIsMapped(): void
+    {
+        $this->writeSkillsJson(['clean' => true]);
+
+        $config = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null)->config;
+
+        Assert::true($config->clean);
+    }
+
+    public function cleanRejectsNonBoolean(): void
+    {
+        $this->writeSkillsJson(['clean' => 'yes']);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json: clean must be a boolean');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function cleanRejectsNull(): void
+    {
+        $this->writeSkillsJson(['clean' => null]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.json: clean must be a boolean');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function inlineCleanIsIgnored(): void
+    {
+        // Inline `extra.skills` describes the package to its consumers, so a
+        // consumer-side wipe switch has no business there.
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => ['clean' => true]]);
+
+        Assert::false($config->clean);
+    }
+
+    public function inlineCleanIsNotReportedAsShadowed(): void
+    {
+        $this->writeSkillsJson(['target' => '.agents/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['clean' => true]],
+        );
+
+        Assert::same($resolution->ignoredInlineKeys, []);
+    }
+
     // ── ref flavours in sources[] ──
 
     public function sourcesRefSelfVersionIsRejectedInProjectConfig(): void

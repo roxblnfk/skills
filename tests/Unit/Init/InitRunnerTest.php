@@ -55,7 +55,7 @@ final class InitRunnerTest
         Assert::same($code, Command::SUCCESS);
 
         $written = $this->readSkillsJson();
-        Assert::same(\array_keys($written), ['$schema', 'dependencies', 'sources']);
+        Assert::same(\array_keys($written), ['$schema', 'dependencies', 'sources', 'clean']);
         Assert::same(
             $written['$schema'],
             InitRunner::SCHEMA_URL,
@@ -283,7 +283,7 @@ final class InitRunnerTest
         );
 
         Assert::same($code, Command::SUCCESS);
-        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'dependencies', 'sources']);
+        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'dependencies', 'sources', 'clean']);
         Assert::true(\str_contains($io->getOutput(), 'no project keys to migrate'));
     }
 
@@ -623,6 +623,141 @@ final class InitRunnerTest
         Assert::same($this->readSkillsJson()['target'] ?? null, 'custom/skills');
     }
 
+    public function cleanIsTurnedOnWhenTheTargetHoldsNoSkills(): void
+    {
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, InitOptions::default());
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true);
+        Assert::true(\str_contains($io->getOutput(), 'clean: true'), $io->getOutput());
+    }
+
+    public function cleanStaysOffWhenTheTargetAlreadyHoldsSkills(): void
+    {
+        // An installed skill may be hand-written; turning clean on would
+        // delete it on the very next sync.
+        $skill = $this->tmp . '/.agents/skills/mine';
+        \mkdir($skill, 0o777, true);
+        \file_put_contents($skill . '/SKILL.md', "---\nname: mine\n---\n");
+
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, InitOptions::default());
+
+        Assert::false(\array_key_exists('clean', $this->readSkillsJson()));
+        Assert::true(
+            \str_contains($io->getOutput(), 'already holds skills, so clean is proposed off'),
+            'the user is told why clean is off. Got: ' . $io->getOutput(),
+        );
+    }
+
+    public function aForcedReRunKeepsCleanForTheSameTarget(): void
+    {
+        // The project chose clean for this target; a skill installed since then
+        // is what clean is there to manage, not a reason to drop the choice.
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+        (new InitRunner())->run(Path::create($this->tmp), $io, new InitOptions(force: true, quick: true));
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function aForcedReRunChecksAnotherTargetAfresh(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.claude/skills/mine');
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true, quick: true, presets: new InitPresets(target: '.claude/skills')),
+        );
+
+        Assert::false(
+            \array_key_exists('clean', $this->readSkillsJson()),
+            'a target holding skills must not inherit clean from another one. ' . $io->getOutput(),
+        );
+        Assert::true(\str_contains($io->getOutput(), 'already holds skills'));
+    }
+
+    public function noCleanPresetWinsOverAnEmptyTarget(): void
+    {
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new InitOptions(presets: new InitPresets(clean: false)),
+        );
+
+        Assert::false(
+            \array_key_exists('clean', $this->readSkillsJson()),
+            '`false` is the default and is not written out',
+        );
+    }
+
+    public function aNonInteractiveForcedReRunKeepsCleanForTheSameTarget(): void
+    {
+        // This path removes the old file before anything else reads it.
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, new InitOptions(force: true));
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function theSameTargetSpelledDifferentlyKeepsClean(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true, quick: true, presets: new InitPresets(target: './.agents/skills/')),
+        );
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function aForcedReRunProposesCleanForAnEmptyTargetTheFileLeftItOutFor(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{"target": ".agents/skills"}');
+
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, new InitOptions(force: true));
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function aForcedReRunAtACustomPathKeepsCleanForTheSameTarget(): void
+    {
+        \mkdir($this->tmp . '/config');
+        \file_put_contents($this->tmp . '/config/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(path: 'config/skills.json', force: true),
+        );
+
+        /** @var array<string, mixed> $written */
+        $written = \json_decode(
+            (string) \file_get_contents($this->tmp . '/config/skills.json'),
+            true,
+            flags: \JSON_THROW_ON_ERROR,
+        );
+        Assert::same($written['clean'] ?? null, true, $io->getOutput());
+    }
+
     public function givenValuesReachTheStandaloneStub(): void
     {
         $code = (new InitRunner())->run(
@@ -641,10 +776,10 @@ final class InitRunnerTest
         Assert::same($skills['target'], '.claude/skills');
         Assert::same($skills['aliases'], ['.agents/skills']);
         Assert::same($skills['discovery'], false);
-        // Canonical PROJECT_KEYS order, regardless of how the values arrived.
+        // Canonical SKILLS_JSON_KEYS order, regardless of how the values arrived.
         Assert::same(
             \array_keys($skills),
-            ['$schema', 'target', 'aliases', 'dependencies', 'discovery', 'sources'],
+            ['$schema', 'target', 'aliases', 'dependencies', 'discovery', 'sources', 'clean'],
         );
     }
 
@@ -665,6 +800,16 @@ final class InitRunnerTest
             '.agents/skills is the default target and cannot also be an alias',
         );
         Assert::true(\str_contains($io->getOutput(), 'dropped'));
+    }
+
+    /**
+     * @param non-empty-string $relative
+     */
+    private function plantSkill(string $relative): void
+    {
+        $dir = $this->tmp . '/' . $relative;
+        \mkdir($dir, 0o777, true);
+        \file_put_contents($dir . '/SKILL.md', "---\nname: " . \basename($relative) . "\n---\n");
     }
 
     /**

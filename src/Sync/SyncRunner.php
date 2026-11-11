@@ -10,6 +10,7 @@ use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
+use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
@@ -23,6 +24,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SourceFailure;
+use LLM\Skills\Filesystem\PathContainment;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -44,7 +46,7 @@ use Symfony\Component\Console\Command\Command;
  *
  * Whatever the source, the runner orchestrates the pipeline:
  *
- *   1. Map project config → {@see \LLM\Skills\Config\ProjectConfig}
+ *   1. Map project config → {@see ProjectConfig}
  *      via `skills.json` (when present) or inline `extra.skills`.
  *   2. {@see DonorProvider::discover()}: enumerate donor packages.
  *   3. {@see DiscoveryResolver}: merge auto-discovered donors that the user
@@ -252,22 +254,35 @@ final readonly class SyncRunner
             $io->writeError('<warning>[rename] ' . $notice->describe() . '</warning>');
         }
 
+        // A clean turned on by `skills.json` covers the configured target only;
+        // another `--target` directory is one the project never chose to mirror.
+        $clean = CleanPolicy::resolve(
+            $options->clean,
+            $options->clean === null
+                && $project->clean
+                && $this->isConfiguredTarget($plan->target, $project, $options, $projectRoot),
+        );
         $purge = [];
-        if ($options->clean) {
+        if ($clean !== null) {
+            $narrowed = $options->isScoped();
             // A donor that dropped out contributes no skills, so an unscoped
             // wipe would delete its installed copies with nothing to put back.
             // A donor is lost this way when a `sources[]` entry never resolved or
             // its `extra.skills` block was rejected, and when its skills could
             // not be enumerated (see `droppedDonors`). A vendor package with a
             // rejected block is left out: the user cannot fix it, and it would
-            // block every full `--clean`.
+            // block every full `--clean`, or keep a clean from `skills.json`
+            // narrowed for good, so orphans would never leave the target.
             //
             // Only an unscoped run is at risk. A scoped one deletes a subset of
             // what it is about to write (see {@see PurgePlanner}), so a donor
             // that produced nothing takes nothing with it, and refusing there
             // would let one broken vendor package block the narrow `--clean`
             // that works around it.
-            $unrestorable = $options->isScoped() ? [] : [
+            //
+            // A donor can fail to resolve and be dropped from enumeration both,
+            // so the list is deduplicated before it is named.
+            $unrestorable = $narrowed ? [] : \array_values(\array_unique([
                 ...\array_map(
                     static fn(SourceFailure $f): string => $f->label,
                     $discovery->failures,
@@ -277,8 +292,18 @@ final readonly class SyncRunner
                     \array_filter($discovery->malformed, static fn(MalformedDonor $donor): bool => $donor->declared),
                 ),
                 ...$enumeration->droppedDonors,
-            ];
-            if ($unrestorable !== []) {
+            ]));
+            if ($unrestorable !== [] && !$clean->refusesPartialRestore()) {
+                // Reinstalling only what this run writes is the scoped purge:
+                // the skills of a donor that produced nothing stay in place.
+                // Its failure rows follow with the copy report.
+                $io->writeError(\sprintf(
+                    '<warning>[llm/skills] clean narrowed: %s contributed no skills, so only the '
+                    . 'skills this run reinstalls are deleted first; the rest are kept.</warning>',
+                    \implode(', ', $unrestorable),
+                ));
+                $narrowed = true;
+            } elseif ($unrestorable !== []) {
                 // The rows carry each donor's reason, which the refusal alone
                 // does not name.
                 $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
@@ -298,18 +323,32 @@ final readonly class SyncRunner
             }
 
             $installed = $this->installedScanner->scan($plan->target);
-            if ($installed === null) {
+            if ($installed === null && !$clean->refusesUnreadableTarget()) {
+                $io->writeError(\sprintf(
+                    '<warning>[llm/skills] clean skipped: %s could not be read, so this run '
+                    . 'merges into it.</warning>',
+                    (string) $plan->target,
+                ));
+            } elseif ($installed === null) {
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] --clean refused: %s could not be read, so this run '
                     . 'cannot tell what is installed there.</error>',
                     (string) $plan->target,
                 ));
                 return Command::FAILURE;
-            }
-
-            $purge = $this->planPurge($io, $plan, $installed, $enumeration->skills, $options);
-            if ($purge === null) {
-                return Command::SUCCESS;
+            } else {
+                $purge = $this->planPurge(
+                    $io,
+                    $plan,
+                    $installed,
+                    $enumeration->skills,
+                    $options,
+                    $narrowed,
+                    confirm: $clean->asksFirst(),
+                );
+                if ($purge === null) {
+                    return Command::SUCCESS;
+                }
             }
         }
 
@@ -356,7 +395,7 @@ final readonly class SyncRunner
                 $link,
             ));
         }
-        $this->emitRemovalFailures($io, $report->removalFailures);
+        $this->emitRemovalFailures($io, $report->removalFailures, $clean?->failsOnRemovalError() === true);
         $this->emitKeptSources($io, $report->keptSources);
         foreach ($report->targetAsSource as $name) {
             $io->writeError(\sprintf(
@@ -387,11 +426,34 @@ final readonly class SyncRunner
 
         // Alias errors fail the run loudly — silent partial success would
         // mask broken `.claude/skills` / `.cursor/skills` aliases on CI.
-        // A skill the purge could not delete fails it for the same reason:
-        // what landed there is a merge, not the clean install that was asked for.
-        return $aliasFailed || $report->removalFailures !== []
+        // A skill the purge could not delete fails it too, when the policy says
+        // so (see {@see CleanPolicy::failsOnRemovalError()}).
+        return $aliasFailed || ($report->removalFailures !== [] && $clean?->failsOnRemovalError() === true)
             ? Command::FAILURE
             : Command::SUCCESS;
+    }
+
+    /**
+     * Whether this run writes into the target `skills.json` configures: no
+     * `--target`, or one that resolves to the same directory.
+     */
+    private function isConfiguredTarget(
+        Path $target,
+        ProjectConfig $project,
+        SyncOptions $options,
+        Path $projectRoot,
+    ): bool {
+        if ($options->targetOverride === null) {
+            return true;
+        }
+
+        try {
+            $configured = $this->planner->target($project, SyncOptions::default(), $projectRoot);
+        } catch (MalformedProjectConfig) {
+            return false;
+        }
+
+        return PathContainment::isSameLocation($configured, $target);
     }
 
     /**
@@ -400,6 +462,8 @@ final readonly class SyncRunner
      *
      * @param list<InstalledSkill> $installed what currently sits in the target
      * @param list<Skill> $incoming skills the approved donors are about to write
+     * @param bool $narrowed delete only the installed skills this run writes back
+     * @param bool $confirm ask before deleting when the session is interactive
      *
      * @return list<InstalledSkill>|null `null` when the user declined the
      *         prompt and the run must stop without touching the target
@@ -410,15 +474,17 @@ final readonly class SyncRunner
         array $installed,
         array $incoming,
         SyncOptions $options,
+        bool $narrowed,
+        bool $confirm,
     ): ?array {
-        $purge = $this->purgePlanner->plan($installed, $incoming, $options->isScoped());
+        $purge = $this->purgePlanner->plan($installed, $incoming, $narrowed);
 
         // The prompt lists only what will really be deleted. The full list goes
         // on to the engine, which keeps the source holders again and reports
         // them once the sync has actually run.
         [$deletable] = $this->purgePlanner->partitionSourceHolders($purge, $incoming, $plan->target);
 
-        if ($deletable === [] || $options->dryRun || !$options->interactive) {
+        if ($deletable === [] || $options->dryRun || !$options->interactive || !$confirm) {
             return $purge;
         }
 
@@ -704,14 +770,19 @@ final readonly class SyncRunner
 
     /**
      * @param list<non-empty-string> $failures
+     * @param bool $fatal whether the failures fail the run, which styles them as errors
+     *        rather than warnings
      */
-    private function emitRemovalFailures(IOInterface $io, array $failures): void
+    private function emitRemovalFailures(IOInterface $io, array $failures, bool $fatal): void
     {
+        $tag = $fatal ? 'error' : 'warning';
         foreach ($failures as $name) {
             $io->writeError(\sprintf(
-                '<error>[remove-failed] %s could not be fully deleted; what remains was merged '
-                . 'with the donor copy, not replaced by it.</error>',
+                '<%s>[remove-failed] %s could not be fully deleted; what remains was merged '
+                . 'with the donor copy, not replaced by it.</%s>',
+                $tag,
                 $name,
+                $tag,
             ));
         }
     }

@@ -29,6 +29,7 @@ final class InteractiveInitWizardTest
             '',  // aliases (default 'none')
             '',  // trusted (default '<none>' — an empty list skips trusted-replace)
             '',  // auto-sync (default yes — flipped on; omitted from result)
+            '',  // clean (default no)
             'yes', // confirm write
         ]);
 
@@ -44,6 +45,7 @@ final class InteractiveInitWizardTest
             '',
             '',
             '',
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -64,6 +66,7 @@ final class InteractiveInitWizardTest
             '1,3',
             '',
             '',
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -84,6 +87,7 @@ final class InteractiveInitWizardTest
             '1-3',
             '',
             '',
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -104,6 +108,7 @@ final class InteractiveInitWizardTest
             '1,custom/path,2',
             '',
             '',
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -125,6 +130,7 @@ final class InteractiveInitWizardTest
             '1,2,3',     // aliases: .claude, .cursor, .agents
             '',
             '',
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -151,6 +157,7 @@ final class InteractiveInitWizardTest
             'none',
             '',
             '',
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -172,6 +179,7 @@ final class InteractiveInitWizardTest
             'acme/*,vendor/pkg',
             '',    // trusted-replace
             '',    // auto-sync
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -198,6 +206,7 @@ final class InteractiveInitWizardTest
             '',         // aliases
             '<none>',   // trusted → clear; an empty list skips trusted-replace
             '',         // auto-sync
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -223,6 +232,7 @@ final class InteractiveInitWizardTest
             'acme/*', // trusted — a list is what makes replacing one a question
             'yes',    // trusted-replace → non-default true
             'no',     // auto-sync       → non-default false
+            '',  // clean (default no)
             'yes',    // confirm write
         ]);
 
@@ -243,6 +253,7 @@ final class InteractiveInitWizardTest
         $io = $this->ioWithAnswers([
             '', '', '',
             '',     // auto-sync: accept default `true`
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -264,6 +275,7 @@ final class InteractiveInitWizardTest
             '',
             '',
             '',
+            '',  // clean (default no)
             'no',
         ]);
 
@@ -284,6 +296,7 @@ final class InteractiveInitWizardTest
             '',     // trusted → keep
             '',     // trusted-replace
             '',     // auto-sync
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -312,6 +325,7 @@ final class InteractiveInitWizardTest
             '',    // trusted → keep acme/*
             '',    // trusted-replace → keep default (false)
             '',    // auto-sync → keep default (true)
+            '',  // clean (default no)
             'yes', // confirm write
         ]);
 
@@ -358,6 +372,7 @@ final class InteractiveInitWizardTest
             'acme/*',        // trusted → add a pattern
             '',              // trusted-replace
             '',              // auto-sync
+            '',  // clean (default no)
             'yes',
         ]);
 
@@ -405,6 +420,50 @@ final class InteractiveInitWizardTest
         );
 
         Assert::same($result['aliases'] ?? null, ['.claude/skills']);
+    }
+
+    public function cleanDefaultIsProposedForTheChosenTarget(): void
+    {
+        $io = $this->ioWithAnswers([
+            'custom/skills', // target
+            '',
+            '',
+            '',
+            '',              // clean: accept the proposed default
+            'yes',
+        ]);
+        $asked = null;
+
+        $result = (new InteractiveInitWizard())->run(
+            $io,
+            [],
+            cleanDefault: static function (string $target) use (&$asked): bool {
+                $asked = $target;
+                return true;
+            },
+        );
+
+        Assert::same($asked, 'custom/skills', 'the default is decided for the answered target');
+        Assert::same($result['clean'] ?? null, true);
+    }
+
+    public function declinedCleanIsLeftOut(): void
+    {
+        $io = $this->ioWithAnswers(['', '', '', '', 'n', 'yes']);
+
+        $result = (new InteractiveInitWizard())->run($io, [], cleanDefault: static fn(): bool => true);
+
+        Assert::false(\array_key_exists('clean', $result ?? []));
+    }
+
+    public function quickModeShowsTheProposedCleanInTheSummary(): void
+    {
+        $io = $this->ioWithAnswers(['yes']);
+
+        $result = (new InteractiveInitWizard())->run($io, [], quick: true, cleanDefault: static fn(): bool => true);
+
+        Assert::same($result, ['clean' => true]);
+        Assert::true(\str_contains($io->getOutput(), 'clean'), $io->getOutput());
     }
 
     /**

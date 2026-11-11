@@ -47,13 +47,13 @@ is written and your skills are synced; answer **n** and nothing is written.
 To do it yourself, or to revisit the choices later:
 
 ```bash
-composer skills:init            # the full wizard: target, aliases, trust, auto-sync
+composer skills:init            # the full wizard: target, aliases, trust, auto-sync, clean
 composer skills:init --quick    # take the detected layout, confirm once
 composer skills:init --force    # re-run over an existing skills.json
 ```
 
 Any config value can also be passed up front — `--target`, `--alias`, `--trust`,
-`--auto-sync` / `--no-auto-sync`, `--discovery` / `--no-discovery`. In the wizard they arrive
+`--auto-sync` / `--no-auto-sync`, `--discovery` / `--no-discovery`, `--clean` / `--no-clean`. In the wizard they arrive
 pre-filled at the prompt; with `--quick` (or in CI) they are simply written, which makes the
 whole setup one scriptable line:
 
@@ -142,8 +142,10 @@ skills — see [Donor sources](#donor-sources).
 | `--trust=PATTERN`     | init   | Pre-fill `dependencies.composer.trusted` (repeatable).                                                                                                             |
 | `--auto-sync`, `--no-auto-sync` | init | Pre-fill `auto-sync`. Unrelated to `--no-sync`, which only skips the one sync `init` itself runs.                                                        |
 | `--discovery`, `--no-discovery` | init | Pre-fill `discovery`.                                                                                                                                    |
+| `--clean`, `--no-clean` | init | Pre-fill `clean`, replacing the value proposed from what the target holds.                                                                   |
 | `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Donor sources](#donor-sources).                                                              |
 | `--clean`             | update | Delete installed skills before copying instead of merging into them. See [Clean install](#clean-install).                                                           |
+| `--no-clean`          | update | Merge for this run even when `skills.json` sets `"clean": true`. Wins over `--clean` when both are given.                                                         |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 
 Short flag `-d` for `--discovery` is registered only by the standalone `bin/skills` binary;
@@ -309,6 +311,7 @@ always governed here, by the trust lists and the `vendor-sources` toggle.
 | `aliases`         | string[]    | `[]`             | Mirror paths (junction/symlink) pointing at `target`. See [Aliases](#aliases).          |
 | `discovery`       | bool        | `true`           | Consider packages that ship skills without declaring `extra.skills`. Set to `false` to sync only what is declared (CLI overrides either way). |
 | `auto-sync`       | bool        | `true`           | Run `skills:update` after `composer install` / `update`. Set to `false` to opt out.     |
+| `clean`           | bool        | `false`          | Make every sync a clean install: auto-sync, the sync after `skills:init` / `skills:add`, and `skills:update` without `--clean` / `--no-clean`. Never asks first. `skills.json` only. See [Clean by default](#clean-by-default). |
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
 | `dependencies`    | object      | `{}`             | Per-package-manager config: `<id>` → `bool` (walk toggle) or `{ enabled, trusted, trusted-replace }`. Ids: `composer` (walk default `true`), `npm`/`go` (future, default `false`). `trusted` extends the manager's trust list; `trusted-replace` makes it fully replace the built-in and direct-dependency trust. Deprecated aliases `trusted`, `trusted-replace`, `local` fold into this block. See [Trust](#trust) and [Donor sources](#donor-sources). |
 | `vendor-sources`  | bool        | `true`           | Allow installed packages to advertise external sources via their own `extra.skills.sources` (gated by the same trust rules as the declaring package). Set to `false` to ignore them entirely. See [External sources](#external-sources-extraskillssources). |
@@ -841,3 +844,32 @@ Three things `--clean` refuses or leaves alone:
   reported as a wipe that never happened.
 - Files in the target that are not skill directories are never touched, and neither are the
   configured aliases, which are re-pointed at the target as usual after the copy.
+
+#### Clean by default
+
+To keep the target an exact mirror of the donors without remembering the flag, set it in
+`skills.json`:
+
+```json
+{ "clean": true }
+```
+
+Every sync then runs as `--clean` does — auto-sync after `composer install` / `update`, the sync
+`skills:init` and `skills:add` run, and a plain `skills:update`. `--no-clean` merges for a single
+run. The key is read from `skills.json` only: inline `extra.skills` in `composer.json` describes
+the package to its consumers, so a `clean` there is ignored.
+
+A clean that comes from the config runs unattended, the way `composer update` does:
+
+- It never asks, even in an interactive terminal. An explicit `--clean` still asks.
+- Where an explicit unscoped `--clean` would refuse because a donor contributed nothing, it
+  reinstalls only the skills this run writes and keeps the rest, with a `clean narrowed`
+  warning. A target it cannot read is merged into instead.
+- A skill it cannot delete is reported and merged into, without failing the run.
+- It applies to the configured target only. A run with `--target` pointing elsewhere merges
+  unless `--clean` is passed as well.
+
+The warning above applies in full: an unscoped run wipes every skill directory in the target,
+hand-written ones included. `skills:init` asks about `clean` as its last question and proposes
+`true` only when the chosen target holds no skills yet; for a target that already holds skills
+it proposes `false` and says why. `--quick` and a non-interactive `init` take that proposal unless `--clean` or `--no-clean` is passed. A `--force` re-run keeps the existing value only for the same target.

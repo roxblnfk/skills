@@ -86,7 +86,15 @@ final class SyncCliDefinition
                 'Delete installed skills before copying instead of merging into them, so '
                 . 'files dropped by a donor do not linger. Without a package filter every '
                 . 'skill directory in the target is wiped, including ones you wrote by hand; '
-                . 'with a filter only the skills this run reinstalls are.',
+                . 'with a filter only the skills this run reinstalls are. Overrides the '
+                . 'skills.json clean setting for this run.',
+            )
+            ->addOption(
+                'no-clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Merge into installed skills even when skills.json turns clean on. '
+                . 'Overrides the clean setting for this run.',
             )
             ->addOption(
                 'discovery',
@@ -137,10 +145,11 @@ final class SyncCliDefinition
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
             dryRun: (bool) $input->getOption('dry-run'),
-            discovery: self::discoveryOverride($input),
+            discovery: FlagPair::negativeWins($input, 'discovery', 'no-discovery'),
             aliasOverrides: $aliasOverrides,
             fromFilter: $fromFilter,
-            clean: (bool) $input->getOption('clean'),
+            // Both at once merges: a merge cannot delete anything.
+            clean: FlagPair::negativeWins($input, 'clean', 'no-clean'),
         );
     }
 
@@ -197,20 +206,5 @@ final class SyncCliDefinition
         }
 
         return $out;
-    }
-
-    /**
-     * `--discovery` / `--no-discovery` as a tri-state: `true` / `false`
-     * force the setting for this run, `null` defers to the project
-     * config. Passing both makes the negative win — the safer of the two
-     * is the one that syncs less.
-     */
-    private static function discoveryOverride(InputInterface $input): ?bool
-    {
-        if ($input->getOption('no-discovery') === true) {
-            return false;
-        }
-
-        return $input->getOption('discovery') === true ? true : null;
     }
 }

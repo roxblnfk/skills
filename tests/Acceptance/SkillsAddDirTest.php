@@ -287,6 +287,28 @@ final class SkillsAddDirTest
         );
     }
 
+    public function addUnderCleanReinstallsOnlyTheAddedDonorsSkills(): void
+    {
+        \file_put_contents(self::SKILLS_JSON, \json_encode(['clean' => true], \JSON_THROW_ON_ERROR));
+        $this->runAdd('./local-skills');
+        \file_put_contents(self::TARGET_DIR . '/dir-hello/leftover.md', 'dropped by the donor');
+        \mkdir(self::TARGET_DIR . '/mine');
+        \file_put_contents(self::TARGET_DIR . '/mine/SKILL.md', "---\nname: mine\n---\n");
+
+        $process = $this->runAdd('./local-skills');
+
+        Assert::same($process->getExitCode(), 0, $this->diagnostics($process));
+        Assert::false(
+            \is_file(self::TARGET_DIR . '/dir-hello/leftover.md'),
+            'the added donor’s skills are reinstalled from scratch. ' . $this->diagnostics($process),
+        );
+        Assert::true(\is_file(self::TARGET_DIR . '/dir-hello/SKILL.md'));
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/mine/SKILL.md'),
+            'a skill outside the added donor must survive add. ' . $this->diagnostics($process),
+        );
+    }
+
     /**
      * @param non-empty-string $args
      */

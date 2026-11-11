@@ -65,11 +65,17 @@ final readonly class InteractiveInitWizard
      *        the array default to {@see ProjectConfig::default()}.
      * @param bool $quick take every answer from `$defaults` without prompting
      *        and go straight to the summary and its single confirmation
+     * @param \Closure(non-empty-string):bool|null $cleanDefault the `clean` answer proposed for the
+     *        chosen target when `$defaults` carries none; `null` proposes `false`
      *
      * @return array<string, mixed>|null
      */
-    public function run(IOInterface $io, array $defaults, bool $quick = false): ?array
-    {
+    public function run(
+        IOInterface $io,
+        array $defaults,
+        bool $quick = false,
+        ?\Closure $cleanDefault = null,
+    ): ?array {
         $io->write('');
         $io->write('<info>=====================================</info>');
         $io->write($quick
@@ -98,6 +104,14 @@ final readonly class InteractiveInitWizard
             $trustedReplace = $this->askTrustedReplace($io, $defaults);
         }
         $autoSync = $quick ? $this->resolveAutoSync($defaults) : $this->askAutoSync($io, $defaults);
+        /** @var mixed $seededClean */
+        $seededClean = $defaults['clean'] ?? null;
+        $clean = \is_bool($seededClean)
+            ? $seededClean
+            : ($cleanDefault !== null && $cleanDefault($target));
+        if (!$quick) {
+            $clean = $this->askClean($io, $clean);
+        }
 
         // Seed from the (already normalised) defaults so every key the
         // wizard does NOT prompt for — `sources`, `path-from-root`, other
@@ -136,7 +150,13 @@ final readonly class InteractiveInitWizard
             unset($result['auto-sync']);
         }
 
-        // Emit in PROJECT_KEYS order so generated skills.json files are
+        if ($clean) {
+            $result['clean'] = true;
+        } else {
+            unset($result['clean']);
+        }
+
+        // Emit in SKILLS_JSON_KEYS order so generated skills.json files are
         // diff-stable regardless of the seeded defaults' key order.
         $result = $this->orderProjectKeys($result);
 
@@ -369,7 +389,7 @@ final readonly class InteractiveInitWizard
     }
 
     /**
-     * Re-order a project-keys map to {@see ProjectConfigMapper::PROJECT_KEYS}
+     * Re-order a project-keys map to {@see ProjectConfigMapper::SKILLS_JSON_KEYS}
      * order for diff-stable output; keys outside that list are dropped.
      *
      * @param array<string, mixed> $values
@@ -381,7 +401,7 @@ final readonly class InteractiveInitWizard
     private function orderProjectKeys(array $values): array
     {
         $out = [];
-        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
+        foreach (ProjectConfigMapper::SKILLS_JSON_KEYS as $key) {
             if (\array_key_exists($key, $values)) {
                 /** @psalm-suppress MixedAssignment */
                 $out[$key] = $values[$key];
@@ -417,7 +437,7 @@ final readonly class InteractiveInitWizard
     {
         $default = $this->resolveTarget($defaults);
 
-        $io->write('<info>1/4  target</info> — destination directory for synced skills,');
+        $io->write('<info>1/5  target</info> — destination directory for synced skills,');
         $io->write('     relative to the project root. Tool-agnostic by default so');
         $io->write('     multiple agents can share it; redirect to .claude/skills,');
         $io->write('     .cursor/skills, etc. for single-agent projects.');
@@ -468,7 +488,7 @@ final readonly class InteractiveInitWizard
     {
         $currentAliases = $this->resolveAliases($defaults);
 
-        $io->write('<info>2/4  aliases</info> — extra paths that mirror the target via');
+        $io->write('<info>2/5  aliases</info> — extra paths that mirror the target via');
         $io->write('     symlink (POSIX) or junction (Windows). Reads through any alias');
         $io->write('     see the same files; only the target is physically written.');
         $io->write('     Pick by number, range (1-3), and/or type custom paths.');
@@ -531,7 +551,7 @@ final readonly class InteractiveInitWizard
     {
         $current = $this->resolveTrusted($defaults);
 
-        $io->write('<info>3/4  trusted</info> — packages allowed to ship skills into this');
+        $io->write('<info>3/5  trusted</info> — packages allowed to ship skills into this');
         $io->write('     project. Patterns: <comment>vendor/package</comment> (exact) or');
         $io->write('     <comment>vendor/*</comment> (whole vendor). Built-in trust and direct');
         $io->write('     dependencies are implicitly trusted — only list what those');
@@ -627,12 +647,29 @@ final readonly class InteractiveInitWizard
     {
         $default = $this->resolveAutoSync($defaults);
 
-        $io->write('<info>4/4  auto-sync</info> — when <comment>true</comment> (default), <comment>skills:update</comment> runs');
+        $io->write('<info>4/5  auto-sync</info> — when <comment>true</comment> (default), <comment>skills:update</comment> runs');
         $io->write('     automatically after every <comment>composer install</comment> /');
         $io->write('     <comment>composer update</comment>.');
         $bool = $io->askConfirmation(
             \sprintf(
                 '  <info>auto-sync</info> [<comment>%s</comment>]: ',
+                $default ? 'Y/n' : 'y/N',
+            ),
+            $default,
+        );
+        $io->write('');
+
+        return $bool;
+    }
+
+    private function askClean(IOInterface $io, bool $default): bool
+    {
+        $io->write('<info>5/5  clean</info> — when <comment>true</comment>, every sync deletes the installed');
+        $io->write('     skills before copying, so the target mirrors the donors exactly.');
+        $io->write('     Hand-written skills in the target are deleted too.');
+        $bool = $io->askConfirmation(
+            \sprintf(
+                '  <info>clean</info> [<comment>%s</comment>]: ',
                 $default ? 'Y/n' : 'y/N',
             ),
             $default,

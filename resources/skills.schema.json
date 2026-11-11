@@ -36,6 +36,11 @@
             "description": "When true (default), the plugin runs skills:update automatically after every composer install/update via post-install-cmd / post-update-cmd. Suppressed by --no-scripts.",
             "default": true
         },
+        "clean": {
+            "type": "boolean",
+            "description": "When true, auto-sync and every skills:update without --clean / --no-clean delete the installed skills in the configured target (not another directory passed with --target) before copying instead of merging into them, without asking. Warning: an unscoped run wipes every skill directory in the target, including hand-written ones and any skill that no configured donor ships. When a donor contributes nothing, only the skills the run reinstalls are deleted. skills:init proposes true when the target holds no skills yet. Read from skills.json only.",
+            "default": false
+        },
         "path-from-root": {
             "type": "string",
             "description": "The project's own location relative to an intended outer containment root, e.g. \"packages/api\" in a monorepo. When set, target and aliases are resolved against (and confined to) that root instead of the project directory, after verifying the declared suffix matches the real project location. Must be a relative path with plain segments (no \".\"/\"..\"). Omit to confine writes to the project root."

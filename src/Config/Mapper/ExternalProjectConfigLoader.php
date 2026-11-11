@@ -39,7 +39,8 @@ final readonly class ExternalProjectConfigLoader
     /**
      * Top-level keys accepted inside `skills.json`. Mirrors the project
      * keys understood under `extra.skills`, plus the editor-only
-     * `$schema` annotation.
+     * `$schema` annotation and the keys only `skills.json` carries
+     * ({@see ProjectConfigMapper::SKILLS_JSON_ONLY_KEYS}).
      *
      * Kept in sync with the per-field mapping in
      * {@see ProjectConfigMapper::mapSkillsBlock()} and with
@@ -59,6 +60,7 @@ final readonly class ExternalProjectConfigLoader
         'vendor-sources',
         'sources',
         'remote',
+        ...ProjectConfigMapper::SKILLS_JSON_ONLY_KEYS,
     ];
 
     /**

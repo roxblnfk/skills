@@ -93,7 +93,7 @@ final class ShowCliDefinition
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
             dryRun: false,
-            discovery: self::discoveryOverride($input),
+            discovery: FlagPair::negativeWins($input, 'discovery', 'no-discovery'),
         );
     }
 
@@ -122,20 +122,5 @@ final class ShowCliDefinition
         }
 
         return $out;
-    }
-
-    /**
-     * `--discovery` / `--no-discovery` as a tri-state: `true` / `false`
-     * force the setting for this run, `null` defers to the project
-     * config. Passing both makes the negative win — the safer of the two
-     * is the one that syncs less.
-     */
-    private static function discoveryOverride(InputInterface $input): ?bool
-    {
-        if ($input->getOption('no-discovery') === true) {
-            return false;
-        }
-
-        return $input->getOption('discovery') === true ? true : null;
     }
 }

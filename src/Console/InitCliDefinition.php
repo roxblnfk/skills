@@ -110,6 +110,20 @@ final class InitCliDefinition
                 null,
                 InputOption::VALUE_NONE,
                 'Write discovery: false — sync only what packages declare explicitly.',
+            )
+            ->addOption(
+                'clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Write clean: true — every sync deletes the installed skills before copying, '
+                . 'hand-written ones in the target included. Without either flag, init '
+                . 'proposes it only for a target that holds no skills yet.',
+            )
+            ->addOption(
+                'no-clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Leave clean off, so syncs merge into the installed skills.',
             );
     }
 
@@ -158,8 +172,9 @@ final class InitCliDefinition
             target: $target,
             aliases: $aliases,
             trusted: self::stringList($input, 'trust'),
-            autoSync: self::tristate($input, 'auto-sync', 'no-auto-sync'),
-            discovery: self::tristate($input, 'discovery', 'no-discovery'),
+            autoSync: FlagPair::exclusive($input, 'auto-sync', 'no-auto-sync'),
+            discovery: FlagPair::exclusive($input, 'discovery', 'no-discovery'),
+            clean: FlagPair::exclusive($input, 'clean', 'no-clean'),
         );
     }
 
@@ -194,28 +209,6 @@ final class InitCliDefinition
         }
 
         return $out;
-    }
-
-    /**
-     * A flag and its negation as a tri-state; `null` when neither was
-     * passed. Both at once is a contradiction the user should hear about
-     * rather than have silently resolved.
-     *
-     * @param non-empty-string $positive
-     * @param non-empty-string $negative
-     *
-     * @throws \InvalidArgumentException when both flags are passed
-     */
-    private static function tristate(InputInterface $input, string $positive, string $negative): ?bool
-    {
-        $on = $input->getOption($positive) === true;
-        $off = $input->getOption($negative) === true;
-
-        if ($on && $off) {
-            throw new \InvalidArgumentException(\sprintf('--%s and --%s contradict each other', $positive, $negative));
-        }
-
-        return $on || $off ? $on : null;
     }
 
     /**
