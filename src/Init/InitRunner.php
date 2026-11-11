@@ -7,12 +7,17 @@ namespace LLM\Skills\Init;
 use Composer\IO\IOInterface;
 use Composer\Json\JsonManipulator;
 use Internal\Path;
+use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\InitOptions;
 use LLM\Skills\Config\InitPresets;
 use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
 use LLM\Skills\Config\ProjectConfig;
+use LLM\Skills\Config\SyncOptions;
+use LLM\Skills\Config\TrustedVendors;
+use LLM\Skills\Discovery\InstalledSkillScanner;
+use LLM\Skills\Sync\SyncPlanner;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -194,7 +199,7 @@ final readonly class InitRunner
                 // The migrator writes the file from the inline block alone;
                 // command-line values are layered on afterwards so they win
                 // over what composer.json happened to carry.
-                if (!$this->applyPresetsToFile($target, $options->presets, $io)) {
+                if (!$this->applyPresetsToFile($projectRoot, $target, $options->presets, $io)) {
                     return Command::FAILURE;
                 }
                 $io->write(\sprintf(
@@ -209,6 +214,21 @@ final readonly class InitRunner
                 $onConfigWritten?->__invoke();
                 return Command::SUCCESS;
         }
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     *
+     * @return non-empty-string|null
+     *
+     * @psalm-pure
+     */
+    private static function pathFromRoot(array $values): ?string
+    {
+        /** @var mixed $raw */
+        $raw = $values['path-from-root'] ?? null;
+
+        return \is_string($raw) && $raw !== '' ? $raw : null;
     }
 
     /**
@@ -300,7 +320,13 @@ final readonly class InitRunner
         // Values given on the command line have the last word over both.
         $defaults = $options->presets->apply($defaults);
 
-        $resolved = $this->wizard->run($io, $defaults, $options->quick);
+        $pathFromRoot = self::pathFromRoot($defaults);
+        $resolved = $this->wizard->run(
+            $io,
+            $defaults,
+            $options->quick,
+            fn(string $target): bool => $this->proposeClean($projectRoot, $target, $pathFromRoot, $io),
+        );
         if ($resolved === null) {
             return Command::SUCCESS;
         }
@@ -390,26 +416,98 @@ final readonly class InitRunner
     }
 
     /**
-     * Layer the command-line values onto a `skills.json` that something
-     * else just wrote — the migrator, which only knows about the inline
-     * block it moved. A no-op when nothing was passed, so the common
-     * migration keeps writing exactly the bytes it always did.
+     * The `clean` value to propose for a target: `true` when it holds no
+     * skills yet, so nothing there can be lost to a wipe. A target that
+     * already holds skills keeps the merge, with a notice saying why; so does
+     * one that cannot be resolved or read.
+     *
+     * @param non-empty-string $target as written to `skills.json`
+     * @param non-empty-string|null $pathFromRoot
+     */
+    private function proposeClean(Path $projectRoot, string $target, ?string $pathFromRoot, IOInterface $io): bool
+    {
+        try {
+            $dir = (new SyncPlanner())->target(
+                new ProjectConfig(
+                    target: $target,
+                    trusted: TrustedVendors::empty(),
+                    trustedReplace: false,
+                    pathFromRoot: $pathFromRoot,
+                ),
+                SyncOptions::default(),
+                $projectRoot,
+            );
+        } catch (MalformedProjectConfig) {
+            return false;
+        }
+
+        $installed = (new InstalledSkillScanner())->scan($dir);
+        if ($installed === []) {
+            return true;
+        }
+        if ($installed !== null) {
+            $io->write(\sprintf(
+                '<comment>[init] %s already holds skills, so clean stays off: a clean sync '
+                . 'would delete them, hand-written ones included.</comment>',
+                $target,
+            ));
+        }
+
+        return false;
+    }
+
+    /**
+     * Add `clean: true` to project keys about to be written without the
+     * wizard, when {@see self::proposeClean()} proposes it. A `clean`
+     * already among them is kept as it is.
+     *
+     * @param array<string, mixed> $values
+     *
+     * @return array<string, mixed>
+     */
+    private function withCleanDefault(Path $projectRoot, array $values, IOInterface $io): array
+    {
+        if (\array_key_exists('clean', $values)) {
+            return $values;
+        }
+
+        /** @var mixed $raw */
+        $raw = $values['target'] ?? null;
+        $target = \is_string($raw) && $raw !== '' ? $raw : ProjectConfig::DEFAULT_TARGET;
+        if ($this->proposeClean($projectRoot, $target, self::pathFromRoot($values), $io)) {
+            $values['clean'] = true;
+            $io->write(\sprintf(
+                '<info>[init]</info> clean: true — %s holds no skills yet, so every sync '
+                . 'reinstalls it to match the donors exactly',
+                $target,
+            ));
+        }
+
+        return $values;
+    }
+
+    /**
+     * Layer the command-line values and the `clean` default onto a
+     * `skills.json` that something else just wrote — the migrator, which
+     * only knows about the inline block it moved. The file is left as it is
+     * when neither adds anything.
      *
      * @param non-empty-string $file
      */
-    private function applyPresetsToFile(string $file, InitPresets $presets, IOInterface $io): bool
+    private function applyPresetsToFile(Path $projectRoot, string $file, InitPresets $presets, IOInterface $io): bool
     {
-        if ($presets->isEmpty()) {
-            return true;
-        }
-
         $migrated = $this->readJsonObject($file, $io, 'skills.json');
         if ($migrated === null) {
             return false;
         }
         unset($migrated['$schema']);
 
-        $values = $this->dropSelfAlias($presets->apply($migrated), $io);
+        $values = $presets->isEmpty() ? $migrated : $this->dropSelfAlias($presets->apply($migrated), $io);
+        $values = $this->withCleanDefault($projectRoot, $values, $io);
+        if ($values === $migrated) {
+            return true;
+        }
+
         $content = ProjectConfigMigrator::renderSkillsJson($this->orderedProjectKeys($values));
         if (\file_put_contents($file, $content) === false) {
             $io->writeError(\sprintf('<error>[llm/skills] failed to write %s</error>', $file));
@@ -509,7 +607,7 @@ final readonly class InitRunner
 
     /**
      * Re-order an arbitrary project-keys map to match
-     * {@see ProjectConfigMapper::PROJECT_KEYS} so generated files are
+     * {@see ProjectConfigMapper::SKILLS_JSON_KEYS} so generated files are
      * diff-stable across runs.
      *
      * @param array<string, mixed> $values
@@ -521,7 +619,7 @@ final readonly class InitRunner
     private function orderedProjectKeys(array $values): array
     {
         $out = [];
-        foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
+        foreach (ProjectConfigMapper::SKILLS_JSON_KEYS as $key) {
             if (\array_key_exists($key, $values)) {
                 /** @psalm-suppress MixedAssignment */
                 $out[$key] = $values[$key];
@@ -697,7 +795,7 @@ final readonly class InitRunner
             if ($options->force && \is_file($target)) {
                 @\unlink($target);
             }
-            if (!$this->applyPresetsToFile($canonical, $options->presets, $io)) {
+            if (!$this->applyPresetsToFile($projectRoot, $canonical, $options->presets, $io)) {
                 return Command::FAILURE;
             }
             if (!@\rename($canonical, $target)) {
@@ -762,6 +860,7 @@ final readonly class InitRunner
             'dependencies' => ['composer' => true],
             'sources' => [],
         ]), $io);
+        $values = $this->withCleanDefault($projectRoot, $values, $io);
         $content = ProjectConfigMigrator::renderSkillsJson($this->orderedProjectKeys($values));
         if (\file_put_contents($target, $content) === false) {
             $io->writeError(\sprintf(

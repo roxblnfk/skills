@@ -222,8 +222,8 @@ final class StandaloneBinTest
         );
         Assert::same(
             \array_keys($decoded),
-            ['$schema', 'dependencies', 'sources'],
-            'standalone init writes a stub with the dependencies + sources knobs visible',
+            ['$schema', 'dependencies', 'sources', 'clean'],
+            'standalone init writes a stub with the dependencies + sources knobs visible, and clean on for its empty target',
         );
     }
 

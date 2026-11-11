@@ -55,7 +55,7 @@ final class InitRunnerTest
         Assert::same($code, Command::SUCCESS);
 
         $written = $this->readSkillsJson();
-        Assert::same(\array_keys($written), ['$schema', 'dependencies', 'sources']);
+        Assert::same(\array_keys($written), ['$schema', 'dependencies', 'sources', 'clean']);
         Assert::same(
             $written['$schema'],
             InitRunner::SCHEMA_URL,
@@ -283,7 +283,7 @@ final class InitRunnerTest
         );
 
         Assert::same($code, Command::SUCCESS);
-        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'dependencies', 'sources']);
+        Assert::same(\array_keys($this->readSkillsJson()), ['$schema', 'dependencies', 'sources', 'clean']);
         Assert::true(\str_contains($io->getOutput(), 'no project keys to migrate'));
     }
 
@@ -623,6 +623,33 @@ final class InitRunnerTest
         Assert::same($this->readSkillsJson()['target'] ?? null, 'custom/skills');
     }
 
+    public function cleanIsTurnedOnWhenTheTargetHoldsNoSkills(): void
+    {
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, InitOptions::default());
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true);
+        Assert::true(\str_contains($io->getOutput(), 'clean: true'), $io->getOutput());
+    }
+
+    public function cleanStaysOffWhenTheTargetAlreadyHoldsSkills(): void
+    {
+        // An installed skill may be hand-written; turning clean on would
+        // delete it on the very next sync.
+        $skill = $this->tmp . '/.agents/skills/mine';
+        \mkdir($skill, 0o777, true);
+        \file_put_contents($skill . '/SKILL.md', "---\nname: mine\n---\n");
+
+        $io = new BufferIO();
+        (new InitRunner())->run(Path::create($this->tmp), $io, InitOptions::default());
+
+        Assert::false(\array_key_exists('clean', $this->readSkillsJson()));
+        Assert::true(
+            \str_contains($io->getOutput(), 'already holds skills, so clean stays off'),
+            'the user is told why clean is off. Got: ' . $io->getOutput(),
+        );
+    }
+
     public function givenValuesReachTheStandaloneStub(): void
     {
         $code = (new InitRunner())->run(
@@ -641,10 +668,10 @@ final class InitRunnerTest
         Assert::same($skills['target'], '.claude/skills');
         Assert::same($skills['aliases'], ['.agents/skills']);
         Assert::same($skills['discovery'], false);
-        // Canonical PROJECT_KEYS order, regardless of how the values arrived.
+        // Canonical SKILLS_JSON_KEYS order, regardless of how the values arrived.
         Assert::same(
             \array_keys($skills),
-            ['$schema', 'target', 'aliases', 'dependencies', 'discovery', 'sources'],
+            ['$schema', 'target', 'aliases', 'dependencies', 'discovery', 'sources', 'clean'],
         );
     }
 

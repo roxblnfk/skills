@@ -57,6 +57,40 @@ final class SkillsInitTest
     }
 
     #[WithSandboxExtras(['trusted' => ['acme/skills-basic']])]
+    public function initTurnsCleanOnForAnEmptyTarget(): void
+    {
+        $process = $this->runInit('--quick --no-sync');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same($this->readConfig()['clean'] ?? null, true, 'nothing installed yet, nothing to lose');
+    }
+
+    #[WithSandboxExtras(['trusted' => ['acme/skills-basic']])]
+    public function initKeepsTheMergeForATargetThatAlreadyHoldsSkills(): void
+    {
+        \mkdir(self::TARGET_DIR . '/mine', 0o777, true);
+        \file_put_contents(self::TARGET_DIR . '/mine/SKILL.md', "---\nname: mine\n---\n");
+
+        $process = $this->runInit('--quick');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(\array_key_exists('clean', $this->readConfig()));
+        Assert::true(
+            \is_file(self::TARGET_DIR . '/mine/SKILL.md'),
+            'the follow-up sync must not delete a skill that was already there',
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function readConfig(): array
+    {
+        /** @var array<string, mixed> */
+        return \json_decode((string) \file_get_contents(self::CONFIG_FILE), true, flags: \JSON_THROW_ON_ERROR);
+    }
+
+    #[WithSandboxExtras(['trusted' => ['acme/skills-basic']])]
     public function noSyncFlagWritesTheConfigAndCopiesNothing(): void
     {
         $process = $this->runInit('--quick --no-sync');

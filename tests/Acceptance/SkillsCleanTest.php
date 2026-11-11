@@ -219,6 +219,139 @@ final class SkillsCleanTest
         Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'clean' => true,
+    ])]
+    public function cleanInSkillsJsonMakesAutoSyncRemoveAnOrphan(): void
+    {
+        $this->runSync();
+        $this->plantSkill('gone-from-donor');
+
+        $process = ComposerRunner::run(
+            Path::create(Info::PROJECT_DIR),
+            'run-script post-install-cmd',
+            timeout: 60,
+            mustSucceed: false,
+        );
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(
+            \is_dir(self::TARGET_DIR . '/gone-from-donor'),
+            'auto-sync must mirror the donors when skills.json turns clean on',
+        );
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'clean' => true,
+    ])]
+    public function cleanInSkillsJsonAppliesToAnUpdateWithoutTheFlag(): void
+    {
+        $this->runSync();
+        \file_put_contents(self::TARGET_DIR . '/greeting/leftover.md', 'dropped by the donor');
+
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(\is_file(self::TARGET_DIR . '/greeting/leftover.md'));
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'clean' => true,
+    ])]
+    public function noCleanMergesDespiteCleanInSkillsJson(): void
+    {
+        $this->runSync();
+        $this->plantSkill('gone-from-donor');
+
+        $process = $this->runSync('--no-clean');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(\is_dir(self::TARGET_DIR . '/gone-from-donor'));
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'clean' => true,
+    ])]
+    public function cleanInSkillsJsonLeavesATargetOverrideMerged(): void
+    {
+        // The project chose to mirror its configured target; a directory
+        // passed with --target may hold anything.
+        $other = Info::PROJECT_DIR . '/.agents/other-skills';
+        Filesystem::removeRecursive($other);
+        \mkdir($other . '/mine', 0o777, true);
+        \file_put_contents($other . '/mine/SKILL.md', "---\nname: mine\n---\n");
+
+        try {
+            $process = $this->runSync('--target=.agents/other-skills');
+
+            Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+            Assert::true(\is_file($other . '/mine/SKILL.md'), 'a skill in the override target must survive');
+            Assert::true(\is_file($other . '/greeting/SKILL.md'));
+        } finally {
+            Filesystem::removeRecursive($other);
+        }
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'clean' => true,
+    ])]
+    public function cleanInSkillsJsonStillAppliesWhenTargetNamesTheConfiguredOne(): void
+    {
+        $this->runSync();
+        $this->plantSkill('gone-from-donor');
+
+        $process = $this->runSync('--target=.agents/skills');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(\is_dir(self::TARGET_DIR . '/gone-from-donor'));
+    }
+
+    #[WithSkillsJson([
+        'target' => '.agents/skills',
+        'sources' => [
+            ['from' => 'dir', 'path' => './no-such-dir'],
+        ],
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'clean' => true,
+    ])]
+    public function cleanInSkillsJsonReinstallsOnlyWhatItWritesWhenASourceIsMissing(): void
+    {
+        // Unattended runs cannot stop to ask for a fix, so instead of refusing
+        // they replace what they fetched and keep everything else.
+        $this->runSync('--no-clean');
+        $this->plantSkill('gone-from-donor');
+        \file_put_contents(self::TARGET_DIR . '/greeting/leftover.md', 'dropped by the donor');
+
+        $process = $this->runSync();
+
+        Assert::true(
+            \str_contains($process->getErrorOutput(), 'clean narrowed'),
+            'the narrowing must be announced. Got: ' . $process->getErrorOutput(),
+        );
+        Assert::false(\str_contains($process->getErrorOutput(), '--clean refused'));
+        Assert::true(
+            \is_dir(self::TARGET_DIR . '/gone-from-donor'),
+            'a skill this run does not write back must be kept',
+        );
+        Assert::false(
+            \is_file(self::TARGET_DIR . '/greeting/leftover.md'),
+            'a skill this run writes back is still reinstalled from scratch',
+        );
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     /**

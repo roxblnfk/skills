@@ -86,7 +86,15 @@ final class SyncCliDefinition
                 'Delete installed skills before copying instead of merging into them, so '
                 . 'files dropped by a donor do not linger. Without a package filter every '
                 . 'skill directory in the target is wiped, including ones you wrote by hand; '
-                . 'with a filter only the skills this run reinstalls are.',
+                . 'with a filter only the skills this run reinstalls are. Overrides the '
+                . 'skills.json clean setting for this run.',
+            )
+            ->addOption(
+                'no-clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Merge into installed skills even when skills.json turns clean on. '
+                . 'Overrides the clean setting for this run.',
             )
             ->addOption(
                 'discovery',
@@ -140,7 +148,7 @@ final class SyncCliDefinition
             discovery: self::discoveryOverride($input),
             aliasOverrides: $aliasOverrides,
             fromFilter: $fromFilter,
-            clean: (bool) $input->getOption('clean'),
+            clean: self::cleanOverride($input),
         );
     }
 
@@ -212,5 +220,19 @@ final class SyncCliDefinition
         }
 
         return $input->getOption('discovery') === true ? true : null;
+    }
+
+    /**
+     * `--clean` / `--no-clean` as a tri-state, like
+     * {@see self::discoveryOverride()}. Passing both makes the negative
+     * win: a merge cannot delete anything.
+     */
+    private static function cleanOverride(InputInterface $input): ?bool
+    {
+        if ($input->getOption('no-clean') === true) {
+            return false;
+        }
+
+        return $input->getOption('clean') === true ? true : null;
     }
 }

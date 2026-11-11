@@ -129,9 +129,51 @@ final class CleanSyncConfirmationTest
         Assert::false(\is_file($this->targetPath('hello/notes.md')));
     }
 
+    public function aCleanTurnedOnInSkillsJsonWipesWithoutAsking(): void
+    {
+        // The project chose the mirror once, in its config; asking again on
+        // every run would make the setting useless at an interactive prompt.
+        $this->run(clean: false, interactive: false);
+        $this->plantLocalFile('hello/notes.md', 'local notes');
+        $this->enableCleanInSkillsJson();
+
+        $io = $this->ioAnswering([]);
+        $exit = $this->run(clean: null, interactive: true, io: $io);
+
+        Assert::same($exit, Command::SUCCESS, $io->getOutput());
+        Assert::false(\is_file($this->targetPath('hello/notes.md')));
+        Assert::true(\is_file($this->targetPath('hello/SKILL.md')));
+        Assert::false(
+            \str_contains($io->getOutput(), 'will delete'),
+            'no prompt is shown. Got: ' . $io->getOutput(),
+        );
+    }
+
+    public function anExplicitCleanStillAsksWhenSkillsJsonTurnsItOn(): void
+    {
+        $this->run(clean: false, interactive: false);
+        $this->plantLocalFile('hello/notes.md', 'local notes');
+        $this->enableCleanInSkillsJson();
+
+        $io = $this->ioAnswering(['n']);
+        $this->run(clean: true, interactive: true, io: $io);
+
+        Assert::true(\is_file($this->targetPath('hello/notes.md')));
+        Assert::true(\str_contains($io->getOutput(), 'will delete'));
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
-    private function run(bool $clean, bool $interactive, ?BufferIO $io = null): int
+    private function enableCleanInSkillsJson(): void
+    {
+        $file = $this->tmp . '/skills.json';
+        /** @var array<string, mixed> $config */
+        $config = \json_decode((string) \file_get_contents($file), true, flags: \JSON_THROW_ON_ERROR);
+        $config['clean'] = true;
+        \file_put_contents($file, \json_encode($config, \JSON_THROW_ON_ERROR));
+    }
+
+    private function run(?bool $clean, bool $interactive, ?BufferIO $io = null): int
     {
         $projectRoot = Path::create($this->tmp);
         $provider = new SourceProvider(

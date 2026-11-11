@@ -70,6 +70,10 @@ final readonly class ProjectConfig
      *         ignored entirely — only the project's own `sources[]` and local package
      *         directories contribute donors. Default `true`: a vendor-declared source is
      *         still gated by the same trust rules as the declaring package itself.
+     * @param bool $clean the `skills.json` `clean` toggle. When `true`, a sync that passes
+     *         neither `--clean` nor `--no-clean` deletes installed skills before copying, as
+     *         `--clean` does, without asking first. Never read from inline `extra.skills`,
+     *         which describes the package as a donor rather than configuring the consumer.
      *
      * @psalm-mutation-free
      */
@@ -85,6 +89,7 @@ final readonly class ProjectConfig
         public array $sources = [],
         public array $dependencies = [],
         public bool $vendorSources = true,
+        public bool $clean = false,
     ) {}
 
     /**
@@ -107,6 +112,7 @@ final readonly class ProjectConfig
             sources: [],
             dependencies: [],
             vendorSources: true,
+            clean: false,
         );
     }
 
@@ -146,6 +152,7 @@ final readonly class ProjectConfig
             $this->sources,
             $this->dependencies,
             $this->vendorSources,
+            $this->clean,
         );
     }
 
@@ -168,6 +175,7 @@ final readonly class ProjectConfig
             $this->sources,
             $this->dependencies,
             $this->vendorSources,
+            $this->clean,
         );
     }
 }

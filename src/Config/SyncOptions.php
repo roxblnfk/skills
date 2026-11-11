@@ -35,8 +35,10 @@ final readonly class SyncOptions
      *         the runner keeps only donors whose {@see VendorConfig::$provenance} matches
      *         this id. The vocabulary is shared with `skills.json` `dependencies.{id}` and
      *         `sources[].from`.
-     * @param bool $clean `--clean`: delete installed skills before copying instead of merging
-     *         into them. {@see isScoped()} narrows what a scoped run is allowed to delete.
+     * @param bool|null $clean `--clean` / `--no-clean`: `true` deletes installed skills before
+     *         copying instead of merging into them, `false` merges, `null` (default) defers to
+     *         the `skills.json` `clean` key. {@see isScoped()} narrows what a scoped run is
+     *         allowed to delete.
      *
      * @psalm-mutation-free
      */
@@ -50,7 +52,7 @@ final readonly class SyncOptions
         public ?array $aliasOverrides = null,
         public bool $autoMigrate = true,
         public ?string $fromFilter = null,
-        public bool $clean = false,
+        public ?bool $clean = null,
     ) {}
 
     /**

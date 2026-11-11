@@ -10,6 +10,7 @@ use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
+use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendorRegistry;
 use LLM\Skills\Config\TrustedVendors;
@@ -23,6 +24,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SourceFailure;
+use LLM\Skills\Filesystem\PathContainment;
 use Symfony\Component\Console\Command\Command;
 
 /**
@@ -44,7 +46,7 @@ use Symfony\Component\Console\Command\Command;
  *
  * Whatever the source, the runner orchestrates the pipeline:
  *
- *   1. Map project config → {@see \LLM\Skills\Config\ProjectConfig}
+ *   1. Map project config → {@see ProjectConfig}
  *      via `skills.json` (when present) or inline `extra.skills`.
  *   2. {@see DonorProvider::discover()}: enumerate donor packages.
  *   3. {@see DiscoveryResolver}: merge auto-discovered donors that the user
@@ -252,8 +254,17 @@ final readonly class SyncRunner
             $io->writeError('<warning>[rename] ' . $notice->describe() . '</warning>');
         }
 
+        // A clean turned on by `skills.json` runs unattended, the way auto-sync
+        // after `composer install` does: it never asks, and where an explicit
+        // `--clean` would refuse, it falls back to the most it can safely do.
+        // It covers the configured target only; another `--target` directory is
+        // one the project never chose to mirror.
+        $cleanFromConfig = $options->clean === null
+            && $project->clean
+            && $this->isConfiguredTarget($plan->target, $project, $options, $projectRoot);
         $purge = [];
-        if ($options->clean) {
+        if ($options->clean ?? $cleanFromConfig) {
+            $narrowed = $options->isScoped();
             // A donor that dropped out contributes no skills, so an unscoped
             // wipe would delete its installed copies with nothing to put back.
             // A donor is lost this way when a `sources[]` entry never resolved or
@@ -267,7 +278,9 @@ final readonly class SyncRunner
             // that produced nothing takes nothing with it, and refusing there
             // would let one broken vendor package block the narrow `--clean`
             // that works around it.
-            $unrestorable = $options->isScoped() ? [] : [
+            // A donor can fail to resolve and be dropped from enumeration both,
+            // so the list is deduplicated before it is named.
+            $unrestorable = $narrowed ? [] : \array_values(\array_unique([
                 ...\array_map(
                     static fn(SourceFailure $f): string => $f->label,
                     $discovery->failures,
@@ -277,8 +290,18 @@ final readonly class SyncRunner
                     \array_filter($discovery->malformed, static fn(MalformedDonor $donor): bool => $donor->declared),
                 ),
                 ...$enumeration->droppedDonors,
-            ];
-            if ($unrestorable !== []) {
+            ]));
+            if ($unrestorable !== [] && $cleanFromConfig) {
+                // Reinstalling only what this run writes is the scoped purge:
+                // the skills of a donor that produced nothing stay in place.
+                // Its failure rows follow with the copy report.
+                $io->writeError(\sprintf(
+                    '<warning>[llm/skills] clean narrowed: %s contributed no skills, so only the '
+                    . 'skills this run reinstalls are deleted first; the rest are kept.</warning>',
+                    \implode(', ', $unrestorable),
+                ));
+                $narrowed = true;
+            } elseif ($unrestorable !== []) {
                 // The rows carry each donor's reason, which the refusal alone
                 // does not name.
                 $this->emitSourceFailures($io, $discovery->failures, $discovery->malformed);
@@ -298,18 +321,32 @@ final readonly class SyncRunner
             }
 
             $installed = $this->installedScanner->scan($plan->target);
-            if ($installed === null) {
+            if ($installed === null && $cleanFromConfig) {
+                $io->writeError(\sprintf(
+                    '<warning>[llm/skills] clean skipped: %s could not be read, so this run '
+                    . 'merges into it.</warning>',
+                    (string) $plan->target,
+                ));
+            } elseif ($installed === null) {
                 $io->writeError(\sprintf(
                     '<error>[llm/skills] --clean refused: %s could not be read, so this run '
                     . 'cannot tell what is installed there.</error>',
                     (string) $plan->target,
                 ));
                 return Command::FAILURE;
-            }
-
-            $purge = $this->planPurge($io, $plan, $installed, $enumeration->skills, $options);
-            if ($purge === null) {
-                return Command::SUCCESS;
+            } else {
+                $purge = $this->planPurge(
+                    $io,
+                    $plan,
+                    $installed,
+                    $enumeration->skills,
+                    $options,
+                    $narrowed,
+                    confirm: !$cleanFromConfig,
+                );
+                if ($purge === null) {
+                    return Command::SUCCESS;
+                }
             }
         }
 
@@ -389,9 +426,34 @@ final readonly class SyncRunner
         // mask broken `.claude/skills` / `.cursor/skills` aliases on CI.
         // A skill the purge could not delete fails it for the same reason:
         // what landed there is a merge, not the clean install that was asked for.
-        return $aliasFailed || $report->removalFailures !== []
+        // A clean from `skills.json` was not asked for on this run, so the
+        // reported removal failure and the merge it fell back to are enough.
+        return $aliasFailed || ($report->removalFailures !== [] && !$cleanFromConfig)
             ? Command::FAILURE
             : Command::SUCCESS;
+    }
+
+    /**
+     * Whether this run writes into the target `skills.json` configures: no
+     * `--target`, or one that resolves to the same directory.
+     */
+    private function isConfiguredTarget(
+        Path $target,
+        ProjectConfig $project,
+        SyncOptions $options,
+        Path $projectRoot,
+    ): bool {
+        if ($options->targetOverride === null) {
+            return true;
+        }
+
+        try {
+            $configured = $this->planner->target($project, SyncOptions::default(), $projectRoot);
+        } catch (MalformedProjectConfig) {
+            return false;
+        }
+
+        return (string) $configured === (string) $target || PathContainment::isSame($configured, $target);
     }
 
     /**
@@ -400,6 +462,8 @@ final readonly class SyncRunner
      *
      * @param list<InstalledSkill> $installed what currently sits in the target
      * @param list<Skill> $incoming skills the approved donors are about to write
+     * @param bool $narrowed delete only the installed skills this run writes back
+     * @param bool $confirm ask before deleting when the session is interactive
      *
      * @return list<InstalledSkill>|null `null` when the user declined the
      *         prompt and the run must stop without touching the target
@@ -410,15 +474,17 @@ final readonly class SyncRunner
         array $installed,
         array $incoming,
         SyncOptions $options,
+        bool $narrowed,
+        bool $confirm,
     ): ?array {
-        $purge = $this->purgePlanner->plan($installed, $incoming, $options->isScoped());
+        $purge = $this->purgePlanner->plan($installed, $incoming, $narrowed);
 
         // The prompt lists only what will really be deleted. The full list goes
         // on to the engine, which keeps the source holders again and reports
         // them once the sync has actually run.
         [$deletable] = $this->purgePlanner->partitionSourceHolders($purge, $incoming, $plan->target);
 
-        if ($deletable === [] || $options->dryRun || !$options->interactive) {
+        if ($deletable === [] || $options->dryRun || !$options->interactive || !$confirm) {
             return $purge;
         }
 
