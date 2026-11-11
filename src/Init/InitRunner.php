@@ -664,9 +664,7 @@ final readonly class InitRunner
             }
         }
 
-        /** @var mixed $rawTarget */
-        $rawTarget = $values['target'] ?? null;
-        $target = \is_string($rawTarget) && $rawTarget !== '' ? $rawTarget : ProjectConfig::DEFAULT_TARGET;
+        $target = self::targetOf($values);
 
         $clean = $this->wizard->cleanAliases($io, $aliases, $target);
         if ($clean === []) {
