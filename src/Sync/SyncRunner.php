@@ -254,16 +254,14 @@ final readonly class SyncRunner
             $io->writeError('<warning>[rename] ' . $notice->describe() . '</warning>');
         }
 
-        // A clean turned on by `skills.json` runs unattended, the way auto-sync
-        // after `composer install` does: it never asks, and where an explicit
-        // `--clean` would refuse, it falls back to the most it can safely do.
-        // It covers the configured target only; another `--target` directory is
-        // one the project never chose to mirror.
-        $cleanFromConfig = $options->clean === null
-            && $project->clean
-            && $this->isConfiguredTarget($plan->target, $project, $options, $projectRoot);
+        // A clean turned on by `skills.json` covers the configured target only;
+        // another `--target` directory is one the project never chose to mirror.
+        $clean = CleanPolicy::resolve(
+            $options->clean,
+            $project->clean && $this->isConfiguredTarget($plan->target, $project, $options, $projectRoot),
+        );
         $purge = [];
-        if ($options->clean ?? $cleanFromConfig) {
+        if ($clean !== null) {
             $narrowed = $options->isScoped();
             // A donor that dropped out contributes no skills, so an unscoped
             // wipe would delete its installed copies with nothing to put back.
@@ -278,6 +276,7 @@ final readonly class SyncRunner
             // that produced nothing takes nothing with it, and refusing there
             // would let one broken vendor package block the narrow `--clean`
             // that works around it.
+            //
             // A donor can fail to resolve and be dropped from enumeration both,
             // so the list is deduplicated before it is named.
             $unrestorable = $narrowed ? [] : \array_values(\array_unique([
@@ -291,7 +290,7 @@ final readonly class SyncRunner
                 ),
                 ...$enumeration->droppedDonors,
             ]));
-            if ($unrestorable !== [] && $cleanFromConfig) {
+            if ($unrestorable !== [] && !$clean->refusesPartialRestore()) {
                 // Reinstalling only what this run writes is the scoped purge:
                 // the skills of a donor that produced nothing stay in place.
                 // Its failure rows follow with the copy report.
@@ -321,7 +320,7 @@ final readonly class SyncRunner
             }
 
             $installed = $this->installedScanner->scan($plan->target);
-            if ($installed === null && $cleanFromConfig) {
+            if ($installed === null && !$clean->refusesUnreadableTarget()) {
                 $io->writeError(\sprintf(
                     '<warning>[llm/skills] clean skipped: %s could not be read, so this run '
                     . 'merges into it.</warning>',
@@ -342,7 +341,7 @@ final readonly class SyncRunner
                     $enumeration->skills,
                     $options,
                     $narrowed,
-                    confirm: !$cleanFromConfig,
+                    confirm: $clean->asksFirst(),
                 );
                 if ($purge === null) {
                     return Command::SUCCESS;
@@ -424,11 +423,9 @@ final readonly class SyncRunner
 
         // Alias errors fail the run loudly — silent partial success would
         // mask broken `.claude/skills` / `.cursor/skills` aliases on CI.
-        // A skill the purge could not delete fails it for the same reason:
-        // what landed there is a merge, not the clean install that was asked for.
-        // A clean from `skills.json` was not asked for on this run, so the
-        // reported removal failure and the merge it fell back to are enough.
-        return $aliasFailed || ($report->removalFailures !== [] && !$cleanFromConfig)
+        // A skill the purge could not delete fails it too, when the policy says
+        // so (see {@see CleanPolicy::failsOnRemovalError()}).
+        return $aliasFailed || ($report->removalFailures !== [] && $clean?->failsOnRemovalError() === true)
             ? Command::FAILURE
             : Command::SUCCESS;
     }

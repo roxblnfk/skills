@@ -158,8 +158,8 @@ final class InitCliDefinition
             target: $target,
             aliases: $aliases,
             trusted: self::stringList($input, 'trust'),
-            autoSync: self::tristate($input, 'auto-sync', 'no-auto-sync'),
-            discovery: self::tristate($input, 'discovery', 'no-discovery'),
+            autoSync: FlagPair::exclusive($input, 'auto-sync', 'no-auto-sync'),
+            discovery: FlagPair::exclusive($input, 'discovery', 'no-discovery'),
         );
     }
 
@@ -194,28 +194,6 @@ final class InitCliDefinition
         }
 
         return $out;
-    }
-
-    /**
-     * A flag and its negation as a tri-state; `null` when neither was
-     * passed. Both at once is a contradiction the user should hear about
-     * rather than have silently resolved.
-     *
-     * @param non-empty-string $positive
-     * @param non-empty-string $negative
-     *
-     * @throws \InvalidArgumentException when both flags are passed
-     */
-    private static function tristate(InputInterface $input, string $positive, string $negative): ?bool
-    {
-        $on = $input->getOption($positive) === true;
-        $off = $input->getOption($negative) === true;
-
-        if ($on && $off) {
-            throw new \InvalidArgumentException(\sprintf('--%s and --%s contradict each other', $positive, $negative));
-        }
-
-        return $on || $off ? $on : null;
     }
 
     /**

@@ -145,10 +145,11 @@ final class SyncCliDefinition
             targetOverride: $targetOverride,
             interactive: $input->isInteractive(),
             dryRun: (bool) $input->getOption('dry-run'),
-            discovery: self::discoveryOverride($input),
+            discovery: FlagPair::negativeWins($input, 'discovery', 'no-discovery'),
             aliasOverrides: $aliasOverrides,
             fromFilter: $fromFilter,
-            clean: self::cleanOverride($input),
+            // Both at once merges: a merge cannot delete anything.
+            clean: FlagPair::negativeWins($input, 'clean', 'no-clean'),
         );
     }
 
@@ -205,34 +206,5 @@ final class SyncCliDefinition
         }
 
         return $out;
-    }
-
-    /**
-     * `--discovery` / `--no-discovery` as a tri-state: `true` / `false`
-     * force the setting for this run, `null` defers to the project
-     * config. Passing both makes the negative win — the safer of the two
-     * is the one that syncs less.
-     */
-    private static function discoveryOverride(InputInterface $input): ?bool
-    {
-        if ($input->getOption('no-discovery') === true) {
-            return false;
-        }
-
-        return $input->getOption('discovery') === true ? true : null;
-    }
-
-    /**
-     * `--clean` / `--no-clean` as a tri-state, like
-     * {@see self::discoveryOverride()}. Passing both makes the negative
-     * win: a merge cannot delete anything.
-     */
-    private static function cleanOverride(InputInterface $input): ?bool
-    {
-        if ($input->getOption('no-clean') === true) {
-            return false;
-        }
-
-        return $input->getOption('clean') === true ? true : null;
     }
 }
