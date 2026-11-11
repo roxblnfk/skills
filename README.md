@@ -53,7 +53,7 @@ composer skills:init --force    # re-run over an existing skills.json
 ```
 
 Any config value can also be passed up front — `--target`, `--alias`, `--trust`,
-`--auto-sync` / `--no-auto-sync`, `--discovery` / `--no-discovery`. In the wizard they arrive
+`--auto-sync` / `--no-auto-sync`, `--discovery` / `--no-discovery`, `--clean` / `--no-clean`. In the wizard they arrive
 pre-filled at the prompt; with `--quick` (or in CI) they are simply written, which makes the
 whole setup one scriptable line:
 
@@ -142,6 +142,7 @@ skills — see [Donor sources](#donor-sources).
 | `--trust=PATTERN`     | init   | Pre-fill `dependencies.composer.trusted` (repeatable).                                                                                                             |
 | `--auto-sync`, `--no-auto-sync` | init | Pre-fill `auto-sync`. Unrelated to `--no-sync`, which only skips the one sync `init` itself runs.                                                        |
 | `--discovery`, `--no-discovery` | init | Pre-fill `discovery`.                                                                                                                                    |
+| `--clean`, `--no-clean` | init | Pre-fill `clean`, replacing the value proposed from what the target holds.                                                                   |
 | `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Donor sources](#donor-sources).                                                              |
 | `--clean`             | update | Delete installed skills before copying instead of merging into them. See [Clean install](#clean-install).                                                           |
 | `--no-clean`          | update | Merge for this run even when `skills.json` sets `"clean": true`. Wins over `--clean` when both are given.                                                         |
@@ -871,4 +872,4 @@ A clean that comes from the config runs unattended, the way `composer update` do
 The warning above applies in full: an unscoped run wipes every skill directory in the target,
 hand-written ones included. `skills:init` asks about `clean` as its last question and proposes
 `true` only when the chosen target holds no skills yet; for a target that already holds skills
-it proposes `false` and says why. `--quick` and a non-interactive `init` take that proposal.
+it proposes `false` and says why. `--quick` and a non-interactive `init` take that proposal unless `--clean` or `--no-clean` is passed. A `--force` re-run keeps the existing value only for the same target.

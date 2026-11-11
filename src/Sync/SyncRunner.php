@@ -258,7 +258,9 @@ final readonly class SyncRunner
         // another `--target` directory is one the project never chose to mirror.
         $clean = CleanPolicy::resolve(
             $options->clean,
-            $project->clean && $this->isConfiguredTarget($plan->target, $project, $options, $projectRoot),
+            $options->clean === null
+                && $project->clean
+                && $this->isConfiguredTarget($plan->target, $project, $options, $projectRoot),
         );
         $purge = [];
         if ($clean !== null) {

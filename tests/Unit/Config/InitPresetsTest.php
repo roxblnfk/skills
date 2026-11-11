@@ -30,6 +30,7 @@ final class InitPresetsTest
             aliases: ['.agents/skills'],
             autoSync: false,
             discovery: false,
+            clean: true,
         );
 
         $result = $presets->apply([
@@ -41,6 +42,7 @@ final class InitPresetsTest
         Assert::same($result['aliases'] ?? null, ['.agents/skills']);
         Assert::same($result['auto-sync'] ?? null, false);
         Assert::same($result['discovery'] ?? null, false);
+        Assert::same($result['clean'] ?? null, true);
     }
 
     public function trustLandsUnderComposerWithoutDisturbingItsSiblings(): void

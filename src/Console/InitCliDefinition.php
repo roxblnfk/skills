@@ -110,6 +110,20 @@ final class InitCliDefinition
                 null,
                 InputOption::VALUE_NONE,
                 'Write discovery: false — sync only what packages declare explicitly.',
+            )
+            ->addOption(
+                'clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Write clean: true — every sync deletes the installed skills before copying, '
+                . 'hand-written ones in the target included. Without either flag, init '
+                . 'proposes it only for a target that holds no skills yet.',
+            )
+            ->addOption(
+                'no-clean',
+                null,
+                InputOption::VALUE_NONE,
+                'Leave clean off, so syncs merge into the installed skills.',
             );
     }
 
@@ -160,6 +174,7 @@ final class InitCliDefinition
             trusted: self::stringList($input, 'trust'),
             autoSync: FlagPair::exclusive($input, 'auto-sync', 'no-auto-sync'),
             discovery: FlagPair::exclusive($input, 'discovery', 'no-discovery'),
+            clean: FlagPair::exclusive($input, 'clean', 'no-clean'),
         );
     }
 

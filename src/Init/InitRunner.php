@@ -219,6 +219,21 @@ final readonly class InitRunner
     /**
      * @param array<string, mixed> $values
      *
+     * @return non-empty-string
+     *
+     * @psalm-pure
+     */
+    private static function targetOf(array $values): string
+    {
+        /** @var mixed $raw */
+        $raw = $values['target'] ?? null;
+
+        return \is_string($raw) && $raw !== '' ? $raw : ProjectConfig::DEFAULT_TARGET;
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     *
      * @return non-empty-string|null
      *
      * @psalm-pure
@@ -317,6 +332,14 @@ final readonly class InitRunner
             $defaults = $this->detectedDefaults($projectRoot, $io);
         }
 
+        // A `clean` read from the existing file was chosen for that file's
+        // target. It carries over only while the target stays the same;
+        // another directory is checked afresh, like any proposal.
+        /** @var mixed $seededClean */
+        $seededClean = $defaults['clean'] ?? null;
+        $seededTarget = self::targetOf($defaults);
+        unset($defaults['clean']);
+
         // Values given on the command line have the last word over both.
         $defaults = $options->presets->apply($defaults);
 
@@ -325,7 +348,9 @@ final readonly class InitRunner
             $io,
             $defaults,
             $options->quick,
-            fn(string $target): bool => $this->proposeClean($projectRoot, $target, $pathFromRoot, $io),
+            fn(string $target): bool => \is_bool($seededClean) && $target === $seededTarget
+                ? $seededClean
+                : $this->proposeClean($projectRoot, $target, $pathFromRoot, $io),
         );
         if ($resolved === null) {
             return Command::SUCCESS;
@@ -471,9 +496,7 @@ final readonly class InitRunner
             return $values;
         }
 
-        /** @var mixed $raw */
-        $raw = $values['target'] ?? null;
-        $target = \is_string($raw) && $raw !== '' ? $raw : ProjectConfig::DEFAULT_TARGET;
+        $target = self::targetOf($values);
         if ($this->proposeClean($projectRoot, $target, self::pathFromRoot($values), $io)) {
             $values['clean'] = true;
             $io->write(\sprintf(

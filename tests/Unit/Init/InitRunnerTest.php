@@ -650,6 +650,51 @@ final class InitRunnerTest
         );
     }
 
+    public function aForcedReRunKeepsCleanForTheSameTarget(): void
+    {
+        // The project chose clean for this target; a skill installed since then
+        // is what clean is there to manage, not a reason to drop the choice.
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+        (new InitRunner())->run(Path::create($this->tmp), $io, new InitOptions(force: true, quick: true));
+
+        Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function aForcedReRunChecksAnotherTargetAfresh(): void
+    {
+        \file_put_contents($this->tmp . '/skills.json', '{"clean": true}');
+        $this->plantSkill('.claude/skills/mine');
+
+        $io = new BufferIO();
+        $io->setUserInputs(['yes']);
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(force: true, quick: true, presets: new InitPresets(target: '.claude/skills')),
+        );
+
+        Assert::false(
+            \array_key_exists('clean', $this->readSkillsJson()),
+            'a target holding skills must not inherit clean from another one. ' . $io->getOutput(),
+        );
+        Assert::true(\str_contains($io->getOutput(), 'already holds skills'));
+    }
+
+    public function noCleanPresetWinsOverAnEmptyTarget(): void
+    {
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new InitOptions(presets: new InitPresets(clean: false)),
+        );
+
+        Assert::false($this->readSkillsJson()['clean'] ?? false);
+    }
+
     public function givenValuesReachTheStandaloneStub(): void
     {
         $code = (new InitRunner())->run(
@@ -692,6 +737,16 @@ final class InitRunnerTest
             '.agents/skills is the default target and cannot also be an alias',
         );
         Assert::true(\str_contains($io->getOutput(), 'dropped'));
+    }
+
+    /**
+     * @param non-empty-string $relative
+     */
+    private function plantSkill(string $relative): void
+    {
+        $dir = $this->tmp . '/' . $relative;
+        \mkdir($dir, 0o777, true);
+        \file_put_contents($dir . '/SKILL.md', "---\nname: " . \basename($relative) . "\n---\n");
     }
 
     /**

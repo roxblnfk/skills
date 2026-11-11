@@ -32,6 +32,8 @@ final readonly class InitPresets
      *        `dependencies.composer.trusted`
      * @param bool|null $autoSync `--auto-sync` / `--no-auto-sync`
      * @param bool|null $discovery `--discovery` / `--no-discovery`
+     * @param bool|null $clean `--clean` / `--no-clean`; either one replaces the value init
+     *        would otherwise propose from what the target holds
      *
      * @psalm-mutation-free
      */
@@ -41,6 +43,7 @@ final readonly class InitPresets
         public ?array $trusted = null,
         public ?bool $autoSync = null,
         public ?bool $discovery = null,
+        public ?bool $clean = null,
     ) {}
 
     /**
@@ -60,7 +63,8 @@ final readonly class InitPresets
             && $this->aliases === null
             && $this->trusted === null
             && $this->autoSync === null
-            && $this->discovery === null;
+            && $this->discovery === null
+            && $this->clean === null;
     }
 
     /**
@@ -95,6 +99,9 @@ final readonly class InitPresets
         }
         if ($this->autoSync !== null) {
             $defaults['auto-sync'] = $this->autoSync;
+        }
+        if ($this->clean !== null) {
+            $defaults['clean'] = $this->clean;
         }
         if ($this->discovery !== null) {
             $defaults['discovery'] = $this->discovery;
