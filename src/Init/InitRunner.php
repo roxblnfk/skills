@@ -17,6 +17,7 @@ use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
 use LLM\Skills\Discovery\InstalledSkillScanner;
+use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Sync\SyncPlanner;
 use Symfony\Component\Console\Command\Command;
 
@@ -114,7 +115,7 @@ final readonly class InitRunner
         //
         // The `clean` choice is read first either way: it outlives the
         // rewrite as long as the target stays the same.
-        $previousClean = $options->path === 'skills.json' ? $this->readPreviousClean($target) : null;
+        $previousClean = $this->readPreviousClean($projectRoot, $target);
         if (
             !$io->isInteractive()
             && $options->force
@@ -165,7 +166,7 @@ final readonly class InitRunner
         // post-processing (rename) since the migrator always writes
         // to <root>/skills.json — see {@see self::runNonDefaultPath()}.
         if ($options->path !== 'skills.json') {
-            return $this->runNonDefaultPath($projectRoot, $io, $options, $target);
+            return $this->runNonDefaultPath($projectRoot, $io, $options, $target, $previousClean);
         }
 
         if ($this->migrator->renameSourcesKey($projectRoot, $io)->status === MigrationStatus::Failed) {
@@ -252,30 +253,6 @@ final readonly class InitRunner
     }
 
     /**
-     * Whether two `target` values name the same directory, with separators,
-     * a leading `./` and a trailing slash not counting.
-     *
-     * @psalm-pure
-     */
-    private static function sameTarget(string $a, string $b): bool
-    {
-        return self::normaliseTarget($a) === self::normaliseTarget($b);
-    }
-
-    /**
-     * @psalm-pure
-     */
-    private static function normaliseTarget(string $path): string
-    {
-        $path = \str_replace('\\', '/', $path);
-        while (\str_starts_with($path, './')) {
-            $path = \substr($path, 2);
-        }
-
-        return \rtrim($path, '/');
-    }
-
-    /**
      * Interactive flow. Resolves defaults from (priority order):
      *
      * 1. The existing `skills.json` when `--force` re-runs on top of
@@ -293,7 +270,7 @@ final readonly class InitRunner
      *
      * @param non-empty-string $target
      * @param non-empty-string|null $composerJsonPath
-     * @param array{clean: bool, target: non-empty-string}|null $previousClean
+     * @param array{clean: bool, dir: Path}|null $previousClean
      */
     private function runInteractive(
         Path $projectRoot,
@@ -317,7 +294,11 @@ final readonly class InitRunner
             if ($existing === null) {
                 return Command::FAILURE;
             }
-            unset($existing['$schema']);
+            // The file's `clean` reaches the wizard as a proposal, never as a
+            // seeded answer: it holds only for that file's target. Dropped
+            // here, so a file holding nothing else still lets the inline
+            // block below be offered.
+            unset($existing['$schema'], $existing['clean']);
             $defaults = $this->foldLegacyDefaults($existing);
         }
 
@@ -362,10 +343,6 @@ final readonly class InitRunner
         if ($defaults === []) {
             $defaults = $this->detectedDefaults($projectRoot, $io);
         }
-
-        // The existing file's `clean` reaches the wizard as a proposal, never
-        // as a seeded answer: it holds only for that file's target.
-        unset($defaults['clean']);
 
         // Values given on the command line have the last word over both.
         $defaults = $options->presets->apply($defaults);
@@ -472,12 +449,37 @@ final readonly class InitRunner
      * one that cannot be resolved or read.
      *
      * @param non-empty-string $target as written to `skills.json`
-     * @param non-empty-string|null $pathFromRoot
      */
-    private function proposeClean(Path $projectRoot, string $target, ?string $pathFromRoot, IOInterface $io): bool
+    private function proposeClean(Path $dir, string $target, IOInterface $io): bool
+    {
+        $installed = (new InstalledSkillScanner())->scan($dir);
+        if ($installed === []) {
+            return true;
+        }
+        if ($installed !== null) {
+            $io->write(\sprintf(
+                '<comment>[init] %s already holds skills, so clean is proposed off: a clean sync '
+                . 'would delete them, hand-written ones included.</comment>',
+                $target,
+            ));
+        }
+
+        return false;
+    }
+
+    /**
+     * The directory a `target` value resolves to, the way sync resolves it;
+     * `null` when it escapes the containment root.
+     *
+     * @param non-empty-string $target
+     * @param non-empty-string|null $pathFromRoot
+     *
+     * @psalm-mutation-free
+     */
+    private function targetDir(Path $projectRoot, string $target, ?string $pathFromRoot): ?Path
     {
         try {
-            $dir = (new SyncPlanner())->target(
+            return (new SyncPlanner())->target(
                 new ProjectConfig(
                     target: $target,
                     trusted: TrustedVendors::empty(),
@@ -488,22 +490,8 @@ final readonly class InitRunner
                 $projectRoot,
             );
         } catch (MalformedProjectConfig) {
-            return false;
+            return null;
         }
-
-        $installed = (new InstalledSkillScanner())->scan($dir);
-        if ($installed === []) {
-            return true;
-        }
-        if ($installed !== null) {
-            $io->write(\sprintf(
-                '<comment>[init] %s already holds skills, so clean stays off: a clean sync '
-                . 'would delete them, hand-written ones included.</comment>',
-                $target,
-            ));
-        }
-
-        return false;
     }
 
     /**
@@ -514,7 +502,7 @@ final readonly class InitRunner
      * whichever path wrote it.
      *
      * @param array<string, mixed> $values
-     * @param array{clean: bool, target: non-empty-string}|null $previousClean
+     * @param array{clean: bool, dir: Path}|null $previousClean
      *
      * @return array<string, mixed>
      */
@@ -535,7 +523,7 @@ final readonly class InitRunner
         if ($this->cleanFor($projectRoot, $target, self::pathFromRoot($values), $previousClean, $io)) {
             $values['clean'] = true;
             $io->write(\sprintf(
-                '<info>[init]</info> clean: true — every sync reinstalls %s to match the donors exactly',
+                '<info>[init]</info> clean: true — a sync with this config reinstalls %s to match the donors exactly',
                 $target,
             ));
         }
@@ -549,7 +537,7 @@ final readonly class InitRunner
      *
      * @param non-empty-string $target
      * @param non-empty-string|null $pathFromRoot
-     * @param array{clean: bool, target: non-empty-string}|null $previous
+     * @param array{clean: bool, dir: Path}|null $previous
      */
     private function cleanFor(
         Path $projectRoot,
@@ -558,23 +546,31 @@ final readonly class InitRunner
         ?array $previous,
         IOInterface $io,
     ): bool {
-        if ($previous !== null && self::sameTarget($previous['target'], $target)) {
+        $dir = $this->targetDir($projectRoot, $target, $pathFromRoot);
+        if ($dir === null) {
+            return false;
+        }
+
+        if (
+            $previous !== null
+            && ((string) $previous['dir'] === (string) $dir || PathContainment::isSame($previous['dir'], $dir))
+        ) {
             return $previous['clean'];
         }
 
-        return $this->proposeClean($projectRoot, $target, $pathFromRoot, $io);
+        return $this->proposeClean($dir, $target, $io);
     }
 
     /**
-     * The `clean` an existing `skills.json` sets, with the target it was set
-     * for. `null` when there is no such file, it does not parse, or it leaves
-     * `clean` out.
+     * The `clean` an existing `skills.json` sets, with the directory its
+     * target resolves to. `null` when there is no such file, it does not
+     * parse, it leaves `clean` out, or its target does not resolve.
      *
      * @param non-empty-string $file
      *
-     * @return array{clean: bool, target: non-empty-string}|null
+     * @return array{clean: bool, dir: Path}|null
      */
-    private function readPreviousClean(string $file): ?array
+    private function readPreviousClean(Path $projectRoot, string $file): ?array
     {
         $raw = \is_file($file) ? @\file_get_contents($file) : false;
         if ($raw === false) {
@@ -592,7 +588,9 @@ final readonly class InitRunner
         }
 
         /** @var array<string, mixed> $decoded */
-        return ['clean' => (bool) $decoded['clean'], 'target' => self::targetOf($decoded)];
+        $dir = $this->targetDir($projectRoot, self::targetOf($decoded), self::pathFromRoot($decoded));
+
+        return $dir === null ? null : ['clean' => (bool) $decoded['clean'], 'dir' => $dir];
     }
 
     /**
@@ -602,7 +600,7 @@ final readonly class InitRunner
      * when neither adds anything.
      *
      * @param non-empty-string $file
-     * @param array{clean: bool, target: non-empty-string}|null $previousClean
+     * @param array{clean: bool, dir: Path}|null $previousClean
      */
     private function applyPresetsToFile(
         Path $projectRoot,
@@ -823,7 +821,7 @@ final readonly class InitRunner
 
     /**
      * @param non-empty-string $target
-     * @param array{clean: bool, target: non-empty-string}|null $previousClean
+     * @param array{clean: bool, dir: Path}|null $previousClean
      */
     private function runStandalone(
         Path $projectRoot,
@@ -864,12 +862,14 @@ final readonly class InitRunner
      * Always followed by the "won't be auto-discovered" notice.
      *
      * @param non-empty-string $target
+     * @param array{clean: bool, dir: Path}|null $previousClean
      */
     private function runNonDefaultPath(
         Path $projectRoot,
         IOInterface $io,
         InitOptions $options,
         string $target,
+        ?array $previousClean = null,
     ): int {
         $canonical = (string) $projectRoot->join('skills.json');
         $canonicalExisted = \is_file($canonical);
@@ -912,7 +912,7 @@ final readonly class InitRunner
             if ($options->force && \is_file($target)) {
                 @\unlink($target);
             }
-            if (!$this->applyPresetsToFile($projectRoot, $canonical, $options->presets, $io)) {
+            if (!$this->applyPresetsToFile($projectRoot, $canonical, $options->presets, $io, $previousClean)) {
                 return Command::FAILURE;
             }
             if (!@\rename($canonical, $target)) {
@@ -937,7 +937,7 @@ final readonly class InitRunner
             if (!$canonicalExisted && \is_file($canonical)) {
                 @\unlink($canonical);
             }
-            if (!$this->writeStub($projectRoot, $target, $io, $options->presets)) {
+            if (!$this->writeStub($projectRoot, $target, $io, $options->presets, $previousClean)) {
                 return Command::FAILURE;
             }
             $io->write(\sprintf(
@@ -953,7 +953,7 @@ final readonly class InitRunner
 
     /**
      * @param non-empty-string $target
-     * @param array{clean: bool, target: non-empty-string}|null $previousClean
+     * @param array{clean: bool, dir: Path}|null $previousClean
      */
     private function writeStub(
         Path $projectRoot,

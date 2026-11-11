@@ -645,7 +645,7 @@ final class InitRunnerTest
 
         Assert::false(\array_key_exists('clean', $this->readSkillsJson()));
         Assert::true(
-            \str_contains($io->getOutput(), 'already holds skills, so clean stays off'),
+            \str_contains($io->getOutput(), 'already holds skills, so clean is proposed off'),
             'the user is told why clean is off. Got: ' . $io->getOutput(),
         );
     }
@@ -724,6 +724,28 @@ final class InitRunnerTest
         );
 
         Assert::same($this->readSkillsJson()['clean'] ?? null, true, $io->getOutput());
+    }
+
+    public function aForcedReRunAtACustomPathKeepsCleanForTheSameTarget(): void
+    {
+        \mkdir($this->tmp . '/config');
+        \file_put_contents($this->tmp . '/config/skills.json', '{"clean": true}');
+        $this->plantSkill('.agents/skills/mine');
+
+        $io = new BufferIO();
+        (new InitRunner())->run(
+            Path::create($this->tmp),
+            $io,
+            new InitOptions(path: 'config/skills.json', force: true),
+        );
+
+        /** @var array<string, mixed> $written */
+        $written = \json_decode(
+            (string) \file_get_contents($this->tmp . '/config/skills.json'),
+            true,
+            flags: \JSON_THROW_ON_ERROR,
+        );
+        Assert::same($written['clean'] ?? null, true, $io->getOutput());
     }
 
     public function givenValuesReachTheStandaloneStub(): void
