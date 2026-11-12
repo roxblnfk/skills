@@ -19,7 +19,9 @@ use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
 use LLM\Skills\Filesystem\LinkGuard;
 use LLM\Skills\Filesystem\PathContainment;
+use LLM\Skills\Sync\LinkStatus;
 use LLM\Skills\Sync\SkillConflict;
+use LLM\Skills\Sync\SymlinkLinker;
 use LLM\Skills\Sync\SyncEngine;
 use LLM\Skills\Sync\SyncPlan;
 use LLM\Skills\Sync\SyncPlanner;
@@ -54,6 +56,7 @@ final readonly class InspectionBuilder
         private DriftDetector $drift = new DriftDetector(),
         private SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
         private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
+        private SymlinkLinker $linker = new SymlinkLinker(),
     ) {}
 
     /**
@@ -204,8 +207,10 @@ final readonly class InspectionBuilder
      * For each configured alias, decide whether it currently points at
      * the target on disk. The check is intentionally observational —
      * it never creates, removes, or touches anything. A non-existent
-     * alias is **not** drift (the next sync will create it); only an
-     * existing junction/symlink/directory pointing somewhere else is.
+     * alias is **not** drift (the next sync will create it). A link the
+     * next sync re-points is flagged as a relink, found by a dry run of
+     * {@see SymlinkLinker}; anything else resolving somewhere other than
+     * the target, such as a real directory, is drift.
      *
      * @return list<AliasInspection>
      */
@@ -219,7 +224,10 @@ final readonly class InspectionBuilder
 
         $out = [];
         foreach ($plan->aliases as $alias) {
-            $out[] = new AliasInspection($alias, $this->detectAliasDrift($alias, $resolvedTarget));
+            $link = $this->linker->link($alias, $plan->target, dryRun: true);
+            $out[] = $link->status === LinkStatus::WouldReplace
+                ? new AliasInspection($alias, relinkFrom: $link->previous)
+                : new AliasInspection($alias, $this->detectAliasDrift($alias, $resolvedTarget));
         }
 
         return $out;

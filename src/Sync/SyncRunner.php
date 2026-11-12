@@ -26,6 +26,7 @@ use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SourceFailure;
 use LLM\Skills\Filesystem\PathContainment;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 /**
  * Shared body of `skills:update` — independent of which entrypoint invoked it.
@@ -537,11 +538,27 @@ final readonly class SyncRunner
             case LinkStatus::Created:
                 $io->write(\sprintf('<info>[link]</info> %s → %s', $aliasStr, $targetStr));
                 return;
+            case LinkStatus::Replaced:
+                $io->write(\sprintf(
+                    '<info>[link]</info> %s → %s (replaced link to %s)',
+                    $aliasStr,
+                    $targetStr,
+                    OutputFormatter::escape((string) $result->previous),
+                ));
+                return;
             case LinkStatus::AlreadyCorrect:
                 $io->write(\sprintf('<info>[link]</info> %s → %s (already correct)', $aliasStr, $targetStr));
                 return;
             case LinkStatus::WouldCreate:
                 $io->write(\sprintf('<info>[would link]</info> %s → %s', $aliasStr, $targetStr));
+                return;
+            case LinkStatus::WouldReplace:
+                $io->write(\sprintf(
+                    '<info>[would link]</info> %s → %s (would replace link to %s)',
+                    $aliasStr,
+                    $targetStr,
+                    OutputFormatter::escape((string) $result->previous),
+                ));
                 return;
             case LinkStatus::Failed:
                 $io->writeError(\sprintf(

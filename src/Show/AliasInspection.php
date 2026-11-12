@@ -25,12 +25,16 @@ final readonly class AliasInspection
      *         non-null **only** when the alias exists on disk and resolves somewhere other than the
      *         configured target. `null` means "no drift" (either the link is correct or the alias
      *         doesn't exist yet).
+     * @param non-empty-string|null $relinkFrom what the link at the alias points at when the next sync
+     *         re-points it: a link leading elsewhere or nowhere, or an absolute POSIX symlink to the
+     *         target. `null` when the sync leaves the alias as is.
      *
      * @psalm-mutation-free
      */
     public function __construct(
         public Path $alias,
         public ?string $driftResolvedTo = null,
+        public ?string $relinkFrom = null,
     ) {}
 
     /**

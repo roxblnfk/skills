@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Show;
 
+use Symfony\Component\Console\Formatter\OutputFormatter;
+
 /**
  * Renders an {@see InspectionReport} as a list of plain text lines with
  * Symfony OutputFormatter colour tags embedded for the status chips.
@@ -130,6 +132,10 @@ final readonly class ReportFormatter
                 /** @var non-empty-string $drift */
                 $drift = $entry->driftResolvedTo;
                 $label .= ' <fg=yellow>[drift: → ' . $drift . ']</>';
+            }
+            if ($entry->relinkFrom !== null) {
+                /** @psalm-suppress ImpureMethodCall OutputFormatter::escape() is a pure string transform */
+                $label .= ' <fg=yellow>[relink: was → ' . OutputFormatter::escape($entry->relinkFrom) . ']</>';
             }
             $parts[] = $label;
         }

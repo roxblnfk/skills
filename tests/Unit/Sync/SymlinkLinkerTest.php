@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Sync\LinkStatus;
 use LLM\Skills\Sync\SymlinkLinker;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Tests\Testo\Platform;
 use Testo\Assert;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
@@ -87,24 +88,35 @@ final class SymlinkLinkerTest
         Assert::same($second->status, LinkStatus::AlreadyCorrect);
     }
 
-    public function existingLinkPointingElsewhereFails(): void
+    public function existingLinkPointingElsewhereIsReplaced(): void
     {
-        // Make the alias point at <tmp>/other first, then ask the linker
-        // to point it at <tmp>/target. The linker must refuse rather than
-        // silently retarget the user's existing alias.
+        // A link at the alias path that leads to another directory — e.g.
+        // into the copy of the project it was made in — is re-pointed; the
+        // directory it led to is left as it was.
         \mkdir($this->tmp . '/other', 0o777, true);
+        \file_put_contents($this->tmp . '/other/keep.txt', 'kept');
         $aliasPath = $this->tmp . '/alias';
         $linker = $this->linker();
 
         $linker->link(Path::create($aliasPath), Path::create($this->tmp . '/other'));
         $result = $linker->link(Path::create($aliasPath), $this->target());
 
-        Assert::same($result->status, LinkStatus::Failed);
-        Assert::true($result->isFailure());
-        Assert::true(
-            $result->reason !== null && \str_contains($result->reason, 'points elsewhere'),
-            'reason should mention "points elsewhere"; got: ' . ($result->reason ?? 'null'),
-        );
+        Assert::same($result->status, LinkStatus::Replaced);
+        Assert::true($this->resolvesToTarget($aliasPath));
+        Assert::same(\file_get_contents($this->tmp . '/other/keep.txt'), 'kept');
+    }
+
+    public function dryRunReportsALinkPointingElsewhereWithoutTouchingIt(): void
+    {
+        \mkdir($this->tmp . '/other', 0o777, true);
+        $aliasPath = $this->tmp . '/alias';
+        $linker = $this->linker();
+        $linker->link(Path::create($aliasPath), Path::create($this->tmp . '/other'));
+
+        $result = $linker->link(Path::create($aliasPath), $this->target(), dryRun: true);
+
+        Assert::same($result->status, LinkStatus::WouldReplace);
+        Assert::false($this->resolvesToTarget($aliasPath));
     }
 
     public function existingRealDirectoryFailsAndIsNotTouched(): void
@@ -181,6 +193,217 @@ final class SymlinkLinkerTest
         Assert::same($result->status, LinkStatus::Created);
         Assert::true(\is_dir($this->tmp . '/nested/parent'));
         Assert::true($this->resolvesToTarget($aliasPath));
+    }
+
+    public function posixLinkStoresRelativeTarget(): void
+    {
+        Platform::requirePosixSymlinks();
+        $aliasPath = $this->tmp . '/.claude/skills';
+
+        $result = $this->linker()->link(Path::create($aliasPath), $this->target());
+
+        Assert::same($result->status, LinkStatus::Created);
+        Assert::same(\readlink($aliasPath), '../target');
+    }
+
+    public function posixLinkSurvivesMovingTheProject(): void
+    {
+        Platform::requirePosixSymlinks();
+        $this->linker()->link(Path::create($this->tmp . '/.claude/skills'), $this->target());
+        \file_put_contents($this->tmp . '/target/marker.txt', 'hello');
+
+        $moved = $this->tmp . '-moved';
+        \rename($this->tmp, $moved);
+        $this->tmp = $moved;
+
+        Assert::same(\file_get_contents($moved . '/.claude/skills/marker.txt'), 'hello');
+    }
+
+    public function absoluteSymlinkToTargetIsRewrittenAsRelative(): void
+    {
+        Platform::requirePosixSymlinks();
+        $aliasPath = $this->tmp . '/alias';
+        $absolute = (string) \realpath($this->tmp . '/target');
+        \symlink($absolute, $aliasPath);
+
+        $result = $this->linker()->link(Path::create($aliasPath), $this->target());
+
+        Assert::same($result->status, LinkStatus::Replaced);
+        Assert::same($result->previous, $absolute);
+        Assert::same(\readlink($aliasPath), 'target');
+    }
+
+    public function danglingLinkFromAnotherProjectLocationIsReplaced(): void
+    {
+        // A sync inside a container with the project mounted at /workspace
+        // leaves this link behind; on the host it dangles.
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/.agents/skills', 0o777, true);
+        \mkdir($this->tmp . '/.claude', 0o777, true);
+        $aliasPath = $this->tmp . '/.claude/skills';
+        \symlink('/workspace-' . \bin2hex(\random_bytes(4)) . '/.agents/skills', $aliasPath);
+
+        $result = $this->linker()->link(Path::create($aliasPath), Path::create($this->tmp . '/.agents/skills'));
+
+        Assert::same($result->status, LinkStatus::Replaced);
+        Assert::same(\readlink($aliasPath), '../.agents/skills');
+    }
+
+    public function dryRunReportsWouldReplaceWithoutWriting(): void
+    {
+        Platform::requirePosixSymlinks();
+        $aliasPath = $this->tmp . '/alias';
+        $absolute = (string) \realpath($this->tmp . '/target');
+        \symlink($absolute, $aliasPath);
+
+        $result = $this->linker()->link(Path::create($aliasPath), $this->target(), dryRun: true);
+
+        Assert::same($result->status, LinkStatus::WouldReplace);
+        Assert::same(\readlink($aliasPath), $absolute);
+    }
+
+    public function symlinkedTargetKeepsItsLogicalPath(): void
+    {
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/.agents', 0o777, true);
+        \symlink($this->tmp . '/target', $this->tmp . '/.agents/skills');
+        $aliasPath = $this->tmp . '/.claude/skills';
+
+        $result = $this->linker()->link(Path::create($aliasPath), Path::create($this->tmp . '/.agents/skills'));
+
+        Assert::same($result->status, LinkStatus::Created);
+        Assert::same(\readlink($aliasPath), '../.agents/skills');
+    }
+
+    public function linkUnderASymlinkedParentReachesTheTarget(): void
+    {
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/elsewhere/claude', 0o777, true);
+        \symlink($this->tmp . '/elsewhere/claude', $this->tmp . '/.claude');
+        $aliasPath = $this->tmp . '/.claude/skills';
+
+        $result = $this->linker()->link(Path::create($aliasPath), $this->target());
+
+        Assert::same($result->status, LinkStatus::Created);
+        Assert::true($this->resolvesToTarget($aliasPath));
+    }
+
+    public function dryRunAcceptsARelativeLinkWhoseTargetIsNotCreatedYet(): void
+    {
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/.claude', 0o777, true);
+        $aliasPath = $this->tmp . '/.claude/skills';
+        \symlink('../.agents/skills', $aliasPath);
+
+        $result = $this->linker()->link(
+            Path::create($aliasPath),
+            Path::create($this->tmp . '/.agents/skills'),
+            dryRun: true,
+        );
+
+        Assert::same($result->status, LinkStatus::AlreadyCorrect);
+    }
+
+    public function danglingLinkUnderASymlinkedParentIsReplaced(): void
+    {
+        // `../.agents/skills` names the target when read from the logical
+        // parent, yet the kernel resolves it from the physical one.
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/.agents/skills', 0o777, true);
+        \mkdir($this->tmp . '/elsewhere/claude', 0o777, true);
+        \symlink($this->tmp . '/elsewhere/claude', $this->tmp . '/.claude');
+        $aliasPath = $this->tmp . '/.claude/skills';
+        \symlink('../.agents/skills', $aliasPath);
+
+        $result = $this->linker()->link(Path::create($aliasPath), Path::create($this->tmp . '/.agents/skills'));
+
+        Assert::same($result->status, LinkStatus::Replaced);
+        Assert::same(\realpath($aliasPath), \realpath($this->tmp . '/.agents/skills'));
+    }
+
+    public function linkValueThatClimbsAboveRootIsReportedInDryRun(): void
+    {
+        Platform::requirePosixSymlinks();
+        $aliasPath = $this->tmp . '/alias';
+        $stored = '/../nonexistent-' . \bin2hex(\random_bytes(4));
+        \symlink($stored, $aliasPath);
+
+        $result = $this->linker()->link(
+            Path::create($aliasPath),
+            Path::create($this->tmp . '/not-created-yet'),
+            dryRun: true,
+        );
+
+        Assert::same($result->status, LinkStatus::WouldReplace);
+        Assert::same($result->previous, $stored);
+    }
+
+    public function danglingLinkForANestedAliasIsReplaced(): void
+    {
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/.agents/skills', 0o777, true);
+        \mkdir($this->tmp . '/.agents/claude', 0o777, true);
+        $aliasPath = $this->tmp . '/.agents/claude/skills';
+        \symlink('/workspace-' . \bin2hex(\random_bytes(4)) . '/.agents/skills', $aliasPath);
+
+        $result = $this->linker()->link(Path::create($aliasPath), Path::create($this->tmp . '/.agents/skills'));
+
+        Assert::same($result->status, LinkStatus::Replaced);
+        Assert::same(\readlink($aliasPath), '../skills');
+    }
+
+    public function absoluteLinkInAReadOnlyDirectoryStaysAlreadyCorrect(): void
+    {
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/locked', 0o777, true);
+        $aliasPath = $this->tmp . '/locked/alias';
+        \symlink((string) \realpath($this->tmp . '/target'), $aliasPath);
+        \chmod($this->tmp . '/locked', 0o555);
+
+        try {
+            $result = $this->linker()->link(Path::create($aliasPath), $this->target());
+        } finally {
+            \chmod($this->tmp . '/locked', 0o777);
+        }
+
+        Assert::same($result->status, LinkStatus::AlreadyCorrect);
+    }
+
+    public function candidateClimbingAboveRootIsSkipped(): void
+    {
+        // The alias parent physically sits at the shallow temp dir, so the
+        // logical `../../../target` climbs above `/` from there.
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/a/b', 0o777, true);
+        \symlink((string) \realpath(\sys_get_temp_dir()), $this->tmp . '/a/b/c');
+        $aliasPath = $this->tmp . '/a/b/c/llm-skills-alias-' . \bin2hex(\random_bytes(4));
+
+        try {
+            $result = $this->linker()->link(Path::create($aliasPath), $this->target());
+            Assert::same($result->status, LinkStatus::Created);
+            Assert::true($this->resolvesToTarget($aliasPath));
+        } finally {
+            @\unlink($aliasPath);
+        }
+    }
+
+    public function dryRunReadsARelativeLinkFromThePhysicalParent(): void
+    {
+        // Read from the logical parent the link would name the target; the
+        // kernel reads it from the physical one, so it must be replaced.
+        Platform::requirePosixSymlinks();
+        \mkdir($this->tmp . '/elsewhere/claude', 0o777, true);
+        \symlink($this->tmp . '/elsewhere/claude', $this->tmp . '/.claude');
+        $aliasPath = $this->tmp . '/.claude/skills';
+        \symlink('../.agents/skills', $aliasPath);
+
+        $result = $this->linker()->link(
+            Path::create($aliasPath),
+            Path::create($this->tmp . '/.agents/skills'),
+            dryRun: true,
+        );
+
+        Assert::same($result->status, LinkStatus::WouldReplace);
     }
 
     private function linker(): SymlinkLinker

@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Tests\Testo\Platform;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
 use Testo\Lifecycle\BeforeTest;
@@ -405,6 +406,33 @@ final class SkillsShowTest
         Assert::false(
             \str_contains($out, '[hint]'),
             'hint must not appear when --discovery is on. Got: ' . $out,
+        );
+    }
+
+    // ── aliases ─────────────────────────────────────────────────────────────
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function flagsAnAliasLinkTheNextSyncRewrites(): void
+    {
+        Platform::requirePosixSymlinks();
+        $alias = Info::PROJECT_DIR . '/.claude/skills-alias';
+        Filesystem::removeRecursive($alias);
+        @\mkdir(\dirname($alias), 0o777, true);
+        $stale = '/workspace-' . \bin2hex(\random_bytes(4)) . '/.agents/skills';
+        \symlink($stale, $alias);
+
+        try {
+            $process = $this->runShow();
+        } finally {
+            Filesystem::removeRecursive($alias);
+        }
+
+        Assert::true(
+            \str_contains($process->getOutput(), '[relink: was → ' . $stale . ']'),
+            'show must flag the link the next sync rewrites. Got: ' . $process->getOutput(),
         );
     }
 

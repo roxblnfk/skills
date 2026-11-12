@@ -13,7 +13,9 @@ namespace LLM\Skills\Sync;
 enum LinkStatus: string
 {
     case Created = 'created';
+    case Replaced = 'replaced';
     case AlreadyCorrect = 'already-correct';
     case WouldCreate = 'would-create';
+    case WouldReplace = 'would-replace';
     case Failed = 'failed';
 }
