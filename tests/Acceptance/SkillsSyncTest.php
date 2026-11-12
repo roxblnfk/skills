@@ -8,8 +8,10 @@ use Internal\Path;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
+use LLM\Skills\Tests\Testo\Platform;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
+use Testo\Core\Exception\SkipTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
@@ -818,6 +820,120 @@ final class SkillsSyncTest
         Assert::same($first->getExitCode(), 0, 'first run failed: ' . $first->getErrorOutput());
         Assert::same($second->getExitCode(), 0, 'second run failed: ' . $second->getErrorOutput());
         Assert::true($this->aliasResolvesToTarget(self::ALIAS_CLAUDE));
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasIsARelativeSymlinkOnPosix(): void
+    {
+        Platform::requirePosixSymlinks();
+
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same(\readlink(self::ALIAS_CLAUDE), '../.agents/skills');
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasLeftDanglingByAnotherProjectLocationIsReplaced(): void
+    {
+        // The link a sync inside a container leaves behind when the
+        // project is mounted at /workspace there.
+        Platform::requirePosixSymlinks();
+        @\mkdir(\dirname(self::ALIAS_CLAUDE), 0o777, true);
+        $stale = '/workspace-' . \bin2hex(\random_bytes(4)) . '/.agents/skills';
+        \symlink($stale, self::ALIAS_CLAUDE);
+
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same(\readlink(self::ALIAS_CLAUDE), '../.agents/skills');
+        Assert::true($this->aliasResolvesToTarget(self::ALIAS_CLAUDE));
+        Assert::true(
+            \str_contains($process->getOutput(), 'replaced link to ' . $stale),
+            'output must name the replaced link. Got: ' . $process->getOutput(),
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function absoluteAliasLinkIsRewrittenAsRelative(): void
+    {
+        Platform::requirePosixSymlinks();
+        @\mkdir(self::TARGET_DIR, 0o777, true);
+        @\mkdir(\dirname(self::ALIAS_CLAUDE), 0o777, true);
+        $absolute = (string) \realpath(self::TARGET_DIR);
+        \symlink($absolute, self::ALIAS_CLAUDE);
+
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same(\readlink(self::ALIAS_CLAUDE), '../.agents/skills');
+        Assert::true(
+            \str_contains($process->getOutput(), 'replaced link to ' . $absolute),
+            'output must name the replaced link. Got: ' . $process->getOutput(),
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function dryRunReportsTheAliasLinkItWouldReplace(): void
+    {
+        Platform::requirePosixSymlinks();
+        @\mkdir(\dirname(self::ALIAS_CLAUDE), 0o777, true);
+        $stale = '/workspace-' . \bin2hex(\random_bytes(4)) . '/.agents/skills';
+        \symlink($stale, self::ALIAS_CLAUDE);
+
+        $process = $this->runSync('--dry-run');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same(\readlink(self::ALIAS_CLAUDE), $stale, 'dry-run must not touch the link');
+        Assert::true(
+            \str_contains($process->getOutput(), 'would replace link to ' . $stale),
+            'output must name the link it would replace. Got: ' . $process->getOutput(),
+        );
+    }
+
+    #[WithSandboxExtras([
+        'trusted' => ['acme/skills-basic', 'acme/skills-pro'],
+        'aliases' => ['.claude/skills-alias'],
+    ])]
+    public function aliasLinkIntoAnotherCopyOfTheProjectIsRepointed(): void
+    {
+        // A copied project keeps an alias that still leads into the
+        // original; the sync re-points it and leaves the original alone.
+        $oldCopy = Info::PROJECT_DIR . '/.claude/old-copy-skills';
+        Filesystem::removeRecursive($oldCopy);
+        @\mkdir($oldCopy, 0o777, true);
+        \file_put_contents($oldCopy . '/keep.txt', 'kept');
+        if (!Filesystem::makeDirLink($oldCopy, self::ALIAS_CLAUDE)) {
+            Filesystem::removeRecursive($oldCopy);
+            throw new SkipTest('the platform refuses to create a directory link');
+        }
+
+        try {
+            $process = $this->runSync();
+
+            Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+            Assert::true($this->aliasResolvesToTarget(self::ALIAS_CLAUDE));
+            Assert::same(\file_get_contents($oldCopy . '/keep.txt'), 'kept');
+            Assert::true(
+                \str_contains($process->getOutput(), 'replaced link to'),
+                'output must report the replaced link. Got: ' . $process->getOutput(),
+            );
+        } finally {
+            Filesystem::removeRecursive(self::ALIAS_CLAUDE);
+            Filesystem::removeRecursive($oldCopy);
+        }
     }
 
     public function cliAliasFlagReplacesProjectConfigAliases(): void

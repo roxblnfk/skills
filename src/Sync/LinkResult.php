@@ -18,9 +18,12 @@ use Internal\Path;
  * Statuses:
  *
  * - {@see LinkStatus::Created}        — a new junction/symlink was put in place.
+ * - {@see LinkStatus::Replaced}       — an existing link was re-pointed: it led elsewhere or nowhere, or it was
+ *   an absolute POSIX symlink rewritten in the relative form. `$previous` holds what it pointed at.
  * - {@see LinkStatus::AlreadyCorrect} — the alias path already pointed at the target; no-op.
  * - {@see LinkStatus::WouldCreate}    — dry-run; nothing was written, but the linker would have created it.
- * - {@see LinkStatus::Failed}         — a state-matrix rejection (alias path occupied, points elsewhere, cross-volume on Windows, etc.). `$reason` is non-null.
+ * - {@see LinkStatus::WouldReplace}   — dry-run counterpart of {@see LinkStatus::Replaced}.
+ * - {@see LinkStatus::Failed}         — a state-matrix rejection (a real directory or file at the alias path, cross-volume on Windows, etc.). `$reason` is non-null.
  *
  * @psalm-immutable
  */
@@ -31,6 +34,8 @@ final readonly class LinkResult
      * @param Path $target absolute path the alias points at (or would have pointed at)
      * @param non-empty-string|null $reason human-readable failure detail; non-null only when `$status` is
      *         {@see LinkStatus::Failed}
+     * @param non-empty-string|null $previous value the replaced symlink held; non-null only when `$status` is
+     *         {@see LinkStatus::Replaced} or {@see LinkStatus::WouldReplace}
      *
      * @psalm-mutation-free
      */
@@ -39,6 +44,7 @@ final readonly class LinkResult
         public Path $target,
         public LinkStatus $status,
         public ?string $reason = null,
+        public ?string $previous = null,
     ) {}
 
     /**
@@ -47,6 +53,16 @@ final readonly class LinkResult
     public static function created(Path $alias, Path $target): self
     {
         return new self($alias, $target, LinkStatus::Created);
+    }
+
+    /**
+     * @param non-empty-string $previous
+     *
+     * @psalm-pure
+     */
+    public static function replaced(Path $alias, Path $target, string $previous): self
+    {
+        return new self($alias, $target, LinkStatus::Replaced, previous: $previous);
     }
 
     /**
@@ -63,6 +79,16 @@ final readonly class LinkResult
     public static function wouldCreate(Path $alias, Path $target): self
     {
         return new self($alias, $target, LinkStatus::WouldCreate);
+    }
+
+    /**
+     * @param non-empty-string $previous
+     *
+     * @psalm-pure
+     */
+    public static function wouldReplace(Path $alias, Path $target, string $previous): self
+    {
+        return new self($alias, $target, LinkStatus::WouldReplace, previous: $previous);
     }
 
     /**

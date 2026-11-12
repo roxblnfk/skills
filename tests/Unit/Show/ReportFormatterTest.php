@@ -410,6 +410,46 @@ final class ReportFormatterTest
         );
     }
 
+    public function annotatesAliasTheNextSyncRewrites(): void
+    {
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/.agents/skills'),
+            donors: [],
+            skipped: [],
+            aliases: [
+                new AliasInspection(
+                    Path::create('/p/.claude/skills'),
+                    relinkFrom: '/workspace/.agents/skills',
+                ),
+            ],
+        ));
+
+        $aliasesLine = $this->findLineStartingWith($lines, 'Aliases:');
+        Assert::true($aliasesLine !== null, 'Aliases: line must be present');
+        Assert::true(
+            \str_contains($aliasesLine, '[relink: was → /workspace/.agents/skills]'),
+            'relink marker must name the current link value. Got: ' . $aliasesLine,
+        );
+    }
+
+    public function escapesFormatterTagsInTheRelinkValue(): void
+    {
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/.agents/skills'),
+            donors: [],
+            skipped: [],
+            aliases: [
+                new AliasInspection(Path::create('/p/.claude/skills'), relinkFrom: '/x/<error>/.agents/skills'),
+            ],
+        ));
+
+        $aliasesLine = $this->findLineStartingWith($lines, 'Aliases:');
+        Assert::true(
+            $aliasesLine !== null && \str_contains($aliasesLine, '/x/\\<error\\>/.agents/skills'),
+            'the link value must be escaped. Got: ' . ($aliasesLine ?? 'null'),
+        );
+    }
+
     /**
      * @param list<string> $lines
      */

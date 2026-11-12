@@ -21,22 +21,29 @@ use Internal\Path;
  *   and target would live on different volumes, the link cannot be
  *   created and the linker emits a {@see LinkStatus::Failed} result
  *   rather than silently degrading to a copy.
- * - **POSIX**: standard {@see \symlink()}.
+ * - **POSIX**: a {@see \symlink()} with a *relative* target, so the
+ *   alias survives the project being mounted or moved elsewhere (e.g.
+ *   synced inside a container, used on the host).
  *
  * State matrix — applied to the alias path *before* creating
  * anything:
  *
- * | Existing state                  | Action                          |
- * |---------------------------------|---------------------------------|
- * | Does not exist                  | Create the link.                |
- * | Symlink/junction → target       | No-op, success.                 |
- * | Symlink/junction → elsewhere    | Failed (do not overwrite).      |
- * | Real directory                  | Failed (would destroy content). |
- * | Regular file                    | Failed.                         |
+ * | Existing state                               | Action                          |
+ * |---------------------------------------------|---------------------------------|
+ * | Does not exist                              | Create the link.                |
+ * | Junction → target, relative symlink → target| No-op, success.                 |
+ * | Absolute symlink → target (POSIX)           | Rewrite as relative.            |
+ * | Symlink/junction → elsewhere, or dangling   | Replace.                        |
+ * | Real directory                              | Failed (would destroy content). |
+ * | Regular file                                | Failed.                         |
  *
- * No "force" mode: the plugin never destroys user-owned content. To
- * replace a real directory with an alias the user removes the
- * directory themselves and re-runs.
+ * The alias path belongs to the plugin once it is configured, so a link
+ * there that does not reach the target is re-pointed: typically one left
+ * by a copy of the project, or by a sync under another mount point. A
+ * link holds no content, so replacing it loses nothing.
+ *
+ * No "force" mode for real content: to replace a real directory with an
+ * alias the user removes the directory themselves and re-runs.
  */
 final readonly class SymlinkLinker
 {
@@ -50,7 +57,8 @@ final readonly class SymlinkLinker
      * @param Path $target absolute path that the alias must point at; the linker assumes
      *         the directory exists (callers run this after {@see SyncEngine} has copied)
      * @param bool $dryRun when `true`, the linker performs every read-only check but never
-     *         writes; a would-be-created alias is reported as {@see LinkStatus::WouldCreate}
+     *         writes; a would-be-created alias is reported as {@see LinkStatus::WouldCreate},
+     *         a would-be-rewritten one as {@see LinkStatus::WouldReplace}
      */
     public function link(Path $alias, Path $target, bool $dryRun = false): LinkResult
     {
@@ -92,7 +100,7 @@ final readonly class SymlinkLinker
         }
 
         if (\file_exists($aliasStr) || \is_link($aliasStr)) {
-            return $this->handleExisting($alias, $target, $aliasStr, $resolvedTarget);
+            return $this->handleExisting($alias, $target, $aliasStr, $resolvedTarget, $dryRun);
         }
 
         // Windows-only: cross-volume junction is impossible. Detect by
@@ -115,7 +123,7 @@ final readonly class SymlinkLinker
             return LinkResult::failed($alias, $target, $parentCreated);
         }
 
-        $createError = $this->createLink($aliasStr, $resolvedTarget);
+        $createError = $this->createLink($alias, $target, $aliasStr, $resolvedTarget);
         if ($createError !== null) {
             return LinkResult::failed($alias, $target, $createError);
         }
@@ -235,16 +243,107 @@ final readonly class SymlinkLinker
     }
 
     /**
+     * The relative symlink value that makes `$alias` reach the target.
+     *
+     * The kernel resolves a relative link from the directory the link
+     * physically sits in, so a candidate is accepted only once it
+     * resolves to `$resolvedTarget` from there. The first candidate keeps
+     * the logical path — and with it a symlinked target such as
+     * `.agents/skills -> /data/skills` — and the others step down to
+     * physical paths for a symlinked alias parent. When no candidate
+     * can be verified — an unreadable directory on the way — the
+     * absolute `$resolvedTarget` is used, which at least works here.
+     */
+    private static function relativeTarget(Path $alias, Path $target, string $resolvedTarget): string
+    {
+        $parentReal = \realpath((string) $alias->parent());
+        if ($parentReal === false) {
+            return $resolvedTarget;
+        }
+
+        $parent = Path::create($parentReal);
+        $candidates = [
+            self::relativePath($target, $alias->parent()),
+            self::relativePath($target, $parent),
+            self::relativePath(Path::create($resolvedTarget), $parent),
+        ];
+        foreach ($candidates as $candidate) {
+            try {
+                $reached = \realpath((string) $parent->join($candidate));
+            } catch (\LogicException) {
+                // The candidate climbs above `/` from the physical parent.
+                continue;
+            }
+            if ($reached !== false && self::pathsEqual($reached, $resolvedTarget)) {
+                return $candidate;
+            }
+        }
+
+        return $resolvedTarget;
+    }
+
+    /**
+     * `$path` relative to `$base`; both are absolute, and on POSIX they
+     * always share the `/` root, so a relative form always exists.
+     */
+    private static function relativePath(Path $path, Path $base): string
+    {
+        return (string) ($path->tryRelative($base) ?? $path);
+    }
+
+    /**
+     * Whether the stored symlink value names the target path. Lets a dry
+     * run recognise a link whose target the copy phase has not created
+     * yet. A relative value is read from the alias's physical directory,
+     * as the kernel reads it, and compared with the target both as
+     * configured and with its existing parent resolved. A value
+     * {@see Path} cannot normalise, such as `/../x`, names nothing.
+     */
+    private static function storedPointsAt(string $stored, Path $alias, Path $target): bool
+    {
+        $aliasParent = \realpath((string) $alias->parent());
+        try {
+            $named = (string) match (true) {
+                \str_starts_with($stored, '/') => Path::create($stored),
+                $aliasParent !== false => Path::create($aliasParent)->join($stored),
+                default => $alias->parent()->join($stored),
+            };
+        } catch (\LogicException) {
+            return false;
+        }
+
+        $targetParent = \realpath((string) $target->parent());
+
+        return self::pathsEqual($named, (string) $target)
+            || ($targetParent !== false
+                && self::pathsEqual($named, (string) Path::create($targetParent)->join($target->name())));
+    }
+
+    /**
+     * @return non-empty-string|null error message on failure, `null` on success
+     */
+    private static function symlinkAt(string $value, string $at): ?string
+    {
+        if (!@\symlink($value, $at)) {
+            $err = \error_get_last()['message'] ?? 'unknown error';
+            return 'symlink() failed: ' . $err;
+        }
+
+        return null;
+    }
+
+    /**
      * The alias path already exists — figure out whether it is an
-     * acceptable no-op (link → target) or a fatal collision. The
-     * state matrix is identical between dry-run and normal modes;
-     * collisions block creation either way.
+     * acceptable no-op (link → target), a link to replace, or a fatal
+     * collision with real content. The state matrix is identical between
+     * dry-run and normal modes; collisions block creation either way.
      */
     private function handleExisting(
         Path $alias,
         Path $target,
         string $aliasStr,
         string $resolvedTarget,
+        bool $dryRun,
     ): LinkResult {
         // Windows NTFS junctions are a third state PHP cannot detect via
         // `is_link()` *or* `is_dir()` reliably in every build (some report
@@ -253,7 +352,7 @@ final readonly class SymlinkLinker
         // Test the junction case before is_dir so a junction-shaped alias
         // is never mis-classified as a "real directory" and rejected.
         if (\is_link($aliasStr) || self::isJunction($aliasStr)) {
-            return $this->compareLinkTarget($alias, $target, $aliasStr, $resolvedTarget);
+            return $this->compareLinkTarget($alias, $target, $aliasStr, $resolvedTarget, $dryRun);
         }
 
         if (\is_dir($aliasStr)) {
@@ -273,35 +372,97 @@ final readonly class SymlinkLinker
 
     /**
      * Compare the resolved target of an existing link with the
-     * expected one. Equal → no-op success; different → fatal.
+     * expected one. Equal → no-op success, or a rewrite when a POSIX
+     * symlink stores it as an absolute path; elsewhere or dangling →
+     * the link is replaced.
      */
     private function compareLinkTarget(
         Path $alias,
         Path $target,
         string $aliasStr,
         string $resolvedTarget,
+        bool $dryRun,
     ): LinkResult {
+        $stored = (!self::isWindows() && \is_link($aliasStr) ? \readlink($aliasStr) : false) ?: null;
+
         $resolvedExisting = \realpath($aliasStr);
-        if ($resolvedExisting === false) {
+        // A dry run before the copy phase leaves the target missing, so a
+        // correct link dangles; the stored value is all there is to check.
+        if (
+            $resolvedExisting === false
+            && $stored !== null
+            && \realpath($resolvedTarget) === false
+            && self::storedPointsAt($stored, $alias, $target)
+        ) {
+            $resolvedExisting = $resolvedTarget;
+        }
+
+        if ($resolvedExisting !== false && self::pathsEqual($resolvedExisting, $resolvedTarget)) {
+            return $stored !== null && \str_starts_with($stored, '/')
+                ? $this->replaceLink($alias, $target, $resolvedTarget, $stored, $dryRun, working: true)
+                : LinkResult::alreadyCorrect($alias, $target);
+        }
+
+        if (self::isWindows()) {
+            $previous = @\readlink($aliasStr);
+            $previous = match (true) {
+                $previous !== false && $previous !== '' => $previous,
+                $resolvedExisting !== false && $resolvedExisting !== '' => $resolvedExisting,
+                default => 'an unresolvable junction',
+            };
+
+            return $this->replaceJunction($alias, $target, $aliasStr, $resolvedTarget, $previous, $dryRun);
+        }
+
+        return $this->replaceLink(
+            $alias,
+            $target,
+            $resolvedTarget,
+            $stored ?? 'an unreadable link',
+            $dryRun,
+            working: false,
+        );
+    }
+
+    /**
+     * Swap the junction at `$aliasStr` for one pointing at the target.
+     * Junctions cannot be renamed over one another, so the old one is
+     * removed first; `rmdir()` strips a junction without touching what
+     * it points at.
+     *
+     * @param non-empty-string $previous what the junction pointed at, for the report
+     */
+    private function replaceJunction(
+        Path $alias,
+        Path $target,
+        string $aliasStr,
+        string $resolvedTarget,
+        string $previous,
+        bool $dryRun,
+    ): LinkResult {
+        if (self::crossVolume($aliasStr, $resolvedTarget)) {
             return LinkResult::failed(
                 $alias,
                 $target,
-                'existing link at alias path cannot be resolved (broken link?)',
+                'cross-volume junctions are not supported on Windows '
+                . '(target is on a different drive or share)',
             );
         }
 
-        if (self::pathsEqual($resolvedExisting, $resolvedTarget)) {
-            return LinkResult::alreadyCorrect($alias, $target);
+        if ($dryRun) {
+            return LinkResult::wouldReplace($alias, $target, $previous);
         }
 
-        return LinkResult::failed(
-            $alias,
-            $target,
-            \sprintf(
-                'existing link points elsewhere (%s); refusing to overwrite',
-                $resolvedExisting,
-            ),
-        );
+        if (!@\rmdir($aliasStr)) {
+            $err = \error_get_last()['message'] ?? 'unknown error';
+            return LinkResult::failed($alias, $target, 'failed to remove the existing junction: ' . $err);
+        }
+
+        $createError = $this->createJunction($aliasStr, $resolvedTarget);
+
+        return $createError === null
+            ? LinkResult::replaced($alias, $target, $previous)
+            : LinkResult::failed($alias, $target, 'the old junction was removed, but ' . $createError);
     }
 
     /**
@@ -326,18 +487,54 @@ final readonly class SymlinkLinker
     /**
      * @return non-empty-string|null error message on failure, `null` on success
      */
-    private function createLink(string $aliasStr, string $resolvedTarget): ?string
+    private function createLink(Path $alias, Path $target, string $aliasStr, string $resolvedTarget): ?string
     {
         if (self::isWindows()) {
             return $this->createJunction($aliasStr, $resolvedTarget);
         }
 
-        if (!@\symlink($resolvedTarget, $aliasStr)) {
-            $err = \error_get_last()['message'] ?? 'unknown error';
-            return 'symlink() failed: ' . $err;
+        return self::symlinkAt(self::relativeTarget($alias, $target, $resolvedTarget), $aliasStr);
+    }
+
+    /**
+     * Rewrite the POSIX symlink at `$alias` to the relative form.
+     *
+     * @param non-empty-string $stored the value the symlink holds now
+     * @param bool $working the link already reaches the target; a rewrite that cannot happen
+     *         (read-only directory, no verifiable relative form) leaves it as already correct
+     *         rather than failing the run
+     */
+    private function replaceLink(
+        Path $alias,
+        Path $target,
+        string $resolvedTarget,
+        string $stored,
+        bool $dryRun,
+        bool $working,
+    ): LinkResult {
+        if ($dryRun) {
+            return LinkResult::wouldReplace($alias, $target, $stored);
         }
 
-        return null;
+        $value = self::relativeTarget($alias, $target, $resolvedTarget);
+        if ($value === $stored) {
+            return LinkResult::alreadyCorrect($alias, $target);
+        }
+
+        // A fresh link renamed over the old one: rename(2) swaps the alias
+        // atomically, so no moment exists where the alias path is missing.
+        $temp = (string) $alias->parent()->join('.' . $alias->name() . '.' . \uniqid('', true) . '.tmp');
+        $error = self::symlinkAt($value, $temp);
+        if ($error === null && !@\rename($temp, (string) $alias)) {
+            $error = 'failed to replace the existing link: ' . (\error_get_last()['message'] ?? 'unknown error');
+            @\unlink($temp);
+        }
+
+        return match (true) {
+            $error === null => LinkResult::replaced($alias, $target, $stored),
+            $working => LinkResult::alreadyCorrect($alias, $target),
+            default => LinkResult::failed($alias, $target, $error),
+        };
     }
 
     /**
