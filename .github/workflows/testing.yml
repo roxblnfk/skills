@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php-version: [ '8.2', '8.3', '8.4' , '8.5' ]
+        php-version: [ '8.2', '8.3', '8.4', '8.5', '8.6' ]
         # `lowest` is intentionally not tested: `--prefer-lowest` resolves the
         # dev toolchain (composer/composer and its symfony/* tree) down to
         # releases that predate PHP 8.4's "implicitly nullable" deprecation, so
