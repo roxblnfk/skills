@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.17.0](https://github.com/roxblnfk/skills/compare/1.16.0...1.17.0) (2026-11-12)
+
+
+### Features
+
+* **sync:** turn clean on for every sync from skills.json ([#75](https://github.com/roxblnfk/skills/issues/75)) ([528bc15](https://github.com/roxblnfk/skills/commit/528bc1525bce6667fff8605171a400ec4f4e20ac)), closes [#74](https://github.com/roxblnfk/skills/issues/74)
+
+
+### Bug Fixes
+
+* **sync:** create POSIX alias symlinks with a relative target ([#78](https://github.com/roxblnfk/skills/issues/78)) ([93c9c96](https://github.com/roxblnfk/skills/commit/93c9c966bd577ff9150f1fae9cacfbba97799518))
+
 ## [1.16.0](https://github.com/roxblnfk/skills/compare/1.15.0...1.16.0) (2026-11-07)
 
 
