@@ -178,6 +178,26 @@ final readonly class InspectionBuilder
             $plan,
             $resolution->excluded,
         );
+        foreach ($approvedEnumeration->internal as $skill) {
+            // Named as an allowlist names it, which is what installs it anyway.
+            $label = $skill->canonicalName === $skill->name
+                ? \sprintf('skill "%s"', $skill->name)
+                : \sprintf('skill "%s" (directory "%s")', $skill->canonicalName, $skill->name);
+            // Nothing records who wrote a directory in the target, so one under
+            // the skill's name is reported without claiming it as this copy.
+            $inTarget = $this->findInstalled(
+                $skill,
+                $installedByKey[SkillConflict::collisionKey($skill->name)] ?? [],
+            ) !== null;
+            $skipped[] = new SkippedDonor(
+                packageName: $skill->packageName,
+                reason: SkipReason::Internal,
+                detail: $inTarget
+                    ? $label . ': marked internal, not synced; the target\'s directory of its name stays'
+                        . ' until an unscoped clean sync'
+                    : $label . ': marked internal, not installed',
+            );
+        }
         \array_push($skipped, ...$leftOut);
 
         return new InspectionReport(

@@ -225,6 +225,33 @@ single package whose skills live per component:
 Every listed directory is scanned the same way as a single `source`; skills from all of
 them are synced together.
 
+### Internal skills
+
+A skill meant for the package's own contributors (a release checklist, a repro procedure)
+can sit beside the user-facing ones and still stay out of consumer projects. Mark it in its
+`SKILL.md` frontmatter, the same way [skills.sh](https://skills.sh) does:
+
+```yaml
+---
+name: release-checklist
+description: Steps to cut a release of this package.
+metadata:
+  internal: true
+---
+```
+
+`internal` accepts `true`, `"true"` and `"1"`. An internal skill is not installed from
+Composer packages or remote donors. It is installed when:
+
+- the donor's `skills` allowlist names it, whether in the project's `skills.json` (see
+  [Per-entry skill allowlist](#per-entry-skill-allowlist)) or in a package's
+  `extra.skills.sources`;
+- it comes from a [`dir` source](#local-directory-donors-dir) in the project's own
+  `skills.json`, which is how a package syncs its internal skills into its own repository.
+
+`skills:show` lists the internal skills it skipped, so their absence is explainable. An
+unscoped clean sync removes the copy of a skill that has become internal since it was installed.
+
 ### External sources (`extra.skills.sources`)
 
 A package can also advertise skills that live **outside** the package itself — a separate

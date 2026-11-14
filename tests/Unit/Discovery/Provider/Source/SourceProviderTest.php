@@ -12,6 +12,8 @@ use LLM\Skills\Discovery\Provider\Source\DonorRefSource;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetchException;
 use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
 use LLM\Skills\Discovery\Provider\Source\SourceProvider;
+use LLM\Skills\Discovery\Skill;
+use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Codecov\Covers;
@@ -185,6 +187,74 @@ final class SourceProviderTest
         Assert::same(
             \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []),
             [(string) $extracted . '/' . $skillDir],
+        );
+    }
+
+    public function anInternalShallowSkillDoesNotTurnARootSkillIntoACatalog(): void
+    {
+        $extracted = $this->makeExtracted('root-skill-with-internal');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeInternalSkill($extracted, 'skills/release-checklist');
+
+        $result = $this->providerReturning($extracted, packageHint: 'acme/catalog')->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::true($result->donors[0]->rootSkill);
+        Assert::same($result->donors[0]->source, '.');
+        $skills = (new SkillEnumerator())->enumerate($result->donors)->skills;
+        Assert::same(\array_map(static fn(Skill $skill): string => $skill->canonicalName, $skills), ['catalog']);
+    }
+
+    public function anInternalShallowSkillTheAllowlistNamesStillMakesACatalog(): void
+    {
+        $extracted = $this->makeExtracted('catalog-with-allowed-internal');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeInternalSkill($extracted, 'skills/release-checklist');
+
+        $result = $this->providerReturning(
+            $extracted,
+            packageHint: 'acme/catalog',
+            skillFilter: ['release-checklist'],
+        )->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::false($result->donors[0]->rootSkill);
+        Assert::same(
+            \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []),
+            [(string) $extracted . '/skills/release-checklist'],
+        );
+    }
+
+    public function anInternalShallowSkillTheAllowlistDoesNotNameLeavesTheRootSkill(): void
+    {
+        $extracted = $this->makeExtracted('root-allowlisted-beside-internal');
+        \file_put_contents((string) $extracted->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeInternalSkill($extracted, 'skills/release-checklist');
+
+        $result = $this->providerReturning(
+            $extracted,
+            packageHint: 'acme/catalog',
+            skillFilter: ['catalog'],
+        )->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::true($result->donors[0]->rootSkill);
+    }
+
+    public function anInternalShallowSkillOfADirSourceStillMakesACatalog(): void
+    {
+        $dir = $this->makeExtracted('dir-catalog-with-internal');
+        \file_put_contents((string) $dir->join('SKILL.md'), "---\nname: catalog\n---\nindex");
+        $this->writeInternalSkill($dir, 'skills/release-checklist');
+
+        $provider = new SourceProvider($this->sourceWithMixedRefs($this->dirRef($dir, packageHint: 'acme/catalog')));
+        $result = $provider->discover($this->projectRoot());
+
+        Assert::count($result->donors, 1);
+        Assert::false($result->donors[0]->rootSkill);
+        Assert::same(
+            \array_map('strval', $result->donors[0]->discoveredSkillDirs ?? []),
+            [(string) $dir . '/skills/release-checklist'],
         );
     }
 
@@ -1029,6 +1099,20 @@ final class SourceProviderTest
     }
 
     /**
+     * Drop a skill whose frontmatter marks it internal; its name is the last
+     * segment of `$relDir`.
+     */
+    private function writeInternalSkill(Path $extracted, string $relDir): void
+    {
+        $dir = (string) $extracted . '/' . $relDir;
+        \mkdir($dir, 0o777, true);
+        \file_put_contents(
+            $dir . '/SKILL.md',
+            "---\nname: " . \basename($relDir) . "\nmetadata:\n  internal: true\n---\nbody",
+        );
+    }
+
+    /**
      * @param non-empty-string|null $packageHint optional adapter-side identifier
      *         (e.g. GitHub `<owner>/<repo>`). Threaded into the {@see RemoteDonorRef}
      *         so the auto-discovery fallback in {@see SourceProvider} can pick it
@@ -1036,15 +1120,18 @@ final class SourceProviderTest
      */
     /**
      * @param list<non-empty-string> $declaredBy
+     * @param list<non-empty-string>|null $skillFilter
      */
     private function providerReturning(
         Path $extracted,
         ?string $packageHint = 'acme/pkg',
         array $declaredBy = [],
+        ?array $skillFilter = null,
     ): SourceProvider {
         $ref = new RemoteDonorRef(
             url: 'https://example.com/repo.git',
             ref: 'v1.0.0',
+            skillFilter: $skillFilter,
             packageHint: $packageHint,
             declaredBy: $declaredBy,
         );

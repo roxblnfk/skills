@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Data\DataSet;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
@@ -201,6 +202,184 @@ final class SkillFrontmatterReaderTest
         $dir = $this->skill('shifted', "# Title\n---\nname: shifted\n---\n");
 
         Assert::null((new SkillFrontmatterReader())->read($dir));
+    }
+
+    public function readsKeysOfABlockMappingAsParentDotChild(): void
+    {
+        $dir = $this->skill('block', <<<'MD'
+            ---
+            name: pdf
+            metadata:
+              internal: true
+              tier: "gold"  # comment
+            license: MIT
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm, [
+            'name' => 'pdf',
+            'metadata' => '',
+            'metadata.internal' => 'true',
+            'metadata.tier' => 'gold',
+            'license' => 'MIT',
+        ]);
+    }
+
+    public function readsKeysOfAFlowMappingAsParentDotChild(): void
+    {
+        $dir = $this->skill('flow', <<<'MD'
+            ---
+            metadata: {internal: true, tier: "a, b"}
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm['metadata.internal'] ?? null, 'true');
+        Assert::same($fm['metadata.tier'] ?? null, 'a, b');
+    }
+
+    public function readsQuotedKeysOfAFlowMapping(): void
+    {
+        $dir = $this->skill('flow-quoted-keys', <<<'MD'
+            ---
+            metadata: {"internal":true, 'tier': a}
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm['metadata.internal'] ?? null, 'true');
+        Assert::same($fm['metadata.tier'] ?? null, 'a');
+    }
+
+    #[DataSet(["metadata:\n  internal:true"], name: 'block')]
+    #[DataSet(['metadata: {internal:true}'], name: 'flow')]
+    public function aNestedKeyWithoutASpaceAfterItsColonIsNoKey(string $frontmatter): void
+    {
+        $dir = $this->skill('no-space', "---\n{$frontmatter}\n---\n");
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::false(\array_key_exists('metadata.internal', $fm ?? []));
+    }
+
+    public function aQuotedValueShapedLikeAFlowMappingIsAString(): void
+    {
+        $dir = $this->skill('quoted-flow', <<<'MD'
+            ---
+            metadata: "{internal: true}"
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm, ['metadata' => '{internal: true}']);
+    }
+
+    public function aFlowMappingHoldingACollectionYieldsNoKeys(): void
+    {
+        $dir = $this->skill('flow-nested', <<<'MD'
+            ---
+            metadata: {internal: true, tags: [a, b]}
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::false(\array_key_exists('metadata.internal', $fm ?? []));
+    }
+
+    public function skipsLevelsBelowTheFirstNestedOne(): void
+    {
+        $dir = $this->skill('deep', <<<'MD'
+            ---
+            metadata:
+              owner:
+                internal: true
+              tier: gold
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir) ?? [];
+
+        Assert::false(\array_key_exists('metadata.internal', $fm));
+        Assert::false(\array_key_exists('metadata.owner.internal', $fm));
+        Assert::same($fm['metadata.tier'] ?? null, 'gold');
+    }
+
+    public function linesOfABlockScalarAreNotReadAsKeys(): void
+    {
+        $dir = $this->skill('block-scalar', <<<'MD'
+            ---
+            description: |
+              Use it when:
+              internal: true
+            metadata:
+              tier: gold
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir) ?? [];
+
+        Assert::same($fm['description'] ?? null, '|');
+        Assert::false(\array_key_exists('description.internal', $fm));
+        Assert::false(\array_key_exists('metadata.internal', $fm));
+        Assert::same($fm['metadata.tier'] ?? null, 'gold');
+    }
+
+    public function aTopLevelKeyEndsTheBlockMapping(): void
+    {
+        $dir = $this->skill('ended', <<<'MD'
+            ---
+            metadata:
+              tier: gold
+            license: MIT
+              internal: true
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir) ?? [];
+
+        Assert::false(\array_key_exists('metadata.internal', $fm));
+    }
+
+    public function aNestedNameDoesNotOverrideTheTopLevelName(): void
+    {
+        $dir = $this->skill('nested-first', <<<'MD'
+            ---
+            metadata:
+              name: helper
+            name: pdf
+            ---
+            MD);
+
+        $fm = (new SkillFrontmatterReader())->read($dir);
+
+        Assert::same($fm['name'] ?? null, 'pdf');
+        Assert::same($fm['metadata.name'] ?? null, 'helper');
+    }
+
+    #[DataSet(['true', true])]
+    #[DataSet(['True', true])]
+    #[DataSet(['TRUE', true])]
+    #[DataSet(['1', true])]
+    #[DataSet(['false', false])]
+    #[DataSet(['0', false])]
+    #[DataSet(['yes', false])]
+    #[DataSet(['on', false])]
+    #[DataSet(['', false])]
+    public function marksInternalOnlyForTrueOrOne(string $flag, bool $internal): void
+    {
+        Assert::same(SkillFrontmatterReader::marksInternal(['metadata.internal' => $flag]), $internal);
+    }
+
+    public function marksInternalIsFalseWithoutTheFlag(): void
+    {
+        Assert::false(SkillFrontmatterReader::marksInternal(null));
+        Assert::false(SkillFrontmatterReader::marksInternal(['internal' => 'true']));
     }
 
     /**

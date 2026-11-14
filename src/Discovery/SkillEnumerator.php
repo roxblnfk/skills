@@ -6,6 +6,7 @@ namespace LLM\Skills\Discovery;
 
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Sync\SkillConflict;
 
@@ -22,6 +23,10 @@ use LLM\Skills\Sync\SkillConflict;
  *
  * Loose files at the source root (e.g. `README.md`) are ignored — they
  * are not skills.
+ *
+ * A skill whose frontmatter marks it internal is meant for the donor's own
+ * contributors and is left out, unless the donor's allowlist names it or the
+ * donor is a `dir` source of the project, whose skills are the project's own.
  *
  * Failures are soft: a missing or unreadable `source` directory becomes
  * a warning and that donor is dropped from the result. The caller (or
@@ -108,6 +113,7 @@ final readonly class SkillEnumerator
         $skills = [];
         $warnings = [];
         $skipped = [];
+        $internal = [];
         $renamed = [];
         $droppedDonors = [];
         /** @var array<non-empty-string, non-empty-list<string>> $dropReasons */
@@ -173,18 +179,19 @@ final readonly class SkillEnumerator
                 $targetHolders[$donor->packageName] = true;
             }
 
-            foreach ($candidates as [$entry, $skillPath, $rename]) {
+            foreach ($candidates as [$entry, $skillPath, $rename, $frontmatter]) {
                 // Resolved, not spelled: an alias such as `.claude/skills` links
                 // into the target, and its entries are installed copies too.
                 if ($excludedTarget !== null && PathContainment::isWithin(Path::create($skillPath), $excludedTarget)) {
                     continue;
                 }
 
+                if ($frontmatter === false) {
+                    $frontmatter = $this->frontmatterReader->read(Path::create($skillPath));
+                }
                 // A renamed root skill is known by the name it is installed
                 // under: its frontmatter name was rejected.
-                $canonicalName = $rename === null
-                    ? $this->readCanonicalName(Path::create($skillPath), $entry)
-                    : $entry;
+                $canonicalName = $rename === null ? self::canonicalName($frontmatter, $entry) : $entry;
 
                 if ($filterSet !== null) {
                     if (!\array_key_exists($canonicalName, $filterSet)) {
@@ -196,6 +203,22 @@ final readonly class SkillEnumerator
                         continue;
                     }
                     $allowlistSeen[$donor->packageName][$canonicalName] = true;
+                }
+
+                // Left out by the donor's intent, not refused: it neither warns
+                // nor keeps the donor's earlier copies from a clean.
+                if (
+                    $filterSet === null
+                    && $donor->provenance !== ProviderId::DIR
+                    && SkillFrontmatterReader::marksInternal($frontmatter)
+                ) {
+                    $internal[] = new Skill(
+                        name: $entry,
+                        canonicalName: $canonicalName,
+                        sourceDir: Path::create($skillPath),
+                        packageName: $donor->packageName,
+                    );
+                    continue;
                 }
 
                 $refusal = self::refusedDirectoryName($entry, $this->foldsUnicode);
@@ -276,6 +299,7 @@ final readonly class SkillEnumerator
             dropReasons: $dropReasons,
             skipped: $skipped,
             renamed: $renamed,
+            internal: $internal,
         );
     }
 
@@ -330,12 +354,32 @@ final readonly class SkillEnumerator
     }
 
     /**
+     * The skill's canonical name: the frontmatter `name`, or the directory
+     * name when the frontmatter is absent or has no non-empty `name`, as for
+     * skills shipped without a manifest.
+     *
+     * @param array<non-empty-string, string>|null $frontmatter
+     * @param non-empty-string $directoryName
+     *
+     * @return non-empty-string
+     *
+     * @psalm-pure
+     */
+    private static function canonicalName(?array $frontmatter, string $directoryName): string
+    {
+        $name = $frontmatter['name'] ?? '';
+
+        return $name === '' ? $directoryName : $name;
+    }
+
+    /**
      * Immediate subdirectories of a declared donor's `source`. Loose files at
      * the source root (e.g. `README.md`) are ignored — they are not skills.
      *
      * @param list<string> $entries result of {@see \scandir()} on `$sourcePath`
      *
-     * @return list<array{non-empty-string, non-empty-string, null}> `[directory name, absolute path, no rename]`
+     * @return list<array{non-empty-string, non-empty-string, null, false}> `[directory name, absolute path,
+     *         no rename, frontmatter not read yet]`
      */
     private function declaredCandidates(string $sourcePath, array $entries): array
     {
@@ -349,7 +393,7 @@ final readonly class SkillEnumerator
                 continue;
             }
             /** @var non-empty-string $entry */
-            $out[] = [$entry, $skillPath, null];
+            $out[] = [$entry, $skillPath, null, false];
         }
 
         return $out;
@@ -363,8 +407,9 @@ final readonly class SkillEnumerator
      *
      * @param list<SkillNotice> $skipped appended to when a root skill has no usable target name
      *
-     * @return list<array{non-empty-string, non-empty-string, SkillNotice|null}> `[target directory name,
-     *         absolute path, the rename to report once the skill is installed]`
+     * @return list<array{non-empty-string, non-empty-string, SkillNotice|null, array<non-empty-string, string>|null|false}>
+     *         `[target directory name, absolute path, the rename to report once the skill is installed,
+     *         a root skill's frontmatter or `false` for any other skill, whose frontmatter is not read yet]`
      *
      * @param-out list<SkillNotice> $skipped
      */
@@ -377,13 +422,14 @@ final readonly class SkillEnumerator
                 continue;
             }
             if (!$donor->rootSkill) {
-                $out[] = [$dir->name(), $skillPath, null];
+                $out[] = [$dir->name(), $skillPath, null, false];
                 continue;
             }
 
-            $named = $this->rootSkillName($donor, $dir, $skipped);
+            $frontmatter = $this->frontmatterReader->read($dir);
+            $named = $this->rootSkillName($donor, $frontmatter, $skipped);
             if ($named !== null) {
-                $out[] = [$named[0], $skillPath, $named[1]];
+                $out[] = [$named[0], $skillPath, $named[1], $frontmatter];
             }
         }
 
@@ -396,6 +442,7 @@ final readonly class SkillEnumerator
      * of the package name. Both come from the donor, so either one is used only
      * when it stays a single directory inside the target on every platform.
      *
+     * @param array<non-empty-string, string>|null $frontmatter the root `SKILL.md` frontmatter
      * @param list<SkillNotice> $skipped appended to when neither name is usable
      *
      * @return array{non-empty-string, SkillNotice|null}|null the name, with a notice when the frontmatter
@@ -403,9 +450,9 @@ final readonly class SkillEnumerator
      *
      * @param-out list<SkillNotice> $skipped
      */
-    private function rootSkillName(VendorConfig $donor, Path $skillDir, array &$skipped): ?array
+    private function rootSkillName(VendorConfig $donor, ?array $frontmatter, array &$skipped): ?array
     {
-        $declared = $this->frontmatterReader->read($skillDir)['name'] ?? null;
+        $declared = $frontmatter['name'] ?? null;
         if (
             \is_string($declared)
             && \preg_match(self::SAFE_SKILL_NAME, $declared) === 1
@@ -437,29 +484,5 @@ final readonly class SkillEnumerator
                 $fallback,
             ),
         )];
-    }
-
-    /**
-     * Resolve the skill's canonical name from `SKILL.md` frontmatter.
-     * Falls back to the directory name when the file is missing, has
-     * no parseable frontmatter, or its frontmatter doesn't carry a
-     * non-empty `name:` field — same behaviour pre-existing skills
-     * relied on.
-     *
-     * @param non-empty-string $directoryName
-     *
-     * @return non-empty-string
-     */
-    private function readCanonicalName(Path $skillDir, string $directoryName): string
-    {
-        $frontmatter = $this->frontmatterReader->read($skillDir);
-        if ($frontmatter === null) {
-            return $directoryName;
-        }
-        $name = $frontmatter['name'] ?? null;
-        if (!\is_string($name) || $name === '') {
-            return $directoryName;
-        }
-        return $name;
     }
 }

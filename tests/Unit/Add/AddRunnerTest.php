@@ -745,6 +745,59 @@ final class AddRunnerTest
         Assert::false(\is_file($this->tmp . '/skills.json'));
     }
 
+    public function remoteRootSkillBesideAnInternalSkillIsRegistered(): void
+    {
+        $extracted = $this->writeBareDir('root-with-internal');
+        \file_put_contents($extracted . '/SKILL.md', "---\nname: catalog\n---\nindex");
+        \mkdir($extracted . '/skills/release-checklist', 0o777, true);
+        \file_put_contents(
+            $extracted . '/skills/release-checklist/SKILL.md',
+            "---\nname: release-checklist\nmetadata:\n  internal: true\n---\nbody",
+        );
+
+        $io = new BufferIO();
+        $code = $this->runner(StubAdapter::withDefaults(), $this->fetcherReturning($extracted))->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/catalog', from: ProviderId::GITHUB),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'registered github:acme/catalog'), 'Got: ' . $io->getOutput());
+    }
+
+    public function remoteRepoWhoseSkillsAreAllInternalIsNotRegistered(): void
+    {
+        $extracted = $this->writeInternalOnlyRepo('all-internal');
+
+        $io = new BufferIO();
+        $code = $this->runner(StubAdapter::withDefaults(), $this->fetcherReturning($extracted))->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB),
+        );
+
+        Assert::same($code, Command::FAILURE, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'every skill is marked internal'), 'Got: ' . $io->getOutput());
+        Assert::false(\is_file($this->tmp . '/skills.json'));
+    }
+
+    public function remoteRepoWhoseSkillsAreAllInternalIsRegisteredWhenTheAllowlistNamesOne(): void
+    {
+        $extracted = $this->writeInternalOnlyRepo('all-internal-allowed');
+
+        $io = new BufferIO();
+        $code = $this->runner(StubAdapter::withDefaults(), $this->fetcherReturning($extracted))->run(
+            Path::create($this->tmp),
+            $io,
+            new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB, skills: ['release-checklist']),
+        );
+
+        Assert::same($code, Command::SUCCESS, 'stderr: ' . $io->getOutput());
+        Assert::true(\str_contains($io->getOutput(), 'registered github:acme/skills'), 'Got: ' . $io->getOutput());
+        Assert::true(\is_file($this->tmp . '/skills.json'));
+    }
+
     public function bareRepoWhoseSkillsAreAllRefusedIsNotRegistered(): void
     {
         $extracted = $this->writeBareDir('all-refused');
@@ -872,6 +925,21 @@ final class AddRunnerTest
     {
         $dir = $this->tmp . '/' . $label;
         \mkdir($dir, 0o777, true);
+        return $dir;
+    }
+
+    /**
+     * A bare repo whose only skill, `skills/release-checklist`, is marked internal.
+     */
+    private function writeInternalOnlyRepo(string $label): string
+    {
+        $dir = $this->writeBareDir($label);
+        \mkdir($dir . '/skills/release-checklist', 0o777, true);
+        \file_put_contents(
+            $dir . '/skills/release-checklist/SKILL.md',
+            "---\nname: release-checklist\nmetadata:\n  internal: true\n---\nbody",
+        );
+
         return $dir;
     }
 

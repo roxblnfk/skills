@@ -26,6 +26,10 @@ use Testo\Test;
  *                            Skills: `refactor/` (with nested `templates/suggestion.md`), `migrate/`.
  * - `acme/skills-broken`   — declares `extra.skills.source` but the value is malformed
  *                            (empty string). Used to exercise graceful skip-with-warning.
+ * - `acme/skills-internal` — trusted as a direct dependency. Source `skills`.
+ *                            Skills: `usage-guide/`, plus `release-checklist/` and
+ *                            `bug-repro/`, which are marked `metadata.internal` and
+ *                            never installed (see {@see SkillsInternalTest}).
  * - `acme/skills-rootlike` — declares `extra.skills` with only root-level options
  *                            (`aliases`, `auto-sync`) and no `source`. Mirrors the
  *                            shape of `llm/skills` itself when seen as a vendor: must
@@ -147,16 +151,18 @@ final class SkillsSyncTest
         // internal/path declares no extra.skills; acme/skills-broken has malformed
         // extra; clash/skills-conflict and evil/payload are untrusted. Discovery is
         // off so only declared donors count, and the sync yields: the four skills
-        // from acme/* (project trust), the one skill from spiral/skills-demo
-        // (built-in `spiral/*` trust), and the two skills from mono/skills-repo
-        // (project trust).
+        // from acme/skills-basic and acme/skills-pro (project trust), the one
+        // public skill from acme/skills-internal (direct-dep trust; its internal
+        // skills are skipped), the one skill from spiral/skills-demo (built-in
+        // `spiral/*` trust), and the two skills from mono/skills-repo (project
+        // trust).
         $this->runSync();
 
         $entries = $this->listTargetEntries();
 
         Assert::same(
             $entries,
-            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor'],
+            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor', 'usage-guide'],
         );
     }
 
@@ -272,16 +278,17 @@ final class SkillsSyncTest
 
     public function wildcardPositionalArgMatchesVendor(): void
     {
-        // acme/* hits basic + pro (declared), undeclared (auto-discovered
-        // because the user named it via wildcard), and broken (malformed
-        // extra → -v warning, skipped). It does NOT match clash/skills-conflict
+        // acme/* hits basic + pro + internal (declared; only the public skill
+        // of internal is installed), undeclared (auto-discovered because the
+        // user named it via wildcard), and broken (malformed extra → -v
+        // warning, skipped). It does NOT match clash/skills-conflict
         // (different vendor).
         $process = $this->runSync('acme/*');
 
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['auto-skill', 'code-review', 'greeting', 'migrate', 'refactor'],
+            ['auto-skill', 'code-review', 'greeting', 'migrate', 'refactor', 'usage-guide'],
         );
     }
 
@@ -346,7 +353,8 @@ final class SkillsSyncTest
         // trust statement. Implicit trust is still active (default
         // `trusted-replace: false`), so we additionally pick up:
         //
-        // - acme/skills-basic / acme/skills-pro via direct-dep trust
+        // - acme/skills-basic / acme/skills-pro / acme/skills-internal
+        //   (public skill only) via direct-dep trust
         //   (declared under the sandbox's root `require`),
         // - spiral/skills-demo via direct-dep trust AND the built-in
         //   `spiral/*` pattern,
@@ -361,7 +369,10 @@ final class SkillsSyncTest
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor', 'tutorial'],
+            [
+                'auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting',
+                'migrate', 'refactor', 'tutorial', 'usage-guide',
+            ],
             'project wildcard unlocks evil/payload; direct-dep trust covers the rest. stderr: '
             . $process->getErrorOutput(),
         );
@@ -431,8 +442,8 @@ final class SkillsSyncTest
         // `trusted-replace: false`, both implicit lists remain active:
         // the built-in list approves spiral/skills-demo, and direct-dep
         // trust approves every donor declared under the sandbox's root
-        // `require` (acme/skills-basic, acme/skills-pro and again
-        // spiral/skills-demo). The transitive evil/payload and
+        // `require` (acme/skills-basic, acme/skills-pro, the public skill of
+        // acme/skills-internal, and again spiral/skills-demo). The transitive evil/payload and
         // clash/skills-conflict have no pattern coverage and stay
         // skipped.
         $process = $this->runSync();
@@ -440,7 +451,7 @@ final class SkillsSyncTest
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor'],
+            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor', 'usage-guide'],
         );
     }
 

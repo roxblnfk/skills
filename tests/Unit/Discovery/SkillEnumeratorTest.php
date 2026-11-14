@@ -6,6 +6,7 @@ namespace LLM\Skills\Tests\Unit\Discovery;
 
 use Internal\Path;
 use LLM\Skills\Config\VendorConfig;
+use LLM\Skills\Discovery\Provider\ProviderId;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillNotice;
 use LLM\Skills\Sync\SkillConflict;
@@ -761,6 +762,141 @@ final class SkillEnumeratorTest
             \str_contains($result->warnings[0], 'its copy installed in the target ' . $target . ' does not count'),
             $result->warnings[0],
         );
+    }
+
+    public function leavesOutASkillMarkedInternal(): void
+    {
+        $donor = $this->makeDonor('acme/basic', 'src', [
+            'greeting/SKILL.md' => '# Greeting',
+            'release/SKILL.md' => "---\nname: release\nmetadata:\n  internal: true\n---\n",
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['greeting']);
+        Assert::same(\array_map(static fn($s) => $s->name, $result->internal), ['release']);
+        Assert::same($result->internal[0]->packageName, 'acme/basic');
+        Assert::same($result->warnings, []);
+        Assert::same($result->skipped, []);
+    }
+
+    #[DataSet(["metadata:\n  internal: true"])]
+    #[DataSet(["metadata:\n  internal: \"true\""])]
+    #[DataSet(["metadata:\n  internal: '1'"])]
+    #[DataSet(["metadata:\n  internal: 1"])]
+    #[DataSet(['metadata: {internal: true}'])]
+    public function readsTheInternalFlagInEitherMappingStyleAndQuoting(string $metadata): void
+    {
+        $donor = $this->makeDonor('acme/basic', 'src', ['release/SKILL.md' => "---\n{$metadata}\n---\n"]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::count($result->internal, 1);
+    }
+
+    #[DataSet(["metadata:\n  internal: false"])]
+    #[DataSet(["metadata:\n  internal: yes"])]
+    #[DataSet(["metadata:\n  internal: 0"])]
+    #[DataSet(['internal: true'])]
+    #[DataSet(["metadata:\n  owner:\n    internal: true"])]
+    public function installsASkillNotMarkedInternal(string $metadata): void
+    {
+        $donor = $this->makeDonor('acme/basic', 'src', ['release/SKILL.md' => "---\n{$metadata}\n---\n"]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::count($result->skills, 1);
+        Assert::same($result->internal, []);
+    }
+
+    public function aDonorShippingOnlyInternalSkillsIsNotDropped(): void
+    {
+        // Dropping it would keep a clean from deleting the internal skills'
+        // copies installed before they were marked.
+        $donor = $this->makeDonor('acme/basic', 'src', [
+            'release/SKILL.md' => "---\nmetadata:\n  internal: true\n---\n",
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::same($result->droppedDonors, []);
+        Assert::same($result->dropReasons, []);
+        Assert::same($result->warnings, []);
+    }
+
+    public function installsAnInternalSkillTheAllowlistNames(): void
+    {
+        $donor = $this->makeDonor('acme/basic', 'src', [
+            'greeting/SKILL.md' => '# Greeting',
+            'release/SKILL.md' => "---\nname: acme:release\nmetadata:\n  internal: true\n---\n",
+        ])->withSkillFilter(['acme:release']);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['release']);
+        Assert::same($result->internal, []);
+        Assert::same($result->warnings, []);
+    }
+
+    public function installsAnInternalSkillOfADirSource(): void
+    {
+        $donor = $this->makeDonor('acme/local', 'src', [
+            'release/SKILL.md' => "---\nmetadata:\n  internal: true\n---\n",
+        ])->withProvenance(ProviderId::DIR);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['release']);
+        Assert::same($result->internal, []);
+    }
+
+    public function leavesOutAnInternalSkillOfARemoteSource(): void
+    {
+        $donor = $this->makeDonor('acme/remote', 'src', [
+            'release/SKILL.md' => "---\nmetadata:\n  internal: true\n---\n",
+        ])->withProvenance(ProviderId::GITHUB);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::count($result->internal, 1);
+    }
+
+    public function leavesOutAnInternalSkillOfADiscoveredDonor(): void
+    {
+        $donor = $this->makeDiscoveredDonor('acme/catalog', 'skills', [
+            'skills/greeting' => '# Greeting',
+            'skills/release' => "---\nmetadata:\n  internal: true\n---\n",
+        ]);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['greeting']);
+        Assert::same(\array_map(static fn($s) => $s->name, $result->internal), ['release']);
+    }
+
+    public function leavesOutARootSkillMarkedInternal(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/tool', "---\nname: tool-helper\nmetadata:\n  internal: true\n---\n");
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same($result->skills, []);
+        Assert::same(\array_map(static fn($s) => $s->name, $result->internal), ['tool-helper']);
+        Assert::same($result->droppedDonors, []);
+    }
+
+    public function installsAnInternalRootSkillTheAllowlistNames(): void
+    {
+        $donor = $this->makeRootSkillDonor('acme/tool', "---\nname: tool-helper\nmetadata:\n  internal: true\n---\n")
+            ->withSkillFilter(['tool-helper']);
+
+        $result = (new SkillEnumerator())->enumerate([$donor]);
+
+        Assert::same(\array_map(static fn($s) => $s->name, $result->skills), ['tool-helper']);
+        Assert::same($result->internal, []);
     }
 
     /**

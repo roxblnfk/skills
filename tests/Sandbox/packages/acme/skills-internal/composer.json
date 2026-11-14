@@ -1,0 +1,11 @@
+{
+    "name": "acme/skills-internal",
+    "description": "Stub package shipping a user-facing skill next to contributor skills marked internal",
+    "type": "library",
+    "license": "MIT",
+    "extra": {
+        "skills": {
+            "source": "skills"
+        }
+    }
+}

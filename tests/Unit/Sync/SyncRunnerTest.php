@@ -90,6 +90,31 @@ final class SyncRunnerTest
         Assert::true(\is_file($this->tmp . '/.agents/skills/gone/SKILL.md'), 'a refused clean deletes nothing');
     }
 
+    public function aCleanDeletesTheCopyOfASkillMarkedInternalSinceItWasInstalled(): void
+    {
+        $donor = $this->donor('github', 'remote');
+        \file_put_contents(
+            $this->tmp . '/remote/skills/pdf/SKILL.md',
+            "---\nname: pdf\nmetadata:\n  internal: true\n---\n",
+        );
+        \mkdir($this->tmp . '/.agents/skills/pdf', 0o777, true);
+        \file_put_contents($this->tmp . '/.agents/skills/pdf/SKILL.md', 'installed earlier');
+
+        $io = new BufferIO();
+        $code = (new SyncRunner())->run(
+            Path::create($this->tmp),
+            $this->providerOf([$donor]),
+            null,
+            $io,
+            new SyncOptions(packageFilters: [], extraTrusted: [], targetOverride: null, interactive: false, clean: true),
+        );
+
+        $output = $io->getOutput();
+        Assert::same($code, Command::SUCCESS, $output);
+        Assert::false(\str_contains($output, 'clean narrowed'), $output);
+        Assert::false(\is_dir($this->tmp . '/.agents/skills/pdf'), $output);
+    }
+
     /**
      * @param non-empty-string $provenance
      * @param non-empty-string $label

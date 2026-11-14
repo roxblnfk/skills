@@ -296,6 +296,23 @@ final class ReportFormatterTest
         Assert::true(\str_contains($joined, '<bg=cyan;fg=black> not-declared </>'));
     }
 
+    public function rendersAnInternalSkillAsAMutedSkippedRowNamingTheSkill(): void
+    {
+        $report = new InspectionReport(
+            target: Path::create('/t'),
+            donors: [],
+            skipped: [
+                new SkippedDonor('acme/tools', SkipReason::Internal, 'skill "release": marked internal, not installed'),
+            ],
+        );
+
+        $joined = \implode("\n", (new ReportFormatter())->format($report));
+
+        Assert::string($joined)
+            ->contains('<bg=white;fg=black> internal </>')
+            ->contains('skill "release": marked internal, not installed');
+    }
+
     public function groupsMultiplePackagesUnderTheSameVendorBlock(): void
     {
         $a = $this->donorInspection(

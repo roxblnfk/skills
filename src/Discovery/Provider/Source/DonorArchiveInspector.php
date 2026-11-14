@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Discovery\DiscoveredSkill;
 use LLM\Skills\Discovery\SkillEnumerator;
+use LLM\Skills\Discovery\SkillFrontmatterReader;
 use LLM\Skills\Discovery\SkillTreeScanner;
 use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Sync\SkillConflict;
@@ -55,6 +56,7 @@ final readonly class DonorArchiveInspector
      */
     public function __construct(
         private SkillTreeScanner $scanner = new SkillTreeScanner(),
+        private SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
     ) {}
 
     /**
@@ -63,9 +65,17 @@ final readonly class DonorArchiveInspector
      *        `null` when the adapter could not derive one.
      * @param Path|null $target the sync target; when it lies inside the archive, the skills there
      *        are installed copies and are left out of the scan
+     * @param list<non-empty-string>|null $internalAllowed names of the skills marked internal that the
+     *        sync installs, the donor's skill allowlist; `null` when it installs every one, as from a
+     *        `dir` source. Any other skill marked internal does not turn an archive with a root
+     *        SKILL.md into a catalog.
      */
-    public function inspect(Path $extractedRoot, ?string $packageHint, ?Path $target = null): DonorArchiveInspection
-    {
+    public function inspect(
+        Path $extractedRoot,
+        ?string $packageHint,
+        ?Path $target = null,
+        ?array $internalAllowed = null,
+    ): DonorArchiveInspection {
         $packageName = null;
         $extra = null;
 
@@ -128,7 +138,7 @@ final readonly class DonorArchiveInspector
             );
             // Decided before names are merged: a shallow skill outranks the
             // root even when a deeper one of its name is what gets installed.
-            $rootIsSkill = !self::anyOutranksTheRoot([...$discovered, ...$shallow]);
+            $rootIsSkill = !$this->anyOutranksTheRoot([...$discovered, ...$shallow], $internalAllowed);
         }
         $discovered = self::merge($discovered, $shallow);
         if (!$rootIsSkill && $discovered === []) {
@@ -250,17 +260,30 @@ final readonly class DonorArchiveInspector
      * hold this very skill's installed copy.
      *
      * @param list<DiscoveredSkill> $discovered
-     *
-     * @psalm-pure
+     * @param list<non-empty-string>|null $internalAllowed names of the skills marked internal that the
+     *        sync installs; `null` for every one
      */
-    private static function anyOutranksTheRoot(array $discovered): bool
+    private function anyOutranksTheRoot(array $discovered, ?array $internalAllowed): bool
     {
         foreach ($discovered as $skill) {
             if (self::inHiddenDirectory($skill) || SkillEnumerator::refusedDirectoryName($skill->name) !== null) {
                 continue;
             }
             $depth = $skill->container === '.' ? 1 : \substr_count($skill->container, '/') + 2;
-            if ($depth <= self::OUTRANKING_DEPTH) {
+            if ($depth > self::OUTRANKING_DEPTH) {
+                continue;
+            }
+            if ($internalAllowed === null) {
+                return true;
+            }
+            $frontmatter = $this->frontmatter->read($skill->dir);
+            // Matched as the enumerator matches an allowlist: by the frontmatter
+            // name, or by the directory name when there is none.
+            $name = $frontmatter['name'] ?? '';
+            if (
+                !SkillFrontmatterReader::marksInternal($frontmatter)
+                || \in_array($name === '' ? $skill->name : $name, $internalAllowed, true)
+            ) {
                 return true;
             }
         }
