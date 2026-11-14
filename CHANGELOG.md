@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/roxblnfk/skills/compare/1.17.0...1.18.0) (2026-11-14)
+
+
+### Features
+
+* **discovery:** skip skills marked internal in their frontmatter ([#81](https://github.com/roxblnfk/skills/issues/81)) ([79cc3bd](https://github.com/roxblnfk/skills/commit/79cc3bd63b335f0109a4bd314c5b88dd788b1983))
+
 ## [1.17.0](https://github.com/roxblnfk/skills/compare/1.16.0...1.17.0) (2026-11-12)
 
 
