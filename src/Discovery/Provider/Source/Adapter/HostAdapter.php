@@ -102,10 +102,15 @@ interface HostAdapter
      * should hit — for `github` it's a zipball URL; for `git`-style
      * adapters it would be the repo URL; etc.
      *
+     * With `$notAfter` set, only refs the host dated at or before it are
+     * picked, and a branch resolves to the commit it pointed at then. An
+     * adapter that cannot date refs throws instead of ignoring it.
+     *
      * @throws RemoteResolveException when the adapter cannot resolve the entry
-     *         (no matching tag for a caret, no default branch, API failure, …)
+     *         (no matching tag for a caret, no default branch, API failure,
+     *         no ref old enough, …)
      *
      * @psalm-suppress MissingAbstractPureAnnotation
      */
-    public function resolve(SourceEntry $entry): RemoteDonorRef;
+    public function resolve(SourceEntry $entry, ?\DateTimeImmutable $notAfter = null): RemoteDonorRef;
 }

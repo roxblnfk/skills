@@ -315,6 +315,7 @@ always governed here, by the trust lists and the `vendor-sources` toggle.
 | `path-from-root`  | string      | _(unset)_        | The project's own location below an intended outer root, e.g. `packages/api`. When set, `target` and aliases resolve against (and stay inside) that verified root instead of the project directory. See [path-from-root](#path-from-root). |
 | `dependencies`    | object      | `{}`             | Per-package-manager config: `<id>` → `bool` (walk toggle) or `{ enabled, trusted, trusted-replace }`. Ids: `composer` (walk default `true`), `npm`/`go` (future, default `false`). `trusted` extends the manager's trust list; `trusted-replace` makes it fully replace the built-in and direct-dependency trust. Deprecated aliases `trusted`, `trusted-replace`, `local` fold into this block. See [Trust](#trust) and [Donor sources](#donor-sources). |
 | `vendor-sources`  | bool        | `true`           | Allow installed packages to advertise external sources via their own `extra.skills.sources` (gated by the same trust rules as the declaring package). Set to `false` to ignore them entirely. See [External sources](#external-sources-extraskillssources). |
+| `cooldown`        | object      | _(unset)_        | Minimum age of the refs remote sources resolve to: `{"days": 14, "exclude": ["myorg/*"]}`. See [Cooldown](#cooldown). |
 | `sources`         | object[]    | `[]`             | The project's own donor source entries — implicitly trusted, you wrote them. Managed by `skills:add`; documented in [Donor sources](#donor-sources). Not to be confused with the trust-gated [`extra.skills.sources`](#external-sources-extraskillssources) a vendor package declares for itself. |
 
 `.agents/skills/` is tool-agnostic so Claude Code, Cursor, Aider, … can read the same
@@ -622,6 +623,45 @@ A donor often ships more skills than you want in a given project. The optional `
 - Names that do not exist in the fetched archive emit a `-v` warning (`skill "X" declared in the skill allowlist but not found in the donor`) so typos surface without aborting the sync. An allowlist none of whose names match leaves the donor contributing nothing, so an unscoped `--clean` refuses to run, and `skills:add` refuses to register it.
 
 `skills:add --skill=NAME` is the CLI surface: pass `--skill` repeatedly to build the list. The flag is **additive on upsert** — running `skills:add` again on the same entry adds the new names to whatever was already stored. A follow-up `skills:add` without `--skill` does **not** touch the existing allowlist (whether it was a populated list or an explicit empty one). Removing a name or clearing the allowlist entirely is a manual edit of `skills.json`.
+
+### Cooldown
+
+A push to a source repository reaches the project on the next `composer install`. To give a bad
+push (a compromised account, a broken release) time to be noticed first, set a cooldown: remote
+sources then resolve to the newest ref that is at least `days` old.
+
+```json
+{
+  "cooldown": { "days": 14, "exclude": ["myorg/*"] }
+}
+```
+
+- `days` — whole days from `0` to `3650`; `0` turns the cooldown off.
+- `exclude` — `vendor/package` or `vendor/*` patterns matched against a source's `package`
+  (`owner/repo`); those sources resolve as if no cooldown were set.
+
+Under a cooldown only a commit that was already on the repository's default branch `days` ago is
+fetched, by its SHA:
+
+- a version constraint (`^1.2`, `=1.2.3`) or no `ref` picks the highest matching tag whose commit
+  passes; a tag cut from another branch never does;
+- a branch name resolves to the commit the branch pointed at `days` ago;
+- any other `ref` (a tag, a SHA, `HEAD`) must point at a commit that passes, or the source fails.
+
+Ages come from the repository activity log, never from commit or release dates, which whoever pushes
+sets or keeps when moving a tag. When the log does not reach back `days`, a branch resolves to the
+state before its oldest recorded change, or to its current commit when none is recorded. The only
+way to skip the check for a source is `exclude`.
+
+A cooldown makes several GitHub API calls per source; without a GitHub token the 60 requests an
+hour allowed to anonymous clients run out quickly, so configure one in Composer's `auth.json`.
+
+When nothing is old enough the source fails with a `[failed]` row and the skills already installed
+from it stay as they are; the sync never falls back from tags to the branch. The cooldown applies
+to the project's `sources[]`, to vendor-declared `extra.skills.sources` (except `self.version`,
+which follows the version Composer installed) and to `skills:add`, which stores a caret built
+from the tag it resolved. GitLab sources fail under an active cooldown for
+now: add them to `exclude` or set `days` to `0`.
 
 ### Local directory donors (`dir`)
 

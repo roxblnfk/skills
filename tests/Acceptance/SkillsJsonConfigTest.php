@@ -229,6 +229,69 @@ final class SkillsJsonConfigTest
 
     #[WithSkillsJson([
         'target' => 'external-target/skills',
+        'cooldown' => ['days' => '14d'],
+    ])]
+    public function cooldownDurationStringIsRejectedAtConfigLoad(): void
+    {
+        $process = $this->runSync();
+        $err = $process->getErrorOutput();
+
+        Assert::notSame($process->getExitCode(), 0, 'a malformed cooldown must fail the run');
+        Assert::true(
+            \str_contains($err, 'skills.json: cooldown.days must be a whole number of days from 0 to 3650'),
+            'the error must name the field and the accepted form. Got: ' . $err,
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => 'external-target/skills',
+        'trusted' => ['acme/skills-basic'],
+        'cooldown' => ['days' => 14],
+        'sources' => [
+            ['from' => 'gitlab', 'package' => 'team/skills'],
+        ],
+    ])]
+    public function cooldownOnGitlabSourceFailsThatSourceOnly(): void
+    {
+        $process = $this->runSync();
+        $out = $process->getOutput();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(
+            \str_contains($out, 'gitlab:team/skills')
+            && \str_contains($out, 'cooldown is not supported for gitlab sources yet'),
+            'the failure row must name the source and the reason. Got: ' . $out,
+        );
+        Assert::true(
+            \is_file(self::EXTERNAL_TARGET . '/greeting/SKILL.md'),
+            'other donors must still be synced',
+        );
+    }
+
+    #[WithSandboxExtras([
+        'target' => 'inline-target/skills',
+        'cooldown' => ['days' => 14],
+        'sources' => [
+            ['from' => 'gitlab', 'package' => 'team/skills'],
+        ],
+    ])]
+    public function inlineCooldownAppliesWithoutSkillsJson(): void
+    {
+        // `show` does not migrate the inline block into skills.json.
+        $process = ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:show', timeout: 60, mustSucceed: false);
+        $out = $process->getOutput();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(\is_file(self::SKILLS_JSON), 'show must not migrate the inline block');
+        Assert::true(
+            \str_contains($out, 'gitlab:team/skills')
+            && \str_contains($out, 'cooldown is not supported for gitlab sources yet'),
+            'the inline source must be resolved under the inline cooldown. Got: ' . $out,
+        );
+    }
+
+    #[WithSkillsJson([
+        'target' => 'external-target/skills',
         'trusted' => ['acme/skills-basic'],
         'vendor-sources' => false,
     ])]

@@ -84,6 +84,7 @@ final readonly class AddRunner
         private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
         private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
         private SyncPlanner $planner = new SyncPlanner(),
+        private ?\DateTimeImmutable $now = null,
     ) {}
 
     /**
@@ -134,9 +135,11 @@ final readonly class AddRunner
         }
 
         // Step 3 + 4: resolve concrete ref AND compute what to store.
+        // The stored `^X.Y.Z` is derived from the resolved tag: without the
+        // cooldown here its floor could be above every tag old enough.
         $synthetic = self::syntheticEntry($parsed);
         try {
-            $resolved = $adapter->resolve($synthetic);
+            $resolved = $adapter->resolve($synthetic, $this->cooldownCutoff($projectRoot, $parsed->package));
         } catch (RemoteResolveException $e) {
             $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return Command::FAILURE;
@@ -519,6 +522,20 @@ final readonly class AddRunner
         }
 
         return $inspection->packageName;
+    }
+
+    /**
+     * A malformed project config yields `null`: the follow-up sync reports it.
+     */
+    private function cooldownCutoff(Path $projectRoot, ?string $package): ?\DateTimeImmutable
+    {
+        try {
+            $cooldown = $this->projectMapper->forProject($projectRoot, null)->config->cooldown;
+        } catch (MalformedProjectConfig) {
+            return null;
+        }
+
+        return $cooldown?->cutoffFor($package, $this->now ?? new \DateTimeImmutable());
     }
 
     /**

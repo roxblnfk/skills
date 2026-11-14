@@ -74,6 +74,7 @@ final readonly class ProjectConfig
      *         neither `--clean` nor `--no-clean` deletes installed skills before copying, as
      *         `--clean` does, without asking first. Never read from inline `extra.skills`,
      *         which describes the package as a donor rather than configuring the consumer.
+     * @param CooldownConfig|null $cooldown `null` when the `cooldown` block is absent
      *
      * @psalm-mutation-free
      */
@@ -90,6 +91,7 @@ final readonly class ProjectConfig
         public array $dependencies = [],
         public bool $vendorSources = true,
         public bool $clean = false,
+        public ?CooldownConfig $cooldown = null,
     ) {}
 
     /**
@@ -113,6 +115,7 @@ final readonly class ProjectConfig
             dependencies: [],
             vendorSources: true,
             clean: false,
+            cooldown: null,
         );
     }
 
@@ -153,6 +156,7 @@ final readonly class ProjectConfig
             $this->dependencies,
             $this->vendorSources,
             $this->clean,
+            $this->cooldown,
         );
     }
 
@@ -176,6 +180,7 @@ final readonly class ProjectConfig
             $this->dependencies,
             $this->vendorSources,
             $this->clean,
+            $this->cooldown,
         );
     }
 }

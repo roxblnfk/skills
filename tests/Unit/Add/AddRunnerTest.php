@@ -174,6 +174,44 @@ final class AddRunnerTest
         );
     }
 
+    public function cooldownCutoffIsPassedToResolveAndTheCooledTagIsStored(): void
+    {
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            \json_encode(['cooldown' => ['days' => 14, 'exclude' => ['team/*']]], \JSON_THROW_ON_ERROR),
+        );
+        $adapter = new StubAdapter(resolveTo: new RemoteDonorRef(url: 'https://example.com/zip', ref: 'v1.1.0'));
+        $fetcher = $this->fetcherReturning($this->writeArchive('cooled', 'acme/skills', 'skills'));
+        $runner = new AddRunner(
+            new HostAdapterRegistry($adapter),
+            $fetcher,
+            now: new \DateTimeImmutable('2026-11-15T12:00:00Z'),
+        );
+
+        $runner->run(Path::create($this->tmp), new BufferIO(), new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB));
+
+        Assert::same($adapter->lastNotAfter?->format(\DATE_ATOM), '2026-11-01T12:00:00+00:00');
+        Assert::same($this->readSkillsJson()['sources'][0]['ref'] ?? null, '^1.1.0');
+    }
+
+    public function cooldownExcludedSourceIsResolvedWithoutCutoff(): void
+    {
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            \json_encode(['cooldown' => ['days' => 14, 'exclude' => ['acme/*']]], \JSON_THROW_ON_ERROR),
+        );
+        $adapter = StubAdapter::withDefaults();
+        $fetcher = $this->fetcherReturning($this->writeArchive('excluded', 'acme/skills', 'skills'));
+
+        $this->runner($adapter, $fetcher)->run(
+            Path::create($this->tmp),
+            new BufferIO(),
+            new AddOptions(input: 'acme/skills', from: ProviderId::GITHUB),
+        );
+
+        Assert::null($adapter->lastNotAfter);
+    }
+
     // ── adapter selection failures ─────────────────────────────────
 
     public function unknownFromIdReturnsInvalid(): void
@@ -929,6 +967,8 @@ final class AddRunnerTest
  */
 final class StubAdapter implements HostAdapter
 {
+    public ?\DateTimeImmutable $lastNotAfter = null;
+
     public function __construct(
         private readonly ?string $parseError = null,
         private readonly ?string $resolveError = null,
@@ -978,8 +1018,9 @@ final class StubAdapter implements HostAdapter
     }
 
     #[\Override]
-    public function resolve(SourceEntry $entry): RemoteDonorRef
+    public function resolve(SourceEntry $entry, ?\DateTimeImmutable $notAfter = null): RemoteDonorRef
     {
+        $this->lastNotAfter = $notAfter;
         if ($this->resolveError !== null) {
             throw new RemoteResolveException($entry, $this->resolveError);
         }
