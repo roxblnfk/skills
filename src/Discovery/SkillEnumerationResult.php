@@ -25,6 +25,10 @@ namespace LLM\Skills\Discovery;
  * valid, so nothing else would tell the user why a skill is missing or where
  * it went.
  *
+ * `internal` lists each skill left out because its frontmatter marks it
+ * internal. Its donor chose that, so it is neither a warning nor a reason to
+ * drop the donor, and an unscoped clean deletes the copies such a skill left.
+ *
  * @psalm-immutable
  */
 final readonly class SkillEnumerationResult
@@ -41,6 +45,7 @@ final readonly class SkillEnumerationResult
      *        contributed nothing, keyed by package name, worded as in `warnings` without the
      *        package prefix; a donor whose skills were all refused for their names is absent,
      *        `skipped` explains it
+     * @param list<Skill> $internal skills marked internal and so not installed
      *
      * @psalm-mutation-free
      */
@@ -51,5 +56,6 @@ final readonly class SkillEnumerationResult
         public array $skipped = [],
         public array $renamed = [],
         public array $dropReasons = [],
+        public array $internal = [],
     ) {}
 }

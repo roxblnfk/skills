@@ -37,7 +37,7 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * dedicated chip would be redundant. Reason chips are coloured by
  * severity: red for breakage (malformed / source-missing /
  * source-failed), yellow for trust-required cases (untrusted /
- * untrusted-named), white for self-imposed exclusions (filtered-out),
+ * untrusted-named), white for intended exclusions (filtered-out, internal),
  * cyan for informational cases (not-declared).
  *
  * The `[via built-in trust]` and `[via direct dependency]` annotations
@@ -277,9 +277,10 @@ final readonly class ReportFormatter
             SkipReason::Untrusted,
             SkipReason::SkillRefused,
             SkipReason::TargetIsSource => '<bg=yellow;fg=black;options=bold>',
-            // User self-excluded — muted neutral.
+            // Left out by the user's or the donor's choice — muted neutral.
             SkipReason::FilteredOut,
-            SkipReason::TargetIsLink => '<bg=white;fg=black>',
+            SkipReason::TargetIsLink,
+            SkipReason::Internal => '<bg=white;fg=black>',
             // Auto-discovery candidate the user has not opted in to — cyan
             // to differentiate from anything action-required.
             SkipReason::NotDeclared => '<bg=cyan;fg=black>',

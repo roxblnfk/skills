@@ -243,7 +243,12 @@ final readonly class SourceProvider implements DonorProvider
         array &$failures,
         array &$malformed,
     ): array {
-        $inspection = $this->inspector->inspect($path, $ref->packageHint, $target);
+        $inspection = $this->inspector->inspect(
+            $path,
+            $ref->packageHint,
+            $target,
+            internalAllowed: $ref instanceof DirDonorRef ? null : ($ref->skillFilter ?? []),
+        );
 
         $rejection = $inspection->rejection;
         if ($rejection !== null) {

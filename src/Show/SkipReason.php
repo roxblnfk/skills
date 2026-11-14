@@ -65,4 +65,12 @@ enum SkipReason: string
      * through a link, so the skill is left as it is, whatever it holds.
      */
     case TargetIsLink = 'target-is-link';
+
+    /**
+     * A skill whose `SKILL.md` frontmatter sets `metadata.internal`, meant for
+     * the donor's own contributors. It is installed only when the donor's
+     * allowlist names it or the donor is a `dir` source; the row names one
+     * skill, not the whole donor.
+     */
+    case Internal = 'internal';
 }

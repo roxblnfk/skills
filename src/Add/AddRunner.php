@@ -350,6 +350,7 @@ final readonly class AddRunner
             $inspection,
             $resolved,
             $this->writer->allowlistAfterUpsert($projectRoot, $entry),
+            ProviderId::DIR,
             $target,
         );
         if ($unnamed !== null) {
@@ -491,6 +492,7 @@ final readonly class AddRunner
      * package name; `skills:add` only needs the name, so it treats them
      * alike. A rejection is reported to the console and yields `null`.
      *
+     * @param non-empty-string $adapterId
      * @param list<non-empty-string>|null $skillFilter the allowlist the entry is written with
      *
      * @return non-empty-string|null donor package name, or `null` if the archive cannot be used
@@ -502,7 +504,11 @@ final readonly class AddRunner
         ParsedAddInput $parsed,
         ?array $skillFilter,
     ): ?string {
-        $inspection = $this->inspector->inspect($extractedRoot, $parsed->package);
+        $inspection = $this->inspector->inspect(
+            $extractedRoot,
+            $parsed->package,
+            internalAllowed: $skillFilter ?? [],
+        );
 
         $rejection = $inspection->rejection;
         if ($rejection !== null) {
@@ -512,7 +518,7 @@ final readonly class AddRunner
             return null;
         }
 
-        $unnamed = $this->installsNothing($inspection, $extractedRoot, $skillFilter);
+        $unnamed = $this->installsNothing($inspection, $extractedRoot, $skillFilter, $adapterId);
         if ($unnamed !== null) {
             $io->writeError('<error>[llm/skills] ' . $unnamed . '</error>');
             return null;
@@ -541,17 +547,21 @@ final readonly class AddRunner
     /**
      * Why the sync would install nothing from an accepted donor, or `null` when
      * it installs something. The sync skips a rejected `extra.skills` block,
-     * refuses unsafe directory names and a root skill with no usable name, and
-     * keeps only the skills on the entry's allowlist; when that leaves nothing,
-     * registering the donor would write an entry that never copies anything.
+     * refuses unsafe directory names and a root skill with no usable name, leaves
+     * out skills marked internal, and keeps only the skills on the entry's
+     * allowlist; when that leaves nothing, registering the donor would write an
+     * entry that never copies anything.
      *
      * @param list<non-empty-string>|null $skillFilter the allowlist the entry is written with
+     * @param non-empty-string $provenance the entry's `from`, which decides whether internal skills
+     *        are installed
      * @param Path|null $target the sync target, whose installed copies a donor containing it does not own
      */
     private function installsNothing(
         DonorArchiveInspection $inspection,
         Path $root,
         ?array $skillFilter,
+        string $provenance,
         ?Path $target = null,
     ): ?string {
         $packageName = $inspection->packageName;
@@ -585,7 +595,9 @@ final readonly class AddRunner
         }
 
         $donors = \array_map(
-            static fn(VendorConfig $donor): VendorConfig => $donor->withSkillFilter($skillFilter),
+            static fn(VendorConfig $donor): VendorConfig => $donor
+                ->withSkillFilter($skillFilter)
+                ->withProvenance($provenance),
             $donors,
         );
         $result = $this->enumerator->enumerate($donors, $target);
@@ -596,6 +608,10 @@ final readonly class AddRunner
 
         if (isset($result->skipped[0])) {
             return $result->skipped[0]->describe();
+        }
+
+        if ($result->internal !== []) {
+            return $packageName . ': every skill is marked internal; name one in the skill allowlist to install it';
         }
 
         return $result->warnings[0] ?? $packageName . ': nothing to install';
