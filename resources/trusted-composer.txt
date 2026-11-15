@@ -52,6 +52,7 @@ internal/*
 laravel/*
 llm/*
 moonshine/*
+phpstan/*
 spiral/*
 symfony/*
 tempest/*
