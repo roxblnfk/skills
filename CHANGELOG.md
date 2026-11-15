@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/roxblnfk/skills/compare/1.18.0...1.19.0) (2026-11-15)
+
+
+### Features
+
+* **trust:** add phpstan/* to the built-in trusted vendors ([#83](https://github.com/roxblnfk/skills/issues/83)) ([7fb619a](https://github.com/roxblnfk/skills/commit/7fb619af22b1499af1d105d0bf9704b4a7b86b75))
+
 ## [1.18.0](https://github.com/roxblnfk/skills/compare/1.17.0...1.18.0) (2026-11-14)
 
 
