@@ -23,3 +23,6 @@
 /resources/**    -export-ignore
 /bin             -export-ignore
 /bin/**          -export-ignore
+
+# Trust lists are one pattern per line; concurrent additions merge without conflicts.
+/resources/trusted-*.txt merge=union
