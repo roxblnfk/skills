@@ -281,6 +281,135 @@ final class SourceProviderEndToEndTest
         Assert::same($result->donors[0]->packageName, 'acme/skills');
     }
 
+    public function cooldownBranchIsFetchedAtTheCommitItPointedToAtTheCutoff(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'cooldown' => ['days' => 14],
+            'sources' => [
+                ['from' => 'github', 'package' => 'acme/skills', 'ref' => 'main'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $sha = \str_repeat('b', 40);
+        $zipBytes = $this->buildGithubStyleZip(
+            topDir: 'acme-skills-' . $sha,
+            files: [
+                'composer.json' => \json_encode([
+                    'name' => 'acme/skills',
+                    'extra' => ['skills' => ['source' => 'skills']],
+                ], \JSON_THROW_ON_ERROR),
+                'skills/hello/SKILL.md' => "---\nname: hello\n---\nhi",
+            ],
+        );
+
+        $http = self::stubHttp([
+            'https://api.github.com/repos/acme/skills/git/matching-refs/heads/main' => new HttpResponse(
+                statusCode: 200,
+                body: \json_encode([
+                    ['ref' => 'refs/heads/main', 'object' => ['sha' => \str_repeat('a', 40), 'type' => 'commit']],
+                ], \JSON_THROW_ON_ERROR),
+            ),
+            'https://api.github.com/repos/acme/skills/activity?ref=refs%2Fheads%2Fmain&direction=desc&per_page=100' => new HttpResponse(
+                statusCode: 200,
+                body: \json_encode([
+                    ['timestamp' => '2026-11-14T10:00:00Z', 'before' => $sha, 'after' => \str_repeat('a', 40)],
+                    ['timestamp' => '2026-10-20T10:00:00Z', 'before' => \str_repeat('c', 40), 'after' => $sha],
+                ], \JSON_THROW_ON_ERROR),
+            ),
+            'https://api.github.com/repos/acme/skills/zipball/' . $sha => new HttpResponse(
+                statusCode: 200,
+                body: $zipBytes,
+            ),
+        ]);
+
+        $provider = new SourceProvider(
+            new SkillsJsonDonorRefSource(
+                new HostAdapterRegistry(new GithubAdapter($http)),
+                now: new \DateTimeImmutable('2026-11-15T12:00:00Z'),
+            ),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        // Only the cooled commit's archive is stubbed.
+        Assert::same($result->failures, []);
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
+    }
+
+    public function cooldownSkipsAMovedTagAndFetchesTheOlderTagByItsCommit(): void
+    {
+        if (!\class_exists(\ZipArchive::class)) {
+            throw new SkipTest('ext-zip unavailable — cannot build fixture archive');
+        }
+
+        \file_put_contents($this->tmp . '/skills.json', \json_encode([
+            'cooldown' => ['days' => 14],
+            'sources' => [
+                ['from' => 'github', 'package' => 'acme/skills'],
+            ],
+        ], \JSON_THROW_ON_ERROR));
+
+        $moved = \str_repeat('d', 40);
+        $old = \str_repeat('e', 40);
+        $mainAtCutoff = \str_repeat('b', 40);
+        $json = static fn(array $data): HttpResponse => new HttpResponse(
+            statusCode: 200,
+            body: \json_encode($data, \JSON_THROW_ON_ERROR),
+        );
+        $api = 'https://api.github.com/repos/acme/skills';
+
+        $http = self::stubHttp([
+            $api . '/tags?per_page=100' => $json([['name' => 'v1.1.0'], ['name' => 'v1.0.0']]),
+            $api => $json(['default_branch' => 'main']),
+            $api . '/activity?ref=refs%2Fheads%2Fmain&direction=desc&per_page=100' => $json([
+                ['timestamp' => '2026-10-20T10:00:00Z', 'before' => \str_repeat('c', 40), 'after' => $mainAtCutoff],
+            ]),
+            // v1.1.0 was force-pushed to a commit that was not on main at the cutoff.
+            $api . '/compare/refs%2Ftags%2Fv1.1.0...' . $mainAtCutoff . '?per_page=1' => $json([
+                'status' => 'diverged',
+                'base_commit' => ['sha' => $moved],
+            ]),
+            $api . '/compare/refs%2Ftags%2Fv1.0.0...' . $mainAtCutoff . '?per_page=1' => $json([
+                'status' => 'ahead',
+                'base_commit' => ['sha' => $old],
+            ]),
+            $api . '/zipball/' . $old => new HttpResponse(
+                statusCode: 200,
+                body: $this->buildGithubStyleZip(
+                    topDir: 'acme-skills-' . $old,
+                    files: [
+                        'composer.json' => \json_encode([
+                            'name' => 'acme/skills',
+                            'extra' => ['skills' => ['source' => 'skills']],
+                        ], \JSON_THROW_ON_ERROR),
+                        'skills/hello/SKILL.md' => "---\nname: hello\n---\nhi",
+                    ],
+                ),
+            ),
+        ]);
+
+        $provider = new SourceProvider(
+            new SkillsJsonDonorRefSource(
+                new HostAdapterRegistry(new GithubAdapter($http)),
+                now: new \DateTimeImmutable('2026-11-15T12:00:00Z'),
+            ),
+            new HttpArchiveFetcher($http, Path::create($this->tmp)),
+        );
+
+        $result = $provider->discover(Path::create($this->tmp));
+
+        // Neither `zipball/v1.1.0` nor the moved commit's archive is stubbed.
+        Assert::same($result->failures, []);
+        Assert::count($result->donors, 1);
+        Assert::same($result->donors[0]->packageName, 'acme/skills');
+    }
+
     public function gitlabSourceEntryResolvesFetchesAndProducesDonor(): void
     {
         if (!\class_exists(\ZipArchive::class)) {

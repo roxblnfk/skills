@@ -80,6 +80,56 @@ final class SkillsJsonDonorRefSourceTest
         Assert::same($source->failures(), []);
     }
 
+    public function cooldownCutoffIsPassedToTheAdapterUnlessExcluded(): void
+    {
+        $this->writeSkillsJson([
+            'cooldown' => ['days' => 14, 'exclude' => ['team/*']],
+            'sources' => [
+                ['from' => 'github', 'package' => 'acme/skills'],
+                ['from' => 'github', 'package' => 'team/skills'],
+            ],
+        ]);
+        /** @var array<string, \DateTimeImmutable|null> $cutoffs */
+        $cutoffs = [];
+        $registry = new HostAdapterRegistry(self::stubAdapter(
+            'github',
+            static function (SourceEntry $entry, ?\DateTimeImmutable $notAfter) use (&$cutoffs): RemoteDonorRef {
+                $cutoffs[$entry->identifier()] = $notAfter;
+                return new RemoteDonorRef(url: 'https://api.example.com/' . $entry->identifier(), ref: 'main');
+            },
+        ));
+        $now = new \DateTimeImmutable('2026-11-15T12:00:00Z');
+
+        $source = new SkillsJsonDonorRefSource($registry, now: $now);
+        $this->collect($source->refs(Path::create($this->tmp)));
+
+        Assert::same($cutoffs['acme/skills']?->format(\DATE_ATOM), '2026-11-01T12:00:00+00:00');
+        Assert::null($cutoffs['team/skills']);
+    }
+
+    public function inlineExtraIsReadWhenThereIsNoSkillsJson(): void
+    {
+        $extra = ['skills' => [
+            'cooldown' => ['days' => 14],
+            'sources' => [['from' => 'github', 'package' => 'acme/skills']],
+        ]];
+        /** @var list<\DateTimeImmutable|null> $cutoffs */
+        $cutoffs = [];
+        $registry = new HostAdapterRegistry(self::stubAdapter(
+            'github',
+            static function (SourceEntry $entry, ?\DateTimeImmutable $notAfter) use (&$cutoffs): RemoteDonorRef {
+                $cutoffs[] = $notAfter;
+                return new RemoteDonorRef(url: 'https://api.example.com/x', ref: 'main');
+            },
+        ));
+
+        $source = new SkillsJsonDonorRefSource($registry, now: new \DateTimeImmutable('2026-11-15T12:00:00Z'), extra: $extra);
+        $refs = $this->collect($source->refs(Path::create($this->tmp)));
+
+        Assert::count($refs, 1);
+        Assert::same($cutoffs[0]?->format(\DATE_ATOM), '2026-11-01T12:00:00+00:00');
+    }
+
     public function unknownAdapterProducesFailure(): void
     {
         // schema accepts `gitlab` but the registry only knows about
@@ -311,14 +361,14 @@ final class SkillsJsonDonorRefSourceTest
 
     /**
      * @param non-empty-string $id
-     * @param callable(SourceEntry): RemoteDonorRef $resolver
+     * @param callable(SourceEntry, ?\DateTimeImmutable): RemoteDonorRef $resolver
      */
     private static function stubAdapter(string $id, callable $resolver): HostAdapter
     {
         return new class($id, $resolver) implements HostAdapter {
             /**
              * @param non-empty-string $id
-             * @param callable(SourceEntry): RemoteDonorRef $resolver
+             * @param callable(SourceEntry, ?\DateTimeImmutable): RemoteDonorRef $resolver
              */
             public function __construct(
                 private readonly string $id,
@@ -347,11 +397,11 @@ final class SkillsJsonDonorRefSourceTest
             }
 
             #[\Override]
-            public function resolve(SourceEntry $entry): RemoteDonorRef
+            public function resolve(SourceEntry $entry, ?\DateTimeImmutable $notAfter = null): RemoteDonorRef
             {
-                /** @var callable(SourceEntry): RemoteDonorRef $resolver */
+                /** @var callable(SourceEntry, ?\DateTimeImmutable): RemoteDonorRef $resolver */
                 $resolver = $this->resolver;
-                return $resolver($entry);
+                return $resolver($entry, $notAfter);
             }
         };
     }

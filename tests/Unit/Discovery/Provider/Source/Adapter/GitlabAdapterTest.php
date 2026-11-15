@@ -502,6 +502,19 @@ final class GitlabAdapterTest
         ));
     }
 
+    public function cooldownIsRefusedWithoutApiCalls(): void
+    {
+        $http = new InMemoryHttpClient([]);
+
+        try {
+            (new GitlabAdapter($http))->resolve(self::entry('acme/skills'), new \DateTimeImmutable('2026-11-01T00:00:00Z'));
+            Assert::fail('a cooldown must be refused');
+        } catch (RemoteResolveException $e) {
+            Assert::true(\str_contains($e->getMessage(), 'cooldown is not supported for gitlab sources yet'));
+        }
+        Assert::same($http->callCount(), 0);
+    }
+
     // ── helpers ────────────────────────────────────────────────────
 
     private static function adapter(): GitlabAdapter

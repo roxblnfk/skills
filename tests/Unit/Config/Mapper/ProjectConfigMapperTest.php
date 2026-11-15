@@ -10,6 +10,7 @@ use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
+use Testo\Data\DataSet;
 use Testo\Expect;
 use Testo\Lifecycle\AfterTest;
 use Testo\Lifecycle\BeforeTest;
@@ -1677,6 +1678,72 @@ final class ProjectConfigMapperTest
         );
 
         Assert::same($resolution->ignoredInlineKeys, []);
+    }
+
+    // ── cooldown ──
+
+    public function cooldownDefaultsToNull(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => []]);
+
+        Assert::null($config->cooldown);
+    }
+
+    public function cooldownIsMapped(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => [
+            'cooldown' => ['days' => 14, 'exclude' => ['acme/*', 'team/skills']],
+        ]]);
+
+        Assert::notNull($config->cooldown);
+        Assert::same($config->cooldown->days, 14);
+        Assert::true($config->cooldown->exclude->trusts('acme/anything'));
+        Assert::true($config->cooldown->exclude->trusts('team/skills'));
+        Assert::false($config->cooldown->exclude->trusts('team/other'));
+    }
+
+    public function cooldownExcludeIsLowercased(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => [
+            'cooldown' => ['days' => 14, 'exclude' => ['MyOrg/*']],
+        ]]);
+
+        Assert::true($config->cooldown?->exclude->trusts('myorg/skills') ?? false);
+    }
+
+    public function cooldownExcludeDefaultsToEmpty(): void
+    {
+        $config = (new ProjectConfigMapper())->fromExtra(['skills' => ['cooldown' => ['days' => 0]]]);
+
+        Assert::notNull($config->cooldown);
+        Assert::same($config->cooldown->days, 0);
+        Assert::same($config->cooldown->exclude->patterns, []);
+    }
+
+    public function cooldownFromSkillsJsonIsMapped(): void
+    {
+        $this->writeSkillsJson(['cooldown' => ['days' => 7]]);
+
+        $config = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null)->config;
+
+        Assert::same($config->cooldown?->days, 7);
+    }
+
+    #[DataSet([14, 'cooldown must be an object with "days" and an optional "exclude"'], name: 'not an object')]
+    #[DataSet([[14], 'cooldown must be an object with "days" and an optional "exclude"'], name: 'a list')]
+    #[DataSet([['exclude' => []], 'cooldown.days is required'], name: 'missing days')]
+    #[DataSet([['days' => '14d'], 'cooldown.days must be a whole number of days from 0 to 3650'], name: 'duration string')]
+    #[DataSet([['days' => 1.5], 'cooldown.days must be a whole number of days from 0 to 3650'], name: 'fraction')]
+    #[DataSet([['days' => -1], 'cooldown.days must be a whole number of days from 0 to 3650'], name: 'negative')]
+    #[DataSet([['days' => 3651], 'cooldown.days must be a whole number of days from 0 to 3650'], name: 'above the maximum')]
+    #[DataSet([['days' => 1, 'hours' => 2], 'cooldown: unknown key "hours"; allowed keys: days, exclude'], name: 'unknown key')]
+    #[DataSet([['days' => 1, 'exclude' => 'acme/*'], 'cooldown.exclude must be a list of patterns'], name: 'exclude not a list')]
+    #[DataSet([['days' => 1, 'exclude' => ['acme']], 'cooldown.exclude[0]:'], name: 'bare vendor pattern')]
+    public function cooldownRejectsInvalidValue(mixed $cooldown, string $message): void
+    {
+        Expect::exception(MalformedProjectConfig::class)->withMessageContaining($message);
+
+        (new ProjectConfigMapper())->fromExtra(['skills' => ['cooldown' => $cooldown]]);
     }
 
     // ── ref flavours in sources[] ──

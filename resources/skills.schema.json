@@ -78,6 +78,30 @@
             "description": "When true (default), installed vendor packages may advertise external skill sources via their own extra.skills.sources; each such source is gated by the same trust rules as the declaring package itself. Set to false to ignore vendor-declared external sources entirely — only the project's own sources[] and local package directories contribute donors.",
             "default": true
         },
+        "cooldown": {
+            "type": "object",
+            "description": "Minimum age of the refs remote sources resolve to. A source resolves to the newest ref GitHub dated at least `days` ago: a tag by its release's published_at (a tag without a release is never picked), a branch by the repository activity log. An exact tag or SHA in `ref` is a pin and is not checked. GitLab sources fail under an active cooldown. Absent = no cooldown.",
+            "additionalProperties": false,
+            "required": ["days"],
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3650,
+                    "description": "Minimum age in whole days, up to 3650. 0 turns the cooldown off."
+                },
+                "exclude": {
+                    "type": "array",
+                    "description": "Sources the cooldown does not apply to, matched against the source's package (owner/repo): exact \"vendor/package\" or wildcard \"vendor/*\".",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "^[^/]+/[^/]+$"
+                    },
+                    "default": []
+                }
+            }
+        },
         "sources": {
             "type": "array",
             "description": "Explicit donor sources. Each entry tells the provider what to fetch and from where: an adapter id in `from`, an identifier in `package` or `url`, and optional `host`/`ref`/`skills`/adapter-specific extras.",

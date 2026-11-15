@@ -76,6 +76,24 @@ final class SkillsSchemaTest
         ]);
     }
 
+    public function cooldownDocumentIsAccepted(): void
+    {
+        $this->assertAccepts(['cooldown' => ['days' => 14, 'exclude' => ['acme/*', 'team/skills']]]);
+        $this->assertAccepts(['cooldown' => ['days' => 0]]);
+        $this->assertAccepts(['cooldown' => ['days' => 3650]]);
+    }
+
+    public function malformedCooldownIsRejected(): void
+    {
+        $this->assertRejects(['cooldown' => ['days' => '14d']]);
+        $this->assertRejects(['cooldown' => ['days' => -1]]);
+        $this->assertRejects(['cooldown' => ['days' => 3651]]);
+        $this->assertRejects(['cooldown' => ['days' => 1.5]]);
+        $this->assertRejects(['cooldown' => ['exclude' => []]]);
+        $this->assertRejects(['cooldown' => ['days' => 1, 'hours' => 2]]);
+        $this->assertRejects(['cooldown' => ['days' => 1, 'exclude' => ['acme']]]);
+    }
+
     public function urlOnlySourceIsRejectedBySchema(): void
     {
         // `http` / `zip` are reserved in the ProviderId vocabulary but

@@ -46,11 +46,15 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
     private array $lastFailures = [];
 
     /**
+     * @param mixed $extra the root package's `extra`, read when there is no `skills.json`
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private readonly HostAdapterRegistry $registry,
         private readonly ProjectConfigMapper $mapper = new ProjectConfigMapper(),
+        private readonly ?\DateTimeImmutable $now = null,
+        private readonly mixed $extra = null,
     ) {}
 
     /**
@@ -62,10 +66,12 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
         $this->lastFailures = [];
 
         try {
-            $config = $this->mapper->forProject($projectRoot, null)->config;
+            $config = $this->mapper->forProject($projectRoot, $this->extra)->config;
         } catch (\Throwable) {
             return;
         }
+
+        $now = $this->now ?? new \DateTimeImmutable();
 
         foreach ($config->sources as $entry) {
             // Path-only adapters (dir) never hit the host-adapter
@@ -89,7 +95,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
             }
 
             try {
-                $resolved = $adapter->resolve($entry);
+                $resolved = $adapter->resolve($entry, $config->cooldown?->cutoffFor($entry->package, $now));
                 // Tag the ref with the entry's adapter id so the
                 // downstream provenance carries through to VendorConfig
                 // (powering the `--from` CLI filter). The adapter itself
@@ -142,7 +148,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
     public function hasRefs(Path $projectRoot): bool
     {
         try {
-            $config = $this->mapper->forProject($projectRoot, null)->config;
+            $config = $this->mapper->forProject($projectRoot, $this->extra)->config;
         } catch (\Throwable) {
             return false;
         }

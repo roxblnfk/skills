@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Config\Mapper;
 
 use Internal\Path;
+use LLM\Skills\Config\CooldownConfig;
 use LLM\Skills\Config\DependencyConfig;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Exception\MalformedSourceEntry;
@@ -96,9 +97,12 @@ final readonly class ProjectConfigMapper
         'path-from-root',
         'local',
         'vendor-sources',
+        'cooldown',
         self::SOURCES_KEY,
         self::DEPRECATED_SOURCES_KEY,
     ];
+
+    public const COOLDOWN_MAX_DAYS = 3650;
 
     /**
      * Project keys read from `skills.json` only. Inline `extra.skills`
@@ -303,6 +307,7 @@ final readonly class ProjectConfigMapper
         }
 
         $pathFromRoot = $this->mapPathFromRoot($skills['path-from-root'] ?? null, $prefix);
+        $cooldown = $this->mapCooldown($skills['cooldown'] ?? null, $prefix);
 
         // `dependencies` is canonical; `trusted`, `trusted-replace` and
         // `local` are the legacy aliases folded into it. Either form is
@@ -360,6 +365,7 @@ final readonly class ProjectConfigMapper
             dependencies: $dependencies,
             vendorSources: $vendorSources,
             clean: $clean,
+            cooldown: $cooldown,
         );
 
         return new MappedSkillsBlock($config, $usedDeprecatedSourcesKey, $usedDeprecatedDependencyKeys);
@@ -415,6 +421,67 @@ final readonly class ProjectConfigMapper
         }
 
         return $raw;
+    }
+
+    /**
+     * A duration string such as `"14d"` is rejected, not parsed: it would
+     * suggest `"23h"` works too.
+     *
+     * @param non-empty-string $prefix
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function mapCooldown(mixed $raw, string $prefix): ?CooldownConfig
+    {
+        if ($raw === null) {
+            return null;
+        }
+
+        $field = self::field($prefix, 'cooldown');
+        if (!\is_array($raw)) {
+            throw new MalformedProjectConfig($field . ' must be an object with "days" and an optional "exclude"');
+        }
+        if ($raw !== [] && \array_is_list($raw)) {
+            throw new MalformedProjectConfig($field . ' must be an object with "days" and an optional "exclude"');
+        }
+
+        /** @var mixed $_value */
+        foreach ($raw as $key => $_value) {
+            if (!\in_array($key, ['days', 'exclude'], true)) {
+                throw new MalformedProjectConfig(\sprintf(
+                    '%s: unknown key "%s"; allowed keys: days, exclude',
+                    $field,
+                    (string) $key,
+                ));
+            }
+        }
+
+        if (!\array_key_exists('days', $raw)) {
+            throw new MalformedProjectConfig(self::field($prefix, 'cooldown.days') . ' is required');
+        }
+        $days = $raw['days'];
+        if (!\is_int($days) || $days < 0 || $days > self::COOLDOWN_MAX_DAYS) {
+            throw new MalformedProjectConfig(\sprintf(
+                '%s must be a whole number of days from 0 to %d',
+                self::field($prefix, 'cooldown.days'),
+                self::COOLDOWN_MAX_DAYS,
+            ));
+        }
+
+        // Matched against GitHub `owner/repo` names, which are case-insensitive;
+        // {@see CooldownConfig::cutoffFor()} lowercases the other side.
+        /** @var mixed $exclude */
+        $exclude = $raw['exclude'] ?? [];
+        if (\is_array($exclude)) {
+            $exclude = \array_map(static fn(mixed $value): mixed => \is_string($value) ? \strtolower($value) : $value, $exclude);
+        }
+
+        return new CooldownConfig(
+            days: $days,
+            exclude: $this->mapVendorPatterns($exclude, self::field($prefix, 'cooldown.exclude')),
+        );
     }
 
     /**
@@ -839,10 +906,20 @@ final readonly class ProjectConfigMapper
      */
     private function mapTrusted(mixed $raw, string $prefix): TrustedVendors
     {
+        return $this->mapVendorPatterns($raw, self::field($prefix, 'trusted'));
+    }
+
+    /**
+     * @param non-empty-string $field
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function mapVendorPatterns(mixed $raw, string $field): TrustedVendors
+    {
         if (!\is_array($raw)) {
-            throw new MalformedProjectConfig(
-                self::field($prefix, 'trusted') . ' must be a list of patterns',
-            );
+            throw new MalformedProjectConfig($field . ' must be a list of patterns');
         }
 
         $patterns = [];
@@ -851,7 +928,7 @@ final readonly class ProjectConfigMapper
             if (!\is_string($value) || $value === '') {
                 throw new MalformedProjectConfig(\sprintf(
                     '%s[%s] must be a non-empty string',
-                    self::field($prefix, 'trusted'),
+                    $field,
                     $index,
                 ));
             }
@@ -861,7 +938,7 @@ final readonly class ProjectConfigMapper
             } catch (\InvalidArgumentException $e) {
                 throw new MalformedProjectConfig(\sprintf(
                     '%s[%s]: %s',
-                    self::field($prefix, 'trusted'),
+                    $field,
                     $index,
                     $e->getMessage(),
                 ));

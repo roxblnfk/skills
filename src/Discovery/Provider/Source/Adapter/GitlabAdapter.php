@@ -205,12 +205,19 @@ final readonly class GitlabAdapter implements HostAdapter
     }
 
     #[\Override]
-    public function resolve(SourceEntry $entry): RemoteDonorRef
+    public function resolve(SourceEntry $entry, ?\DateTimeImmutable $notAfter = null): RemoteDonorRef
     {
         if ($entry->from !== self::ID) {
             throw new RemoteResolveException(
                 $entry,
                 'adapter id mismatch (expected "' . self::ID . '", got "' . $entry->from . '")',
+            );
+        }
+        if ($notAfter !== null) {
+            throw new RemoteResolveException(
+                $entry,
+                'cooldown is not supported for gitlab sources yet; add the source to cooldown.exclude'
+                . ' or set cooldown.days to 0',
             );
         }
         $package = $entry->package;
