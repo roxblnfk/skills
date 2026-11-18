@@ -814,6 +814,87 @@ final class SyncPlannerTest
         );
     }
 
+    public function aLocalAliasMirroringASharedAliasDirectoryNamesBothFiles(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessagePattern(
+                '~^skills\.local\.json: alias "x/\.\./\.cursor/skills" resolves to .+, the directory alias'
+                . ' "\.cursor/skills" of skills\.json already mirrors; remove one of them$~',
+            );
+
+        $project = ProjectConfig::default()
+            ->withAliases(['.cursor/skills', 'x/../.cursor/skills'])
+            ->withOrigins([0 => 'skills.json', 1 => 'skills.local.json']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aLocalAliasResolvingToTheTargetNamesItsFile(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.local.json: alias "x/../.agents/skills" resolves to the target path');
+
+        $project = ProjectConfig::default()
+            ->withAliases(['x/../.agents/skills'])
+            ->withOrigins([0 => 'skills.local.json']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function aSharedAliasResolvingToALocalTargetNamesBothFiles(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessagePattern(
+                '~^skills\.json: alias "\.claude/skills" resolves to the target path .+ set in skills\.local\.json;'
+                . ' an alias cannot point at itself$~',
+            );
+
+        $project = ProjectConfig::default()
+            ->withTarget('x/../.claude/skills')
+            ->withAliases(['.claude/skills'])
+            ->withOrigins([0 => 'skills.json'], 'skills.local.json');
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: SyncOptions::default(),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
+    public function cliAliasesCarryNoConfigFileName(): void
+    {
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessagePattern('~^alias "x/\.\./\.cursor/skills" resolves to .+, which duplicates an earlier alias$~');
+
+        $project = ProjectConfig::default()->withOrigins([0 => 'skills.json', 1 => 'skills.local.json']);
+        $this->planner()->plan(
+            donors: [],
+            project: $project,
+            options: new SyncOptions(
+                packageFilters: [],
+                extraTrusted: [],
+                targetOverride: null,
+                interactive: false,
+                dryRun: false,
+                discovery: null,
+                aliasOverrides: ['.cursor/skills', 'x/../.cursor/skills'],
+            ),
+            builtin: TrustedVendors::empty(),
+            projectRoot: $this->projectRoot(),
+        );
+    }
+
     public function directDependencyIsImplicitlyTrustedWithoutAnyTrustPattern(): void
     {
         // A package listed in the consumer's root `require` (or

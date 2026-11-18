@@ -77,14 +77,14 @@ final readonly class ProjectConfigMigrator
     /**
      * Pull the project-level keys out of an inline `extra.skills`
      * block, in canonical order, as they should be written into
-     * `skills.json`. Donor `source` and any unrelated keys are
-     * deliberately dropped. Two families of deprecated keys are folded
-     * into their canonical replacement so the written file never
-     * carries an alias: a `remote` value becomes `sources`, and the
-     * legacy trust trio (`local`, flat `trusted`, flat
-     * `trusted-replace`) becomes a `dependencies` block. A block that
-     * mixes an alias with its canonical key is rejected pre-flight by
-     * the mapper, so at most one form of each pair is present here.
+     * `skills.json`. Donor `source` and `sources` (the package's donor
+     * address book) and any unrelated keys are deliberately dropped.
+     * Two families of deprecated keys are folded into their canonical
+     * replacement so the written file never carries an alias: a
+     * `remote` value becomes `sources`, and the legacy trust trio
+     * (`local`, flat `trusted`, flat `trusted-replace`) becomes a
+     * `dependencies` block. A block that mixes `dependencies` with a
+     * legacy trust key is rejected pre-flight by the mapper.
      *
      * @param array<array-key, mixed> $skills the inline `extra.skills` value
      *
@@ -96,14 +96,16 @@ final readonly class ProjectConfigMigrator
     {
         $out = [];
         foreach (ProjectConfigMapper::PROJECT_KEYS as $key) {
-            // Aliases never land in the output under their own name;
-            // their values are picked up when the canonical key is
-            // visited (`remote` → `sources`, the legacy trust trio →
-            // `dependencies`).
-            if (
-                $key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY
-                || \in_array($key, ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS, true)
-            ) {
+            // The legacy trust trio is picked up when `dependencies` is
+            // visited; `remote` is written under its canonical name.
+            if (\in_array($key, ProjectConfigMapper::DEPRECATED_DEPENDENCY_KEYS, true)) {
+                continue;
+            }
+            if ($key === ProjectConfigMapper::DEPRECATED_SOURCES_KEY) {
+                if (\array_key_exists($key, $skills)) {
+                    /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
+                    $out[ProjectConfigMapper::SOURCES_KEY] = $skills[$key];
+                }
                 continue;
             }
             if ($key === ProjectConfigMapper::DEPENDENCIES_KEY) {
@@ -118,14 +120,6 @@ final readonly class ProjectConfigMigrator
             if (\array_key_exists($key, $skills)) {
                 /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
                 $out[$key] = $skills[$key];
-                continue;
-            }
-            if (
-                $key === ProjectConfigMapper::SOURCES_KEY
-                && \array_key_exists(ProjectConfigMapper::DEPRECATED_SOURCES_KEY, $skills)
-            ) {
-                /** @psalm-suppress MixedAssignment value type intentionally unknown until mapper validates */
-                $out[$key] = $skills[ProjectConfigMapper::DEPRECATED_SOURCES_KEY];
             }
         }
 

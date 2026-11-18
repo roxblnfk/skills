@@ -8,19 +8,21 @@ use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 
 /**
- * Reads the external `skills.json` file at the project root and returns
- * its contents as an array shaped like the inline `extra.skills` block,
- * ready to be handed to the per-field validators in
- * {@see ProjectConfigMapper}.
+ * Reads a project config file at the project root — the shared
+ * `skills.json` or the personal `skills.local.json` layered over it —
+ * and returns its contents as an array shaped like the inline
+ * `extra.skills` block, ready to be handed to the per-field validators
+ * in {@see ProjectConfigMapper}.
  *
- * The file is **strict**: any unknown top-level key fails the load.
+ * Both files share one shape. The file is **strict**: any unknown
+ * top-level key fails the load.
  * `$schema` is the single exception — it is allowed (for IDE/editor
  * support) and silently stripped from the returned array so it does
  * not look like an unrecognised field downstream.
  *
  * Errors are surfaced as {@see MalformedProjectConfig} with messages
- * prefixed `skills.json:` so the origin of the failure is clear in
- * combined output.
+ * prefixed by the file name (`skills.json:`, `skills.local.json:`) so
+ * the origin of the failure is clear in combined output.
  *
  * Not annotated `@psalm-immutable`: {@see self::load()} reads the
  * filesystem and is therefore impure. The class is otherwise
@@ -35,6 +37,12 @@ final readonly class ExternalProjectConfigLoader
      * affects file creation, not where subsequent commands look).
      */
     public const FILE_NAME = 'skills.json';
+
+    /**
+     * Personal, git-ignored config layered over {@see self::FILE_NAME}.
+     * Looked up at the project root exactly like the shared file.
+     */
+    public const LOCAL_FILE_NAME = 'skills.local.json';
 
     /**
      * Top-level keys accepted inside `skills.json`. Mirrors the project
@@ -58,17 +66,18 @@ final readonly class ExternalProjectConfigLoader
         'path-from-root',
         'local',
         'vendor-sources',
-        'sources',
         'remote',
         ...ProjectConfigMapper::SKILLS_JSON_ONLY_KEYS,
     ];
 
     /**
-     * Load `skills.json` from the given project root.
+     * Load a config file from the given project root.
      *
      * Returns the decoded array (with `$schema` already stripped) when
-     * the file exists, or `null` when it does not — the caller then
-     * falls back to the inline `extra.skills` block.
+     * the file exists, or `null` when it does not — for `skills.json`
+     * the caller then falls back to the inline `extra.skills` block.
+     *
+     * @param non-empty-string $fileName {@see self::FILE_NAME} or {@see self::LOCAL_FILE_NAME}
      *
      * @return array<string, mixed>|null
      *
@@ -76,9 +85,9 @@ final readonly class ExternalProjectConfigLoader
      *         contains invalid JSON, has a non-object root, or carries an
      *         unknown top-level key
      */
-    public function load(Path $projectRoot): ?array
+    public function load(Path $projectRoot, string $fileName = self::FILE_NAME): ?array
     {
-        $filePath = (string) $projectRoot->join(self::FILE_NAME);
+        $filePath = (string) $projectRoot->join($fileName);
         if (!\is_file($filePath)) {
             return null;
         }
@@ -86,7 +95,8 @@ final readonly class ExternalProjectConfigLoader
         $content = \file_get_contents($filePath);
         if ($content === false) {
             throw new MalformedProjectConfig(\sprintf(
-                'skills.json: failed to read "%s"',
+                '%s: failed to read "%s"',
+                $fileName,
                 $filePath,
             ));
         }
@@ -105,13 +115,14 @@ final readonly class ExternalProjectConfigLoader
             $typed = \json_decode($content, false, flags: \JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new MalformedProjectConfig(\sprintf(
-                'skills.json: invalid JSON — %s',
+                '%s: invalid JSON — %s',
+                $fileName,
                 $e->getMessage(),
             ));
         }
 
         if (!$typed instanceof \stdClass) {
-            throw new MalformedProjectConfig('skills.json: root must be a JSON object');
+            throw new MalformedProjectConfig($fileName . ': root must be a JSON object');
         }
 
         /** @var array<string, mixed> $decoded */
@@ -122,7 +133,8 @@ final readonly class ExternalProjectConfigLoader
         foreach ($decoded as $key => $_unused) {
             if (!\in_array($key, self::ALLOWED_KEYS, true)) {
                 throw new MalformedProjectConfig(\sprintf(
-                    'skills.json: unknown top-level key "%s"; allowed keys: %s',
+                    '%s: unknown top-level key "%s"; allowed keys: %s',
+                    $fileName,
                     $key,
                     \implode(', ', \array_filter(self::ALLOWED_KEYS, static fn(string $k): bool => $k !== '$schema')),
                 ));

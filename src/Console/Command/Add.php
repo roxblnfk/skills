@@ -11,6 +11,7 @@ use Composer\IO\NullIO;
 use Internal\Path;
 use LLM\Skills\Add\AddRunner;
 use LLM\Skills\Add\PostAddSync;
+use LLM\Skills\Composer\ComposerJsonExtraReader;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Console\AddCliDefinition;
 use LLM\Skills\Discovery\Provider\Source\Adapter\GithubAdapter;
@@ -63,6 +64,14 @@ final class Add extends Command
         $projectRoot = Path::create(\getcwd() ?: '.');
         $composer = self::tryBootstrapComposer($io);
 
+        // Same inline fallback as `skills update`: when bootstrap fails but
+        // composer.json is present, its `extra` is read directly so the inline
+        // `extra.skills` block still forms the base under skills.local.json.
+        /** @var mixed $extra */
+        $extra = $composer !== null
+            ? $composer->getPackage()->getExtra()
+            : (new ComposerJsonExtraReader())->read($projectRoot, $io);
+
         // HTTP client: prefer the project's Composer config (its
         // `auth.json` + `vendor-dir` overrides apply), otherwise fall
         // back to a default Config built via `Factory::createConfig()`,
@@ -80,7 +89,7 @@ final class Add extends Command
         );
 
         $runner = new AddRunner($registry, $fetcher);
-        $skillsJsonBefore = PostAddSync::snapshot($projectRoot);
+        $configBefore = PostAddSync::snapshot($projectRoot, $options->configFile());
         $donorPackageName = null;
         $exit = $runner->run(
             $projectRoot,
@@ -89,17 +98,22 @@ final class Add extends Command
             static function (SourceEntry $_entry, string $packageName) use (&$donorPackageName): void {
                 $donorPackageName = $packageName;
             },
+            $extra,
         );
 
         if ($exit !== self::SUCCESS || !$options->sync) {
             return $exit;
         }
 
-        // Without a Composer instance there is no root package to read an
-        // `extra` from — PostAddSync falls through with `null`, which the
-        // mapper treats the same as an empty `extra.skills` block. Only
-        // the just-registered donor source will sync.
-        return PostAddSync::run($projectRoot, $composer, $io, $donorPackageName, $skillsJsonBefore);
+        return PostAddSync::run(
+            $projectRoot,
+            $composer,
+            $extra,
+            $io,
+            $donorPackageName,
+            $configBefore,
+            $options->configFile(),
+        );
     }
 
     /**

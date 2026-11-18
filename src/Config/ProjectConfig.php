@@ -74,6 +74,12 @@ final readonly class ProjectConfig
      *         neither `--clean` nor `--no-clean` deletes installed skills before copying, as
      *         `--clean` does, without asking first. Never read from inline `extra.skills`,
      *         which describes the package as a donor rather than configuring the consumer.
+     * @param array<int, non-empty-string> $aliasOrigins config file each entry of `$aliases`
+     *         comes from, by position, when layered files contributed them (`skills.json`,
+     *         `extra.skills`, `skills.local.json`). Empty for a configuration read from a
+     *         single source.
+     * @param non-empty-string|null $targetOrigin config file `$target` comes from when layered
+     *         files are in play; `null` for a single source and for the default target
      *
      * @psalm-mutation-free
      */
@@ -90,6 +96,8 @@ final readonly class ProjectConfig
         public array $dependencies = [],
         public bool $vendorSources = true,
         public bool $clean = false,
+        public array $aliasOrigins = [],
+        public ?string $targetOrigin = null,
     ) {}
 
     /**
@@ -153,6 +161,7 @@ final readonly class ProjectConfig
             $this->dependencies,
             $this->vendorSources,
             $this->clean,
+            $this->aliasOrigins,
         );
     }
 
@@ -176,6 +185,33 @@ final readonly class ProjectConfig
             $this->dependencies,
             $this->vendorSources,
             $this->clean,
+            targetOrigin: $this->targetOrigin,
+        );
+    }
+
+    /**
+     * @param array<int, non-empty-string> $aliasOrigins
+     * @param non-empty-string|null $targetOrigin
+     *
+     * @psalm-mutation-free
+     */
+    public function withOrigins(array $aliasOrigins, ?string $targetOrigin = null): self
+    {
+        return new self(
+            $this->target,
+            $this->trusted,
+            $this->trustedReplace,
+            $this->discovery,
+            $this->aliases,
+            $this->autoSync,
+            $this->pathFromRoot,
+            $this->managerEnabled,
+            $this->sources,
+            $this->dependencies,
+            $this->vendorSources,
+            $this->clean,
+            $aliasOrigins,
+            $targetOrigin,
         );
     }
 }

@@ -42,6 +42,9 @@ final readonly class DirDonorRef
      *        directory under when it ships skills without its own `composer.json` name —
      *        the entry's `package` override when present, else a name derived from the
      *        resolved path (`<parent>/<basename>`).
+     * @param string|null $sourceIdentity composite key of the project `sources[]` entry the
+     *        ref was resolved from. Carried through to
+     *        {@see \LLM\Skills\Config\VendorConfig::$sourceIdentity}.
      */
     public function __construct(
         public Path $directory,
@@ -49,6 +52,7 @@ final readonly class DirDonorRef
         public ?string $provenance = null,
         public ?array $skillFilter = null,
         public ?string $packageHint = null,
+        public ?string $sourceIdentity = null,
     ) {}
 
     /**

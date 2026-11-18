@@ -60,6 +60,10 @@ final class VendorDeclaredRefSource implements DonorRefSource
     private array $lastFailures = [];
 
     /**
+     * @param mixed $extra raw `extra` of the root package, or `null` without one. Its inline
+     *        config is the base of the project config while there is no `skills.json`, so the
+     *        `vendor-sources` toggle read here is the one the sync applies.
+     *
      * @psalm-mutation-free
      */
     public function __construct(
@@ -67,6 +71,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
         private readonly HostAdapterRegistry $registry,
         private readonly VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
         private readonly ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private readonly mixed $extra = null,
     ) {}
 
     /**
@@ -288,7 +293,10 @@ final class VendorDeclaredRefSource implements DonorRefSource
     private function vendorSourcesEnabled(Path $projectRoot): bool
     {
         try {
-            return $this->projectMapper->forProject($projectRoot, null)->config->vendorSources;
+            return $this->projectMapper->forProject(
+                $projectRoot,
+                $this->extra,
+            )->config->vendorSources;
         } catch (\Throwable) {
             return false;
         }

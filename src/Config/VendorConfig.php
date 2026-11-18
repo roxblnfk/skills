@@ -63,6 +63,9 @@ final readonly class VendorConfig
      *         (`SKILL.md` at the root). Its target directory is named from the frontmatter
      *         or the package name, never from the root directory, whose name is whatever
      *         the archive was extracted to.
+     * @param string|null $sourceIdentity {@see SourceEntry::compositeKey()} of the project
+     *         `sources[]` entry this donor comes from; `null` for every other origin. Lets
+     *         `skills:show` name the config file that declared the donor.
      *
      * @psalm-mutation-free
      */
@@ -77,6 +80,7 @@ final readonly class VendorConfig
         public ?array $discoveredSkillDirs = null,
         public array $declaredBy = [],
         public bool $rootSkill = false,
+        public ?string $sourceIdentity = null,
     ) {}
 
     /**
@@ -126,6 +130,7 @@ final readonly class VendorConfig
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $this->declaredBy,
             rootSkill: $this->rootSkill,
+            sourceIdentity: $this->sourceIdentity,
         );
     }
 
@@ -154,6 +159,7 @@ final readonly class VendorConfig
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $this->declaredBy,
             rootSkill: $this->rootSkill,
+            sourceIdentity: $this->sourceIdentity,
         );
     }
 
@@ -180,6 +186,7 @@ final readonly class VendorConfig
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $declaredBy,
             rootSkill: $this->rootSkill,
+            sourceIdentity: $this->sourceIdentity,
         );
     }
 
@@ -205,6 +212,30 @@ final readonly class VendorConfig
             discoveredSkillDirs: $this->discoveredSkillDirs,
             declaredBy: $this->declaredBy,
             rootSkill: $this->rootSkill,
+            sourceIdentity: $this->sourceIdentity,
+        );
+    }
+
+    /**
+     * Return a copy of this donor tied to the project `sources[]` entry
+     * it comes from.
+     *
+     * @psalm-mutation-free
+     */
+    public function withSourceIdentity(?string $sourceIdentity): self
+    {
+        return new self(
+            packageName: $this->packageName,
+            packageRoot: $this->packageRoot,
+            source: $this->source,
+            discovered: $this->discovered,
+            provenance: $this->provenance,
+            implicitTrust: $this->implicitTrust,
+            skillFilter: $this->skillFilter,
+            discoveredSkillDirs: $this->discoveredSkillDirs,
+            declaredBy: $this->declaredBy,
+            rootSkill: $this->rootSkill,
+            sourceIdentity: $sourceIdentity,
         );
     }
 }

@@ -8,12 +8,16 @@ use Internal\Path;
 use LLM\Skills\Config\Mapper\ExternalProjectConfigLoader;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
+use LLM\Skills\Config\Mapper\SourceEntryMapper;
 use LLM\Skills\Config\SourceEntry;
 use LLM\Skills\Filesystem\AtomicFileWriter;
 
 /**
- * Mutates the project's `skills.json` to insert or update a single
- * `sources[]` entry on behalf of `skills:add`.
+ * Mutates a project config file — the shared `skills.json` or the
+ * personal `skills.local.json` — to insert or update a single
+ * `sources[]` entry on behalf of `skills:add`. Only the named file is
+ * read and written; the other layer is never consulted, so merged
+ * values never leak into either file.
  *
  * Three guarantees:
  *
@@ -25,7 +29,7 @@ use LLM\Skills\Filesystem\AtomicFileWriter;
  *   add normalises it.
  * - **Atomic write** — payload goes to a sibling temp file then
  *   atomically renames into place. A failed write cannot leave a
- *   half-written `skills.json`.
+ *   half-written config file.
  *
  * When the file does not exist yet, the writer creates it with the
  * canonical `$schema` pointer (the same one
@@ -46,17 +50,23 @@ final readonly class SkillsJsonWriter
     ) {}
 
     /**
-     * Insert or update `$entry` in `<projectRoot>/skills.json`.
+     * Insert or update `$entry` in `<projectRoot>/<fileName>`.
+     *
+     * @param non-empty-string $fileName {@see ExternalProjectConfigLoader::FILE_NAME} or
+     *        {@see ExternalProjectConfigLoader::LOCAL_FILE_NAME}
      *
      * @throws \RuntimeException when the file cannot be written
      */
-    public function upsertSource(Path $projectRoot, SourceEntry $entry): void
-    {
+    public function upsertSource(
+        Path $projectRoot,
+        SourceEntry $entry,
+        string $fileName = ExternalProjectConfigLoader::FILE_NAME,
+    ): void {
         /** @psalm-suppress ImpureMethodCall Path::join() is mutation-free */
-        $filePath = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
+        $filePath = (string) $projectRoot->join($fileName);
 
         /** @var array<string, mixed> $payload */
-        $payload = $this->loader->load($projectRoot) ?? [];
+        $payload = $this->loader->load($projectRoot, $fileName) ?? [];
         // ExternalProjectConfigLoader strips `$schema` — re-add it on
         // write so editors keep the IDE-validation pointer.
         $payload = ['$schema' => ProjectConfigMigrator::SCHEMA_URL] + $payload;
@@ -92,13 +102,18 @@ final readonly class SkillsJsonWriter
      * its composite key. An unreadable file yields the entry's own allowlist;
      * the upsert reports that failure.
      *
+     * @param non-empty-string $fileName the file the entry is written to
+     *
      * @return list<non-empty-string>|null
      */
-    public function allowlistAfterUpsert(Path $projectRoot, SourceEntry $entry): ?array
-    {
+    public function allowlistAfterUpsert(
+        Path $projectRoot,
+        SourceEntry $entry,
+        string $fileName = ExternalProjectConfigLoader::FILE_NAME,
+    ): ?array {
         try {
             /** @var array<string, mixed> $payload */
-            $payload = $this->loader->load($projectRoot) ?? [];
+            $payload = $this->loader->load($projectRoot, $fileName) ?? [];
         } catch (\Throwable) {
             return $entry->skills;
         }
@@ -111,6 +126,35 @@ final readonly class SkillsJsonWriter
         }
 
         return $entry->skills;
+    }
+
+    /**
+     * Whether `<projectRoot>/<fileName>` declares an entry with the
+     * composite key of `$entry`, and the `skills` allowlist it carries:
+     * `false` when there is no such entry (or the file is unreadable),
+     * otherwise the allowlist — `null` for "every skill", a list otherwise.
+     *
+     * @param non-empty-string $fileName
+     *
+     * @return list<non-empty-string>|false|null
+     */
+    public function declaredAllowlist(Path $projectRoot, SourceEntry $entry, string $fileName): array|false|null
+    {
+        try {
+            /** @var array<string, mixed> $payload */
+            $payload = $this->loader->load($projectRoot, $fileName) ?? [];
+        } catch (\Throwable) {
+            return false;
+        }
+
+        $key = $entry->compositeKey();
+        foreach (self::normaliseExisting(self::collectExistingEntries($payload)) as $existing) {
+            if (self::compositeKeyOf($existing) === $key) {
+                return self::extractSkills($existing);
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -413,9 +457,8 @@ final readonly class SkillsJsonWriter
     }
 
     /**
-     * Composite key of an already-serialised entry. Mirrors
-     * {@see SourceEntry::compositeKey()} but operates on the raw
-     * map form so we never have to round-trip through the mapper.
+     * Composite key of an already-serialised entry; see
+     * {@see SourceEntryMapper::compositeKeyOf()}.
      *
      * @param array<string, mixed> $entry
      *
@@ -423,34 +466,7 @@ final readonly class SkillsJsonWriter
      */
     private static function compositeKeyOf(array $entry): string
     {
-        /** @var mixed $from */
-        $from = $entry['from'] ?? null;
-        /** @var mixed $host */
-        $host = $entry['host'] ?? null;
-        $fromStr = \is_string($from) ? $from : '';
-        $hostStr = \is_string($host) ? $host : '';
-        $identifier = '';
-        // Mirror SourceEntry::identifier(): `path` wins for dir entries
-        // (where `package` may also be present as a name override),
-        // then `package`, then `url`.
-        /** @var mixed $path */
-        $path = $entry['path'] ?? null;
-        if (\is_string($path)) {
-            $identifier = $path;
-        } else {
-            /** @var mixed $package */
-            $package = $entry['package'] ?? null;
-            if (\is_string($package)) {
-                $identifier = $package;
-            } else {
-                /** @var mixed $url */
-                $url = $entry['url'] ?? null;
-                if (\is_string($url)) {
-                    $identifier = $url;
-                }
-            }
-        }
-        return $fromStr . '|' . $hostStr . '|' . $identifier;
+        return SourceEntryMapper::compositeKeyOf($entry);
     }
 
     /**

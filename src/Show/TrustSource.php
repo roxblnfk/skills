@@ -8,7 +8,7 @@ namespace LLM\Skills\Show;
  * Identifies which trust mechanism approved a donor package.
  *
  * Used by `skills:show` to optionally annotate an approved donor with
- * `[declared in skills.json]`, `[via built-in trust]`, or
+ * `[declared in <config file>]`, `[via built-in trust]`, or
  * `[via direct dependency]`, so the user can audit where their trust
  * decisions come from at a glance.
  *

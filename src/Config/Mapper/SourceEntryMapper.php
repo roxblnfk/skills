@@ -32,6 +32,48 @@ use LLM\Skills\Discovery\Provider\Source\RefResolver;
 final readonly class SourceEntryMapper
 {
     /**
+     * Identity of a raw `sources[]` entry. Mirrors
+     * {@see SourceEntry::compositeKey()} on the map form, so raw entries
+     * can be matched without a round trip through the mapper. Malformed
+     * fields count as empty strings.
+     *
+     * @param array<array-key, mixed> $entry
+     *
+     * @psalm-pure
+     */
+    public static function compositeKeyOf(array $entry): string
+    {
+        /** @var mixed $from */
+        $from = $entry['from'] ?? null;
+        /** @var mixed $host */
+        $host = $entry['host'] ?? null;
+        $fromStr = \is_string($from) ? $from : '';
+        $hostStr = \is_string($host) ? $host : '';
+        $identifier = '';
+        // Mirror SourceEntry::identifier(): `path` wins for dir entries
+        // (where `package` may also be present as a name override),
+        // then `package`, then `url`.
+        /** @var mixed $path */
+        $path = $entry['path'] ?? null;
+        if (\is_string($path)) {
+            $identifier = $path;
+        } else {
+            /** @var mixed $package */
+            $package = $entry['package'] ?? null;
+            if (\is_string($package)) {
+                $identifier = $package;
+            } else {
+                /** @var mixed $url */
+                $url = $entry['url'] ?? null;
+                if (\is_string($url)) {
+                    $identifier = $url;
+                }
+            }
+        }
+        return $fromStr . '|' . $hostStr . '|' . $identifier;
+    }
+
+    /**
      * Parse and validate a `sources[]` list. Each entry is structurally
      * an object with a mandatory `from` (adapter id), an identifier
      * matching the adapter kind (`path` for dir, `url` for URL-only,

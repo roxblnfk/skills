@@ -11,6 +11,7 @@ use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Discovery\Provider\DonorProvider;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 /**
  * Shared body of `skills:show` — independent of which entrypoint invoked it.
@@ -66,11 +67,15 @@ final readonly class ShowRunner
         // Read-only surface: never rewrites the file, so a `remote`
         // block stays on disk. Surface the deprecation at normal
         // verbosity and point the user at the command that migrates it.
+        // An inline `remote` is not fetched at all, and renamed inline it
+        // would become the donor address book, so it only gets the
+        // migration pointer.
         if ($resolution->usedDeprecatedSourcesKey) {
-            $io->writeError(
-                '<comment>[deprecated] config key "remote" was renamed to "sources"; '
-                . 'skills:update migrates the file automatically</comment>',
-            );
+            $io->writeError($resolution->deprecatedSourcesKeyInline
+                ? '<comment>[deprecated] the inline extra.skills.remote list is not fetched; '
+                    . 'skills:update moves it into "sources" in skills.json</comment>'
+                : '<comment>[deprecated] config key "remote" was renamed to "sources"; '
+                    . 'skills:update migrates the file automatically</comment>');
         }
 
         // Same read-only surface for the legacy trust trio folded into
@@ -85,6 +90,12 @@ final readonly class ShowRunner
                     $resolution->usedDeprecatedDependencyKeys,
                 )),
             ));
+        }
+
+        // Same line the sync prints, so the report never hides that a
+        // personal layer shaped it; the header marks what it sourced.
+        foreach ($resolution->layers as $layer) {
+            $io->write('<info>[local]</info> ' . OutputFormatter::escape($layer->describe()));
         }
 
         // See SyncRunner: notice is provider-neutral, specifics flow
@@ -102,7 +113,13 @@ final readonly class ShowRunner
         }
 
         try {
-            $report = $this->builder->build($projectRoot, $provider, $resolution->config, $options);
+            $report = $this->builder->build(
+                $projectRoot,
+                $provider,
+                $resolution->config,
+                $options,
+                $resolution->layers,
+            );
         } catch (MalformedProjectConfig $e) {
             $io->writeError('<error>[llm/skills] ' . $e->getMessage() . '</error>');
             return Command::FAILURE;

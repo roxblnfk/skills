@@ -8,6 +8,7 @@ use Internal\Path;
 use LLM\Skills\Config\DependencyConfig;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Exception\MalformedSourceEntry;
+use LLM\Skills\Config\LayerChanges;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\ProjectConfigResolution;
 use LLM\Skills\Config\SourceEntry;
@@ -32,6 +33,10 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  * both are present, `skills.json` wins and the inline project keys are
  * collected into {@see ProjectConfigResolution::$ignoredInlineKeys} so
  * the caller can surface a `-v` warning.
+ *
+ * Whichever of them is in effect, a personal `skills.local.json` at the
+ * project root is layered over it — same strict shape, merged by
+ * {@see ConfigLayerMerger}.
  *
  * A broken root config is **fatal**: the user owns this file, so loud
  * failure is preferable to silent defaults.
@@ -75,9 +80,10 @@ final readonly class ProjectConfigMapper
 
     /**
      * Project-level keys understood under `extra.skills`. Donor-side
-     * keys (`source`) are deliberately excluded — they describe the
-     * package as a donor, not as a consumer, and must not be flagged
-     * as "shadowed" when `skills.json` is in effect.
+     * keys (`source`, and `sources`, the package's donor address book)
+     * are deliberately excluded — they describe the package as a donor,
+     * not as a consumer, and must not be flagged as "shadowed" when
+     * `skills.json` is in effect.
      *
      * The deprecated `remote` alias and the legacy dependency keys stay
      * in the list so a shadowed inline block still reports them and
@@ -96,19 +102,21 @@ final readonly class ProjectConfigMapper
         'path-from-root',
         'local',
         'vendor-sources',
-        self::SOURCES_KEY,
         self::DEPRECATED_SOURCES_KEY,
     ];
 
     /**
-     * Project keys read from `skills.json` only. Inline `extra.skills`
-     * describes the package to its consumers, so a consumer-side switch
-     * there is ignored like any other unknown inline key, and migration
-     * leaves it behind.
+     * Project keys read from config files only (`skills.json`,
+     * `skills.local.json`). Inline `extra.skills` describes the package
+     * to its consumers, so a consumer-side switch there is ignored like
+     * any other unknown inline key, and migration leaves it behind.
+     * Inline `sources` lists the package's donor sources for its
+     * consumers, never what the project itself pulls.
      *
      * @var list<non-empty-string>
      */
     public const SKILLS_JSON_ONLY_KEYS = [
+        self::SOURCES_KEY,
         'clean',
     ];
 
@@ -128,43 +136,96 @@ final readonly class ProjectConfigMapper
      */
     public function __construct(
         private ExternalProjectConfigLoader $externalLoader = new ExternalProjectConfigLoader(),
+        private ConfigLayerMerger $merger = new ConfigLayerMerger(),
     ) {}
 
     /**
-     * Resolve the project config, choosing between `skills.json` (when
-     * it exists at `$projectRoot`) and the inline `extra.skills` block.
+     * Cheap normalisation purely for same-string detection at the config
+     * level: forward-slash separators and no trailing slash. Not a path
+     * resolver — that's `SyncPlanner`'s job.
+     *
+     * @psalm-pure
+     */
+    public static function lexicalNormalise(string $path): string
+    {
+        return \rtrim(\str_replace('\\', '/', $path), '/');
+    }
+
+    /**
+     * Comparison key for paths written in different config layers: on
+     * top of {@see self::lexicalNormalise()}, empty and `.` segments are
+     * dropped, so `./.claude/skills`, `.claude//skills` and
+     * `.claude/skills/` all name `.claude/skills`. A leading separator
+     * is kept, so an absolute path never matches a relative one.
+     *
+     * @psalm-pure
+     */
+    public static function layeredPathKey(string $path): string
+    {
+        $path = \str_replace('\\', '/', $path);
+        $segments = \array_filter(
+            \explode('/', $path),
+            static fn(string $segment): bool => $segment !== '' && $segment !== '.',
+        );
+
+        return (\str_starts_with($path, '/') ? '/' : '') . \implode('/', $segments);
+    }
+
+    /**
+     * Resolve the project config from its layers.
+     *
+     * The base layer is `skills.json` when it exists at `$projectRoot`,
+     * otherwise the inline `extra.skills` block, otherwise the defaults.
+     * An optional personal `skills.local.json` is folded over the base
+     * by {@see ConfigLayerMerger}; without a base it acts as the main
+     * file.
      *
      * The returned {@see ProjectConfigResolution} bundles the config
      * with the list of inline project keys that were shadowed by
      * `skills.json` (empty unless `skills.json` won and the inline
-     * block also carried project keys). Callers emit a `-v` warning
-     * from that list — no IO happens here.
+     * block also carried project keys) and with what the local layer
+     * changed. Callers emit notices from those — no IO happens here.
      *
      * @param mixed $extra raw value of the root package's `extra` field
      *
-     * @throws MalformedProjectConfig when either source is malformed
+     * @throws MalformedProjectConfig when any layer is malformed, or the layers conflict once merged
      */
     public function forProject(Path $projectRoot, mixed $extra): ProjectConfigResolution
     {
         $external = $this->externalLoader->load($projectRoot);
         if ($external !== null) {
-            $mapped = $this->mapSkillsBlock($external, 'skills.json', external: true);
+            $mapped = $this->mapSkillsBlock($external, ExternalProjectConfigLoader::FILE_NAME, external: true);
             $ignored = $this->collectIgnoredInlineKeys($extra);
+            $base = $external;
+        } else {
+            $mapped = $this->mapExtra($extra);
+            $ignored = [];
+            $base = $this->inlineProjectKeys($extra);
+        }
 
+        $baseName = $external !== null ? ExternalProjectConfigLoader::FILE_NAME : 'extra.skills';
+        $inlineRemote = $external === null && $mapped->usedDeprecatedSourcesKey;
+
+        $local = $this->externalLoader->load($projectRoot, ExternalProjectConfigLoader::LOCAL_FILE_NAME);
+        if ($local === null) {
             return new ProjectConfigResolution(
                 $mapped->config,
                 $ignored,
                 $mapped->usedDeprecatedSourcesKey,
                 $mapped->usedDeprecatedDependencyKeys,
+                deprecatedSourcesKeyInline: $inlineRemote,
             );
         }
 
-        $mapped = $this->mapExtra($extra);
+        [$config, $changes] = $this->layerLocal(new ConfigLayer($baseName, self::canonicalBase($base)), $local);
 
         return new ProjectConfigResolution(
-            $mapped->config,
-            usedDeprecatedSourcesKey: $mapped->usedDeprecatedSourcesKey,
-            usedDeprecatedDependencyKeys: $mapped->usedDeprecatedDependencyKeys,
+            $config,
+            $ignored,
+            $mapped->usedDeprecatedSourcesKey,
+            $mapped->usedDeprecatedDependencyKeys,
+            $changes,
+            $inlineRemote,
         );
     }
 
@@ -186,20 +247,8 @@ final readonly class ProjectConfigMapper
     }
 
     /**
-     * Cheap normalisation purely for same-string detection at the config
-     * level: forward-slash separators and no trailing slash. Not a path
-     * resolver — that's `SyncPlanner`'s job.
-     *
-     * @psalm-pure
-     */
-    private static function lexicalNormalise(string $path): string
-    {
-        return \rtrim(\str_replace('\\', '/', $path), '/');
-    }
-
-    /**
      * Render a per-field path for error messages: `extra.skills.target`
-     * for the inline source, `skills.json: target` for the external one
+     * for the inline source, `skills.json: target` for a config file
      * (the latter uses a colon to keep the file name distinct from a
      * dotted JSON pointer).
      *
@@ -212,9 +261,185 @@ final readonly class ProjectConfigMapper
      */
     private static function field(string $prefix, string $name): string
     {
-        return $prefix === 'skills.json'
-            ? "skills.json: {$name}"
+        return \str_ends_with($prefix, '.json')
+            ? "{$prefix}: {$name}"
             : "{$prefix}.{$name}";
+    }
+
+    /**
+     * Bring a base layer onto canonical keys so a layer above it merges
+     * key by key: the deprecated `remote` becomes `sources`, and the
+     * legacy trust trio folds into `dependencies`. The base was already
+     * mapped on its own, so mixing an alias with its canonical key has
+     * been rejected by then.
+     *
+     * @param array<array-key, mixed> $base
+     *
+     * @return array<array-key, mixed>
+     *
+     * @psalm-pure
+     */
+    private static function canonicalBase(array $base): array
+    {
+        /** @var array<string, mixed> $keyed config objects decode with string keys */
+        $keyed = $base;
+        $base = ProjectConfigMigrator::renameSourcesInMap($keyed);
+        if (!ProjectConfigMigrator::hasLegacyDependencyKeys($base)) {
+            return $base;
+        }
+
+        $dependencies = ProjectConfigMigrator::foldLegacyDependencies($base);
+        foreach (self::DEPRECATED_DEPENDENCY_KEYS as $key) {
+            unset($base[$key]);
+        }
+
+        // The flat legacy `trusted` list tolerates repeated patterns, the
+        // per-manager one does not; the repeats carry no meaning.
+        /** @var mixed $composer */
+        $composer = $dependencies[ProviderId::COMPOSER] ?? null;
+        if (\is_array($composer) && \is_array($composer['trusted'] ?? null)) {
+            /** @var array<array-key, mixed> $trusted */
+            $trusted = $composer['trusted'];
+            $composer['trusted'] = \array_values(\array_unique(\array_filter($trusted, \is_string(...))));
+            $dependencies[ProviderId::COMPOSER] = $composer;
+        }
+
+        $base[self::DEPENDENCIES_KEY] = $dependencies;
+
+        return $base;
+    }
+
+    /**
+     * Reject an alias of either layer that equals the effective target —
+     * the local one when the local layer sets it, the base one otherwise —
+     * naming the file of the alias and the file of the target. Malformed
+     * values are skipped; each layer's own validation reports them.
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-pure
+     */
+    private static function assertAliasesClearOfTarget(ConfigLayer $base, ConfigLayer $local): void
+    {
+        $targetLayer = match (true) {
+            \array_key_exists('target', $local->values) => $local,
+            \array_key_exists('target', $base->values) => $base,
+            default => null,
+        };
+        /** @var mixed $target */
+        $target = $targetLayer?->values['target'] ?? ProjectConfig::DEFAULT_TARGET;
+        if (!\is_string($target) || $target === '') {
+            return;
+        }
+        $targetField = $targetLayer === null ? 'the default target' : self::field($targetLayer->name, 'target');
+        $normalisedTarget = self::layeredPathKey($target);
+
+        foreach ([$base, $local] as $layer) {
+            /** @var mixed $aliases */
+            $aliases = $layer->values['aliases'] ?? [];
+            if (!\is_array($aliases) || !\array_is_list($aliases)) {
+                continue;
+            }
+            /** @var mixed $alias */
+            foreach ($aliases as $index => $alias) {
+                if (\is_string($alias) && $alias !== '' && self::layeredPathKey($alias) === $normalisedTarget) {
+                    throw new MalformedProjectConfig(\sprintf(
+                        '%s[%d] (%s) cannot equal %s',
+                        self::field($layer->name, 'aliases'),
+                        $index,
+                        $alias,
+                        $targetField,
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * Fold the `skills.local.json` layer over the canonical base and map
+     * the result. The local layer is checked and validated on its own
+     * first, so its mistakes carry the `skills.local.json:` prefix. An
+     * alias in one layer that equals the target set in the other is
+     * reported naming the file each side came from.
+     *
+     * Keys read from config files only ({@see self::SKILLS_JSON_ONLY_KEYS})
+     * are honoured in the merged result: an inline base never carries
+     * them, so any value present came from a file.
+     *
+     * @param array<array-key, mixed> $local
+     *
+     * @return array{ProjectConfig, list<LayerChanges>}
+     *
+     * @throws MalformedProjectConfig
+     *
+     * @psalm-mutation-free
+     */
+    private function layerLocal(ConfigLayer $base, array $local): array
+    {
+        $name = ExternalProjectConfigLoader::LOCAL_FILE_NAME;
+        $layer = new ConfigLayer($name, $local);
+        $this->merger->assertLayerable($layer);
+        self::assertAliasesClearOfTarget($base, $layer);
+
+        // The local layer is validated as if it carried the base's target,
+        // the one its aliases end up next to.
+        $probe = $local;
+        if (!\array_key_exists('target', $probe) && \array_key_exists('target', $base->values)) {
+            /** @psalm-suppress MixedAssignment the base target was validated with the base */
+            $probe['target'] = $base->values['target'];
+        }
+        $localSources = $this->mapSkillsBlock($probe, $name, external: true)->config->sources;
+
+        $merged = $this->merger->merge([$base, $layer]);
+        $config = $this->mapSkillsBlock($merged->values, $name, external: true)->config;
+
+        // The merged alias list is the base's aliases followed by the ones
+        // the local layer added.
+        $added = \count($merged->changes[0]->addedAliases ?? []);
+        $shared = \count($config->aliases) - $added;
+        $origins = [];
+        foreach (\array_keys($config->aliases) as $index) {
+            $origins[$index] = $index < $shared ? $base->name : $name;
+        }
+        $targetOrigin = match (true) {
+            \array_key_exists('target', $local) => $name,
+            \array_key_exists('target', $base->values) => $base->name,
+            default => null,
+        };
+        $config = $config->withOrigins($origins, $targetOrigin);
+
+        $identities = \array_map(static fn(SourceEntry $entry): string => $entry->compositeKey(), $localSources);
+        $changes = \array_map(
+            static fn(LayerChanges $changes): LayerChanges => $changes->withSourceIdentities($identities),
+            $merged->changes,
+        );
+
+        return [$config, $changes];
+    }
+
+    /**
+     * Project keys of the inline `extra.skills` block, as the base layer
+     * under `skills.local.json`. Donor-side and unrelated keys stay
+     * behind, as do the keys read from config files only and the legacy
+     * `remote` pull list, which takes effect only once migrated.
+     *
+     * @param mixed $extra raw value of root `composer.json` `extra` field, already validated
+     *
+     * @return array<array-key, mixed>
+     *
+     * @psalm-pure
+     */
+    private function inlineProjectKeys(mixed $extra): array
+    {
+        $skills = \is_array($extra) ? ($extra['skills'] ?? null) : null;
+        if (!\is_array($skills)) {
+            return [];
+        }
+
+        $keys = \array_intersect_key($skills, \array_flip(self::PROJECT_KEYS));
+        unset($keys[self::DEPRECATED_SOURCES_KEY]);
+
+        return $keys;
     }
 
     /**
@@ -256,7 +481,7 @@ final readonly class ProjectConfigMapper
      *
      * @param array<array-key, mixed> $skills
      * @param non-empty-string $prefix human-readable origin of the block, e.g. `extra.skills` or `skills.json`
-     * @param bool $external whether the block comes from `skills.json`, the only place
+     * @param bool $external whether the block comes from a config file, the only place
      *        {@see self::SKILLS_JSON_ONLY_KEYS} are read from
      *
      * @throws MalformedProjectConfig
@@ -333,7 +558,9 @@ final readonly class ProjectConfigMapper
         // `sources` is canonical; `remote` is the deprecated alias feeding
         // the same validator. Both keys in one block is fatal — the file
         // is ours and strict, so there is no merge or precedence rule.
-        $hasSources = \array_key_exists(self::SOURCES_KEY, $skills);
+        // Inline, `sources` is the package's donor address book rather
+        // than the project's pull list, so only the legacy `remote` counts.
+        $hasSources = $external && \array_key_exists(self::SOURCES_KEY, $skills);
         $usedDeprecatedSourcesKey = \array_key_exists(self::DEPRECATED_SOURCES_KEY, $skills);
         if ($hasSources && $usedDeprecatedSourcesKey) {
             throw new MalformedProjectConfig(\sprintf(
@@ -345,7 +572,15 @@ final readonly class ProjectConfigMapper
             ));
         }
         $sourcesKey = $usedDeprecatedSourcesKey ? self::DEPRECATED_SOURCES_KEY : self::SOURCES_KEY;
-        $sources = $this->mapSources($skills[$sourcesKey] ?? [], $prefix, $sourcesKey);
+        $sources = $hasSources || $usedDeprecatedSourcesKey
+            ? $this->mapSources($skills[$sourcesKey] ?? [], $prefix, $sourcesKey)
+            : [];
+        // The pull list is read from config files only. An inline `remote`
+        // is still validated, so a broken one is never migrated, but it is
+        // fetched only once migration has moved it into `skills.json`.
+        if (!$external) {
+            $sources = [];
+        }
 
         $config = new ProjectConfig(
             target: $target,

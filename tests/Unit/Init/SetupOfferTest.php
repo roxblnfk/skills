@@ -47,6 +47,13 @@ final class SetupOfferTest
         Assert::false(SetupOffer::isNeeded(Path::create($this->tmp), $this->rootPackage()));
     }
 
+    public function aLoneLocalFileEndsTheOffer(): void
+    {
+        \file_put_contents($this->tmp . '/skills.local.json', '{}');
+
+        Assert::false(SetupOffer::isNeeded(Path::create($this->tmp), $this->rootPackage()));
+    }
+
     public function inlineProjectKeysCountAsConfigured(): void
     {
         // A project still on the inline block has made its decisions; it

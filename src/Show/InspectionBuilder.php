@@ -6,6 +6,8 @@ namespace LLM\Skills\Show;
 
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Config\LayerChanges;
+use LLM\Skills\Config\Mapper\ExternalProjectConfigLoader;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\TrustedVendors;
@@ -69,6 +71,9 @@ final readonly class InspectionBuilder
      *        {@see \LLM\Skills\Config\Mapper\ProjectConfigMapper::forProject()}
      *        so it can surface the `skills.json` shadowing warning through IO;
      *        the builder itself stays pure (no IO).
+     * @param list<LayerChanges> $layers what the config layers over the shared configuration
+     *        changed; the target and aliases they sourced are marked in the report unless the
+     *        CLI overrides them, and donors of their `sources[]` entries name their file
      *
      * @throws MalformedProjectConfig when planner-level path validation fails.
      */
@@ -77,6 +82,7 @@ final readonly class InspectionBuilder
         DonorProvider $provider,
         ProjectConfig $project,
         SyncOptions $options,
+        array $layers = [],
     ): InspectionReport {
         $builtin = $this->loadBuiltinTrustedVendors();
 
@@ -167,6 +173,7 @@ final readonly class InspectionBuilder
             $attributor,
             $conflictMap,
             $installedByKey,
+            self::sourceOrigins($layers),
         );
 
         $skipped = $this->buildSkippedList(
@@ -206,7 +213,8 @@ final readonly class InspectionBuilder
             skipped: $skipped,
             discoveryActive: $discoveryActive,
             undeclaredCandidatesCount: \count($resolution->excluded),
-            aliases: $this->inspectAliases($plan),
+            aliases: $this->inspectAliases($plan, $this->layerAliases($project, $options, $layers)),
+            targetFromLayer: $options->targetOverride === null && self::layerChanged($layers, 'target'),
         );
     }
 
@@ -224,6 +232,45 @@ final readonly class InspectionBuilder
     }
 
     /**
+     * The config file declaring each `sources[]` entry a layer over the
+     * shared configuration contributed, keyed by source identity. A later
+     * layer wins, as it does in the merge.
+     *
+     * @param list<LayerChanges> $layers
+     *
+     * @return array<string, non-empty-string>
+     *
+     * @psalm-pure
+     */
+    private static function sourceOrigins(array $layers): array
+    {
+        $out = [];
+        foreach ($layers as $layer) {
+            foreach ($layer->sourceIdentities as $identity) {
+                $out[$identity] = $layer->name;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<LayerChanges> $layers
+     *
+     * @psalm-pure
+     */
+    private static function layerChanged(array $layers, string $key): bool
+    {
+        foreach ($layers as $layer) {
+            if ($layer->changed($key)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * For each configured alias, decide whether it currently points at
      * the target on disk. The check is intentionally observational —
      * it never creates, removes, or touches anything. A non-existent
@@ -232,9 +279,12 @@ final readonly class InspectionBuilder
      * {@see SymlinkLinker}; anything else resolving somewhere other than
      * the target, such as a real directory, is drift.
      *
+     * @param array<int, true> $fromLayer positions in `$plan->aliases` of the aliases a config
+     *        layer over the shared configuration contributed
+     *
      * @return list<AliasInspection>
      */
-    private function inspectAliases(SyncPlan $plan): array
+    private function inspectAliases(SyncPlan $plan, array $fromLayer = []): array
     {
         if ($plan->aliases === []) {
             return [];
@@ -243,11 +293,47 @@ final readonly class InspectionBuilder
         $resolvedTarget = \realpath((string) $plan->target);
 
         $out = [];
-        foreach ($plan->aliases as $alias) {
+        foreach ($plan->aliases as $index => $alias) {
             $link = $this->linker->link($alias, $plan->target, dryRun: true);
+            $local = isset($fromLayer[$index]);
             $out[] = $link->status === LinkStatus::WouldReplace
-                ? new AliasInspection($alias, relinkFrom: $link->previous)
-                : new AliasInspection($alias, $this->detectAliasDrift($alias, $resolvedTarget));
+                ? new AliasInspection($alias, relinkFrom: $link->previous, fromLayer: $local)
+                : new AliasInspection($alias, $this->detectAliasDrift($alias, $resolvedTarget), fromLayer: $local);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Positions of the configured aliases a config layer contributed.
+     * The planner resolves aliases one to one in configured order, so a
+     * position in {@see ProjectConfig::$aliases} is a position in the
+     * plan. CLI aliases replace the configured ones and carry no mark.
+     *
+     * @param list<LayerChanges> $layers
+     *
+     * @return array<int, true>
+     *
+     * @psalm-pure
+     */
+    private function layerAliases(ProjectConfig $project, SyncOptions $options, array $layers): array
+    {
+        if ($options->aliasOverrides !== null || $layers === []) {
+            return [];
+        }
+
+        $added = [];
+        foreach ($layers as $layer) {
+            foreach ($layer->addedAliases as $alias) {
+                $added[$alias] = true;
+            }
+        }
+
+        $out = [];
+        foreach ($project->aliases as $index => $alias) {
+            if (isset($added[$alias])) {
+                $out[$index] = true;
+            }
         }
 
         return $out;
@@ -344,6 +430,9 @@ final readonly class InspectionBuilder
      * @param list<Skill> $approvedSkills
      * @param array<string, list<non-empty-string>> $conflictMap
      * @param array<string, list<InstalledSkill>> $installedByKey
+     * @param array<string, non-empty-string> $sourceOrigins config file declaring each project
+     *        `sources[]` entry a layer over the shared configuration contributed, by identity;
+     *        every other project `sources[]` entry is declared in `skills.json`
      *
      * @return list<DonorInspection>
      */
@@ -353,6 +442,7 @@ final readonly class InspectionBuilder
         TrustAttributor $attributor,
         array $conflictMap,
         array $installedByKey,
+        array $sourceOrigins = [],
     ): array {
         $result = [];
         foreach ($approvedDonors as $donor) {
@@ -384,6 +474,9 @@ final readonly class InspectionBuilder
                     ? TrustSource::Declared
                     : $attributor->attribute($donor->packageName),
                 skills: $skillInspections,
+                declaredIn: $donor->sourceIdentity === null
+                    ? null
+                    : ($sourceOrigins[$donor->sourceIdentity] ?? ExternalProjectConfigLoader::FILE_NAME),
             );
         }
 

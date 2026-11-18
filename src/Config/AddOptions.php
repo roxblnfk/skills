@@ -33,6 +33,8 @@ final readonly class AddOptions
      *         resulting entry inherits the legacy "sync every skill" default; a non-empty
      *         list is propagated into the entry's `skills` field and merged with any
      *         pre-existing names when the entry already exists.
+     * @param bool $local when true, the entry is written to the personal `skills.local.json`
+     *         instead of the shared `skills.json`
      *
      * @psalm-mutation-free
      */
@@ -43,5 +45,20 @@ final readonly class AddOptions
         public ?string $ref = null,
         public bool $sync = true,
         public ?array $skills = null,
+        public bool $local = false,
     ) {}
+
+    /**
+     * Name of the config file the entry is written to.
+     *
+     * @return non-empty-string
+     *
+     * @psalm-mutation-free
+     */
+    public function configFile(): string
+    {
+        return $this->local
+            ? Mapper\ExternalProjectConfigLoader::LOCAL_FILE_NAME
+            : Mapper\ExternalProjectConfigLoader::FILE_NAME;
+    }
 }

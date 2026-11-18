@@ -349,7 +349,8 @@ final readonly class SourceProvider implements DonorProvider
         $provenance = $ref->provenance ?? 'source';
         $donor = $donor
             ->withProvenance($provenance)
-            ->withSkillFilter($ref->skillFilter);
+            ->withSkillFilter($ref->skillFilter)
+            ->withSourceIdentity($ref->sourceIdentity);
 
         // A ref declared by an installed vendor package (its
         // `extra.skills.sources`) is third-party input: it inherits the

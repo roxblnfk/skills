@@ -27,6 +27,9 @@ final readonly class DonorInspection
      * @param VendorConfig $donor package metadata + source dir
      * @param TrustSource|null $trustSource who approved this donor
      * @param list<SkillInspection> $skills per-skill rows (may be empty when source dir is unreadable)
+     * @param non-empty-string|null $declaredIn origin of the project `sources[]` entry the donor
+     *        comes from: `skills.json` or `skills.local.json`; `null` for every
+     *        other donor
      *
      * @psalm-mutation-free
      */
@@ -34,5 +37,6 @@ final readonly class DonorInspection
         public VendorConfig $donor,
         public ?TrustSource $trustSource,
         public array $skills,
+        public ?string $declaredIn = null,
     ) {}
 }

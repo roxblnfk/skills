@@ -57,6 +57,37 @@ final class SkillsJsonWriterTest
         Assert::count((array) $payload['sources'], 1);
     }
 
+    public function upsertIntoTheLocalFileLeavesSkillsJsonUntouched(): void
+    {
+        $shared = "{\n    \"sources\": [{\"from\": \"github\", \"package\": \"acme/shared\"}]\n}\n";
+        \file_put_contents($this->tmp . '/skills.json', $shared);
+
+        $writer = new SkillsJsonWriter();
+        $writer->upsertSource(Path::create($this->tmp), self::entry('acme/mine'), 'skills.local.json');
+
+        Assert::same((string) \file_get_contents($this->tmp . '/skills.json'), $shared);
+        /** @var array<string, mixed> $local */
+        $local = \json_decode((string) \file_get_contents($this->tmp . '/skills.local.json'), true);
+        Assert::same($local['$schema'] ?? null, ProjectConfigMigrator::SCHEMA_URL);
+        Assert::same($local['sources'], [['from' => 'github', 'package' => 'acme/mine']]);
+    }
+
+    public function theAllowlistAfterALocalUpsertIgnoresTheSharedEntry(): void
+    {
+        \file_put_contents(
+            $this->tmp . '/skills.json',
+            '{"sources": [{"from": "github", "package": "acme/x", "skills": ["shared"]}]}',
+        );
+
+        $allowlist = (new SkillsJsonWriter())->allowlistAfterUpsert(
+            Path::create($this->tmp),
+            self::entry('acme/x', skills: ['mine']),
+            'skills.local.json',
+        );
+
+        Assert::same($allowlist, ['mine']);
+    }
+
     public function consecutiveUpsertsOverwriteExistingFile(): void
     {
         // The atomic-write path renames a temp file into skills.json.

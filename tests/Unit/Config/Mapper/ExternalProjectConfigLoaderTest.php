@@ -208,6 +208,32 @@ final class ExternalProjectConfigLoaderTest
     /**
      * @param array<string, mixed> $data
      */
+    public function loadsTheLocalFileUnderItsOwnName(): void
+    {
+        $this->writeFile(['target' => 'shared/skills']);
+        \file_put_contents($this->tmp . '/skills.local.json', '{"$schema": "x", "target": "mine/skills"}');
+
+        $result = (new ExternalProjectConfigLoader())->load(
+            Path::create($this->tmp),
+            ExternalProjectConfigLoader::LOCAL_FILE_NAME,
+        );
+
+        Assert::same($result, ['target' => 'mine/skills']);
+    }
+
+    public function localFileErrorsCarryTheLocalFileName(): void
+    {
+        \file_put_contents($this->tmp . '/skills.local.json', '[]');
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: root must be a JSON object');
+
+        (new ExternalProjectConfigLoader())->load(
+            Path::create($this->tmp),
+            ExternalProjectConfigLoader::LOCAL_FILE_NAME,
+        );
+    }
+
     private function writeFile(array $data): void
     {
         \file_put_contents(

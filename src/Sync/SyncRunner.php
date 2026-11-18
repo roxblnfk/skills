@@ -7,6 +7,7 @@ namespace LLM\Skills\Sync;
 use Composer\IO\IOInterface;
 use Internal\Path;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
+use LLM\Skills\Config\LayerChanges;
 use LLM\Skills\Config\Mapper\MigrationStatus;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\ProjectConfigMigrator;
@@ -153,8 +154,13 @@ final readonly class SyncRunner
 
         $project = $configResolution->config;
         $this->emitShadowedKeysWarning($io, $configResolution->ignoredInlineKeys);
-        $this->emitDeprecatedSourcesKeyNotice($io, $configResolution->usedDeprecatedSourcesKey);
+        $this->emitDeprecatedSourcesKeyNotice(
+            $io,
+            $configResolution->usedDeprecatedSourcesKey,
+            $configResolution->deprecatedSourcesKeyInline,
+        );
         $this->emitDeprecatedDependencyKeysNotice($io, $configResolution->usedDeprecatedDependencyKeys);
+        $this->emitLayerChanges($io, $configResolution->layers);
 
         // No donor provider can contribute. Reasons vary by provider —
         // {@see \LLM\Skills\Discovery\Provider\ComposerProvider} is
@@ -818,6 +824,20 @@ final readonly class SyncRunner
     }
 
     /**
+     * One line per config layer applied over the shared configuration,
+     * naming what it changed, so a personal `skills.local.json` never
+     * alters a sync silently.
+     *
+     * @param list<LayerChanges> $layers
+     */
+    private function emitLayerChanges(IOInterface $io, array $layers): void
+    {
+        foreach ($layers as $layer) {
+            $io->write('<info>[local]</info> ' . OutputFormatter::escape($layer->describe()));
+        }
+    }
+
+    /**
      * `skills.json` won the precedence contest but `composer.json` still
      * carries project-level keys under `extra.skills`. Surface their
      * names under `-v` so a confused user can see why their inline
@@ -844,17 +864,22 @@ final readonly class SyncRunner
      * deprecations should be seen. In write mode the `remote`-to-`sources`
      * in-place rename runs first, so this fires only when migration was
      * suppressed (the `post-install-cmd` auto-sync hook).
+     *
+     * An inline `remote` is never fetched, and renaming it inline would
+     * turn it into the package's donor address book, so that notice
+     * points at the migration instead of a rename.
      */
-    private function emitDeprecatedSourcesKeyNotice(IOInterface $io, bool $used): void
+    private function emitDeprecatedSourcesKeyNotice(IOInterface $io, bool $used, bool $inline): void
     {
         if (!$used) {
             return;
         }
 
-        $io->writeError(
-            '<comment>[deprecated] config key "remote" was renamed to "sources"; '
-            . 'skills:update migrates the file automatically</comment>',
-        );
+        $io->writeError($inline
+            ? '<comment>[deprecated] the inline extra.skills.remote list is not fetched; '
+                . 'skills:update moves it into "sources" in skills.json</comment>'
+            : '<comment>[deprecated] config key "remote" was renamed to "sources"; '
+                . 'skills:update migrates the file automatically</comment>');
     }
 
     /**

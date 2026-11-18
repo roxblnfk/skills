@@ -329,6 +329,38 @@ final class ProjectConfigMigratorTest
         Assert::false(\array_key_exists('target', $remaining));
     }
 
+    public function leavesTheInlineDonorAddressBookInComposerJson(): void
+    {
+        // Inline `sources` lists the package's donor sources for its
+        // consumers, not the project's pull list: it stays where it is and
+        // never reaches skills.json.
+        $address = [['from' => 'github', 'package' => 'acme/companion']];
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => ['skills' => ['target' => 'custom/skills', 'sources' => $address]],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->migrate(Path::create($this->tmp), new BufferIO());
+
+        Assert::same($result->status, MigrationStatus::Migrated);
+        Assert::same($result->migratedKeys, ['target']);
+        Assert::false(\array_key_exists('sources', $this->readSkillsJson()));
+        Assert::same($this->readComposerJson()['extra']['skills'] ?? null, ['sources' => $address]);
+    }
+
+    public function anInlineDonorAddressBookAloneIsNotMigrated(): void
+    {
+        $this->writeComposerJson([
+            'name' => 'demo/consumer',
+            'extra' => ['skills' => ['sources' => [['from' => 'github', 'package' => 'acme/companion']]]],
+        ]);
+
+        $result = (new ProjectConfigMigrator())->migrate(Path::create($this->tmp), new BufferIO());
+
+        Assert::same($result->status, MigrationStatus::Skipped);
+        Assert::false(\is_file($this->tmp . '/skills.json'));
+    }
+
     public function renamesRemoteKeyToSourcesInPlace(): void
     {
         // A skills.json still on the deprecated key is rewritten with
