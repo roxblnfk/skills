@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.20.0](https://github.com/roxblnfk/skills/compare/1.19.0...1.20.0) (2026-11-18)
+
+
+### Features
+
+* **config:** layer a personal skills.local.json over skills.json ([a99c065](https://github.com/roxblnfk/skills/commit/a99c065b98305183a60932c857aaab67d83393ca))
+
+
+### Bug Fixes
+
+* **config:** keep a package's own extra.skills.sources out of the skills.json migration ([a99c065](https://github.com/roxblnfk/skills/commit/a99c065b98305183a60932c857aaab67d83393ca)), closes [#86](https://github.com/roxblnfk/skills/issues/86)
+
 ## [1.19.0](https://github.com/roxblnfk/skills/compare/1.18.0...1.19.0) (2026-11-15)
 
 
