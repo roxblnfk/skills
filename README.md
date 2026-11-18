@@ -1,4 +1,12 @@
-<h1 align="center">llm/skills</h1>
+<p align="center">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://github.com/roxblnfk/skills/blob/master/resources/logo-dark.svg?raw=true">
+        <img alt="llm/skills"
+             src="https://github.com/roxblnfk/skills/blob/master/resources/logo-light.svg?raw=true"
+             style="width: 6in; display: block"
+        />
+    </picture>
+</p>
 
 <p align="center">Distribute AI Skills as Composer dependencies</p>
 
