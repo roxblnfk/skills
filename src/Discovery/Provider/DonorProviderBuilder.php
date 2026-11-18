@@ -81,7 +81,7 @@ final readonly class DonorProviderBuilder
         $composerEnabled = $this->resolveManagerEnabled($projectRoot, $extra, ProviderId::COMPOSER);
 
         $local = new ComposerProvider($composer, enabled: $composerEnabled);
-        [$vendorSource, $projectSource] = $this->buildSourceProviders($composer);
+        [$vendorSource, $projectSource] = $this->buildSourceProviders($composer, $extra);
 
         return new CompositeDonorProvider($local, $vendorSource, $projectSource);
     }
@@ -110,10 +110,13 @@ final readonly class DonorProviderBuilder
      * they live in the installed packages' metadata. Without one, the
      * {@see VendorDeclaredRefSource} simply reports no refs.
      *
+     * @param mixed $extra raw root `extra`, whose inline config is the base of the project
+     *        config while there is no `skills.json`
+     *
      * @return array{SourceProvider, SourceProvider} vendor-declared provider first,
      *         project provider second — the wiring order the composite relies on
      */
-    private function buildSourceProviders(?Composer $composer): array
+    private function buildSourceProviders(?Composer $composer, mixed $extra): array
     {
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
         $httpClient = ComposerHttpClient::fromConfig($config);
@@ -130,8 +133,8 @@ final readonly class DonorProviderBuilder
             CachePathBuilder::fromVendorDir($config->get('vendor-dir')),
         );
 
-        $vendorSource = new VendorDeclaredRefSource($composer, $registry, projectMapper: $this->mapper);
-        $projectSource = new SkillsJsonDonorRefSource($registry, $this->mapper);
+        $vendorSource = new VendorDeclaredRefSource($composer, $registry, projectMapper: $this->mapper, extra: $extra);
+        $projectSource = new SkillsJsonDonorRefSource($registry, $this->mapper, $extra);
 
         return [
             new SourceProvider($vendorSource, $fetcher),

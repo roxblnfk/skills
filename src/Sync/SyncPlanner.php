@@ -483,6 +483,11 @@ final readonly class SyncPlanner
         }
 
         $targetStr = (string) $target;
+        // Config files the aliases come from, when layered files
+        // contributed them; CLI aliases have none.
+        $origins = $options->aliasOverrides === null ? $project->aliasOrigins : [];
+        // Likewise the file the target comes from, unless `--target` replaced it.
+        $targetOrigin = $options->targetOverride === null ? $project->targetOrigin : null;
 
         $out = [];
         $seen = [];
@@ -492,22 +497,40 @@ final readonly class SyncPlanner
             $this->assertNotProjectRoot($resolved, $root, $context, $entry);
             $this->assertWithinProject($resolved, $root, $context, $entry);
             $resolvedStr = (string) $resolved;
+            $origin = isset($origins[$index]) ? $origins[$index] . ': ' : '';
 
             if ($resolvedStr === $targetStr) {
+                $targetNote = $targetOrigin !== null && isset($origins[$index]) && $origins[$index] !== $targetOrigin
+                    ? ' set in ' . $targetOrigin
+                    : '';
                 throw new MalformedProjectConfig(\sprintf(
-                    'alias "%s" resolves to the target path %s; an alias cannot point at itself',
+                    '%salias "%s" resolves to the target path %s%s; an alias cannot point at itself',
+                    $origin,
                     $entry,
                     $targetStr,
+                    $targetNote,
                 ));
             }
             if (isset($seen[$resolvedStr])) {
-                throw new MalformedProjectConfig(\sprintf(
-                    'alias "%s" resolves to %s, which duplicates an earlier alias',
-                    $entry,
-                    $resolvedStr,
-                ));
+                $earlier = $seen[$resolvedStr];
+                $earlierOrigin = $origins[$earlier] ?? null;
+                throw new MalformedProjectConfig($earlierOrigin !== null && isset($origins[$index])
+                    ? \sprintf(
+                        '%salias "%s" resolves to %s, the directory alias "%s" of %s already mirrors;'
+                        . ' remove one of them',
+                        $origin,
+                        $entry,
+                        $resolvedStr,
+                        $raw[$earlier],
+                        $earlierOrigin,
+                    )
+                    : \sprintf(
+                        'alias "%s" resolves to %s, which duplicates an earlier alias',
+                        $entry,
+                        $resolvedStr,
+                    ));
             }
-            $seen[$resolvedStr] = true;
+            $seen[$resolvedStr] = $index;
             $out[] = $resolved;
         }
 

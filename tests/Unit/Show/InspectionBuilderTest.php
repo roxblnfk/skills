@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Show;
 
 use Internal\Path;
+use LLM\Skills\Config\LayerChanges;
 use LLM\Skills\Config\ProjectConfig;
 use LLM\Skills\Config\SyncOptions;
 use LLM\Skills\Config\VendorConfig;
@@ -93,7 +94,36 @@ final class InspectionBuilderTest
         Assert::same($report->skipped, []);
     }
 
-    private function build(VendorConfig $donor): InspectionReport
+    public function namesSkillsJsonForADonorOfASharedSource(): void
+    {
+        $donor = $this->donor(ProviderId::DIR)->withSourceIdentity('dir||./team');
+
+        $report = $this->build($donor);
+
+        Assert::same($report->donors[0]->declaredIn, 'skills.json');
+    }
+
+    public function namesTheLayerThatDeclaresTheSource(): void
+    {
+        $donor = $this->donor(ProviderId::DIR)->withSourceIdentity('dir||./mine');
+        $layer = new LayerChanges('skills.local.json', sourceIdentities: ['dir||./mine']);
+
+        $report = $this->build($donor, [$layer]);
+
+        Assert::same($report->donors[0]->declaredIn, 'skills.local.json');
+    }
+
+    public function namesNoFileForADonorOutsideTheProjectSources(): void
+    {
+        $report = $this->build($this->donor(ProviderId::GITHUB));
+
+        Assert::null($report->donors[0]->declaredIn);
+    }
+
+    /**
+     * @param list<LayerChanges> $layers
+     */
+    private function build(VendorConfig $donor, array $layers = []): InspectionReport
     {
         $provider = new class([$donor]) implements DonorProvider {
             /**
@@ -124,6 +154,7 @@ final class InspectionBuilderTest
             $provider,
             ProjectConfig::default(),
             SyncOptions::default(),
+            $layers,
         );
     }
 

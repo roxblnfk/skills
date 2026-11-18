@@ -563,7 +563,7 @@ final class ProjectConfigMapperTest
 
     public function remotePackageAdapterParses(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     ['from' => 'github', 'package' => 'acme/skills', 'ref' => '^1.0'],
@@ -585,7 +585,7 @@ final class ProjectConfigMapperTest
         // `host` lets users hit GitHub Enterprise / self-hosted GitLab
         // without a new adapter — the same `from` value plus a custom
         // host is enough.
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     [
@@ -602,7 +602,7 @@ final class ProjectConfigMapperTest
 
     public function remoteUrlAdapterParses(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     ['from' => 'zip', 'url' => 'https://example.com/x.zip', 'sha256' => 'abc'],
@@ -715,7 +715,7 @@ final class ProjectConfigMapperTest
         // GitHub.com `acme/x` vs corp-GHE `acme/x` are different
         // donors. The composite key includes `host`, so the mapper
         // accepts both.
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     ['from' => 'github', 'package' => 'acme/x'],
@@ -729,7 +729,7 @@ final class ProjectConfigMapperTest
 
     public function remoteSkillsAllowlistIsParsed(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     [
@@ -765,7 +765,7 @@ final class ProjectConfigMapperTest
         // donor" state — the entry stays registered but pulls nothing.
         // Distinct from omitting the key entirely, which keeps the
         // legacy "sync every skill" default.
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     ['from' => 'github', 'package' => 'acme/skills', 'skills' => []],
@@ -808,7 +808,7 @@ final class ProjectConfigMapperTest
     {
         // collectExtras must skip `skills` — otherwise it would end up
         // duplicated in both VendorEntry::skills and ::extras.
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'remote' => [
                     [
@@ -860,7 +860,7 @@ final class ProjectConfigMapperTest
 
     public function sourcesPackageAdapterParsesLikeRemote(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'github', 'package' => 'acme/skills', 'ref' => '^1.0'],
@@ -877,7 +877,7 @@ final class ProjectConfigMapperTest
 
     public function sourcesUrlAdapterParsesLikeRemote(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'zip', 'url' => 'https://example.com/x.zip', 'sha256' => 'abc'],
@@ -892,18 +892,32 @@ final class ProjectConfigMapperTest
         Assert::same($entry->extras, ['sha256' => 'abc']);
     }
 
-    public function bothSourcesAndRemoteInlineThrows(): void
+    public function inlineSourcesAreNotTheProjectPullList(): void
     {
-        // Both keys in one block is fatal — no merge, no precedence.
-        Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('extra.skills: both "sources" and "remote" are present; keep "sources" only');
+        // Inline `sources` is the package's donor address book for its
+        // consumers; the project pulls only what a config file lists.
+        $cfg = (new ProjectConfigMapper())->fromExtra([
+            'skills' => ['sources' => [['from' => 'github', 'package' => 'acme/x']]],
+        ]);
 
-        (new ProjectConfigMapper())->fromExtra([
-            'skills' => [
+        Assert::same($cfg->sources, []);
+    }
+
+    public function inlineRemoteIsNotFetchedBeforeMigration(): void
+    {
+        // The legacy inline pull list takes effect only once a write-mode
+        // run has moved it into skills.json.
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => [
                 'sources' => [['from' => 'github', 'package' => 'acme/x']],
                 'remote' => [['from' => 'github', 'package' => 'acme/y']],
-            ],
-        ]);
+            ]],
+        );
+
+        Assert::same($resolution->config->sources, []);
+        Assert::true($resolution->usedDeprecatedSourcesKey);
+        Assert::true($resolution->deprecatedSourcesKeyInline);
     }
 
     public function bothSourcesAndRemoteInSkillsJsonThrows(): void
@@ -923,9 +937,9 @@ final class ProjectConfigMapperTest
     {
         // A bad entry parsed from `sources` reports the `sources` path.
         Expect::exception(MalformedProjectConfig::class)
-            ->withMessageContaining('extra.skills.sources[0]');
+            ->withMessageContaining('skills.json: sources[0]');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'mystery', 'package' => 'acme/x']],
             ],
@@ -988,12 +1002,13 @@ final class ProjectConfigMapperTest
         $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
 
         Assert::same($resolution->usedDeprecatedSourcesKey, true);
+        Assert::false($resolution->deprecatedSourcesKeyInline);
     }
 
-    public function forProjectShadowedInlineKeysIncludeSourcesAndRemote(): void
+    public function forProjectShadowedInlineKeysIncludeRemoteButNotSources(): void
     {
-        // Both the canonical key and its deprecated alias remain
-        // project-level keys, so a shadowed inline block reports either.
+        // The legacy `remote` pull list is a project key a shadowed inline
+        // block reports; `sources` is the donor address book, never shadowed.
         $this->writeSkillsJson(['target' => 'external/skills']);
 
         $resolution = (new ProjectConfigMapper())->forProject(
@@ -1004,14 +1019,14 @@ final class ProjectConfigMapperTest
             ]],
         );
 
-        Assert::same($resolution->ignoredInlineKeys, ['sources', 'remote']);
+        Assert::same($resolution->ignoredInlineKeys, ['remote']);
     }
 
     // ── dir (path-only) adapter ─────────────────────────────────────────
 
     public function dirAdapterParses(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'dir', 'path' => './skills'],
@@ -1033,7 +1048,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('path is required for adapter "dir"');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'dir']],
             ],
@@ -1045,7 +1060,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('url is not allowed for adapter "dir" (use path)');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'dir', 'path' => './skills', 'url' => 'https://example.com/x.zip']],
             ],
@@ -1057,7 +1072,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('host is not allowed for adapter "dir"');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'dir', 'path' => './skills', 'host' => 'https://example.com']],
             ],
@@ -1071,7 +1086,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('ref is not allowed for adapter "dir"');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'dir', 'path' => './skills', 'ref' => 'v1.0.0']],
             ],
@@ -1082,7 +1097,7 @@ final class ProjectConfigMapperTest
     {
         // Unlike name-based adapters, `package` on a dir entry is an
         // optional donor-name override and is not the identifier.
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'dir', 'path' => '../shared-skills', 'package' => 'myorg/shared'],
@@ -1098,7 +1113,7 @@ final class ProjectConfigMapperTest
 
     public function dirAllowlistIsParsed(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'dir', 'path' => './skills', 'skills' => ['deploy']],
@@ -1111,7 +1126,7 @@ final class ProjectConfigMapperTest
 
     public function dirCompositeKeyUsesPath(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'dir', 'path' => './skills']],
             ],
@@ -1128,7 +1143,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('duplicates an earlier entry');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'dir', 'path' => './skills'],
@@ -1140,7 +1155,7 @@ final class ProjectConfigMapperTest
 
     public function dirDifferentPathsCoexist(): void
     {
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'dir', 'path' => './skills'],
@@ -1156,7 +1171,7 @@ final class ProjectConfigMapperTest
     {
         // collectExtras must skip `path` — otherwise the identifier
         // would be duplicated into SourceEntry::extras.
-        $cfg = (new ProjectConfigMapper())->fromExtra([
+        $cfg = $this->viaSkillsJson([
             'skills' => [
                 'sources' => [
                     ['from' => 'dir', 'path' => './skills', 'custom' => 'x'],
@@ -1173,7 +1188,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('path is not allowed for adapter "github" (dir only)');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'github', 'package' => 'acme/x', 'path' => './skills']],
             ],
@@ -1185,7 +1200,7 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('path is not allowed for adapter "zip" (dir only)');
 
-        (new ProjectConfigMapper())->fromExtra([
+        $this->viaSkillsJson([
             'skills' => [
                 'sources' => [['from' => 'zip', 'url' => 'https://example.com/x.zip', 'path' => './skills']],
             ],
@@ -1689,19 +1704,340 @@ final class ProjectConfigMapperTest
         Expect::exception(MalformedProjectConfig::class)
             ->withMessageContaining('"self.version" is only supported in a vendor package');
 
-        (new ProjectConfigMapper())->fromExtra(['skills' => [
+        $this->viaSkillsJson(['skills' => [
             'sources' => [['from' => 'github', 'package' => 'acme/skills', 'ref' => 'self.version']],
         ]]);
     }
 
     public function sourcesRefExactConstraintIsAccepted(): void
     {
-        $config = (new ProjectConfigMapper())->fromExtra(['skills' => [
+        $config = $this->viaSkillsJson(['skills' => [
             'sources' => [['from' => 'github', 'package' => 'acme/skills', 'ref' => '=1.2.3']],
         ]]);
 
         Assert::count($config->sources, 1);
         Assert::same($config->sources[0]->ref, '=1.2.3');
+    }
+
+    // ── forProject(): skills.local.json layered over the base ───────────
+
+    public function forProjectWithoutALocalFileReportsNoLayers(): void
+    {
+        $this->writeSkillsJson(['target' => 'external/skills']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->layers, []);
+    }
+
+    public function forProjectLayersTheLocalFileOverSkillsJson(): void
+    {
+        $this->writeSkillsJson([
+            'target' => '.agents/skills',
+            'aliases' => ['.claude/skills'],
+            'dependencies' => ['composer' => ['trusted' => ['acme/*']]],
+        ]);
+        $this->writeLocalJson([
+            'aliases' => ['.cursor/skills'],
+            'vendor-sources' => false,
+            'dependencies' => ['composer' => ['trusted' => ['spiral/*']]],
+        ]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->target, '.agents/skills');
+        Assert::same($resolution->config->aliases, ['.claude/skills', '.cursor/skills']);
+        Assert::false($resolution->config->vendorSources);
+        Assert::true($resolution->config->trusted->trusts('acme/a'));
+        Assert::true($resolution->config->trusted->trusts('spiral/b'));
+        Assert::count($resolution->layers, 1);
+        Assert::same(
+            $resolution->layers[0]->describe(),
+            'skills.local.json: aliases +1, vendor-sources=false, dependencies.composer.trusted +1',
+        );
+        Assert::same($resolution->layers[0]->addedAliases, ['.cursor/skills']);
+        Assert::true($resolution->layers[0]->changed('aliases'));
+        Assert::false($resolution->layers[0]->changed('target'));
+    }
+
+    public function forProjectOverridesPathFromRootLocally(): void
+    {
+        $this->writeSkillsJson(['path-from-root' => 'packages/api']);
+        $this->writeLocalJson(['path-from-root' => 'api']);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->pathFromRoot, 'api');
+    }
+
+    public function forProjectTreatsALoneLocalFileAsTheMainFile(): void
+    {
+        $this->writeLocalJson(['target' => 'mine/skills', 'clean' => true]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->target, 'mine/skills');
+        Assert::true($resolution->config->clean);
+    }
+
+    public function forProjectLetsTheLocalFileSetFileOnlyKeysOverAnInlineBase(): void
+    {
+        // `clean` under inline `extra.skills` is ignored; set locally, it applies.
+        $this->writeLocalJson(['clean' => true]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['target' => 'inline/skills']],
+        );
+
+        Assert::same($resolution->config->target, 'inline/skills');
+        Assert::true($resolution->config->clean);
+    }
+
+    public function forProjectIgnoresAnInlineFileOnlyKeyUnderALocalFile(): void
+    {
+        $this->writeLocalJson(['aliases' => ['.claude/skills']]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['clean' => true, 'source' => 'skills']],
+        );
+
+        Assert::false($resolution->config->clean);
+    }
+
+    public function forProjectMergesLocalTrustIntoALegacyInlineBase(): void
+    {
+        $this->writeLocalJson(['dependencies' => ['composer' => ['trusted' => ['spiral/*']]]]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => [
+                'trusted' => ['acme/skills-basic', 'acme/skills-basic'],
+                'remote' => [['from' => 'dir', 'path' => './team']],
+            ]],
+        );
+
+        Assert::true($resolution->config->trusted->trusts('acme/skills-basic'));
+        Assert::true($resolution->config->trusted->trusts('spiral/demo'));
+        // The inline `remote` pull list waits for migration; only the local
+        // file's own entries would be fetched.
+        Assert::same($resolution->config->sources, []);
+        Assert::true($resolution->usedDeprecatedSourcesKey);
+        Assert::same($resolution->usedDeprecatedDependencyKeys, ['trusted']);
+    }
+
+    public function forProjectDisablesASharedSourceWithAnEmptyLocalAllowlist(): void
+    {
+        $this->writeSkillsJson(['sources' => [['from' => 'dir', 'path' => './team']]]);
+        $this->writeLocalJson(['sources' => [['from' => 'dir', 'path' => './team', 'skills' => []]]]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::count($resolution->config->sources, 1);
+        Assert::same($resolution->config->sources[0]->skills, []);
+    }
+
+    public function forProjectPrefixesLocalFileErrorsWithItsName(): void
+    {
+        $this->writeLocalJson(['discovery' => 'yes']);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: discovery must be a boolean');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectRejectsUnknownKeysInTheLocalFile(): void
+    {
+        $this->writeLocalJson(['tagret' => 'x']);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessageContaining('skills.local.json: unknown top-level key "tagret"');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectRejectsDeprecatedKeysInTheLocalFile(): void
+    {
+        $this->writeLocalJson(['local' => ['composer' => false]]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: deprecated key "local" is not accepted here; use "dependencies"');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectChecksLocalAliasesAgainstTheSharedTarget(): void
+    {
+        // The default target is free for an alias once the shared file
+        // moves the target elsewhere.
+        $this->writeSkillsJson(['target' => '.claude/skills']);
+        $this->writeLocalJson(['aliases' => ['.agents/skills']]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->aliases, ['.agents/skills']);
+    }
+
+    public function forProjectNamesBothFilesWhenALocalTargetHitsASharedAlias(): void
+    {
+        $this->writeSkillsJson(['aliases' => ['.claude/skills']]);
+        $this->writeLocalJson(['target' => '.claude/skills']);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.json: aliases[0] (.claude/skills) cannot equal skills.local.json: target');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectNamesBothFilesWhenALocalAliasHitsTheSharedTarget(): void
+    {
+        $this->writeSkillsJson(['target' => '.claude/skills']);
+        $this->writeLocalJson(['aliases' => ['.cursor/skills', '.claude/skills/']]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: aliases[1] (.claude/skills/) cannot equal skills.json: target');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectMatchesADotPrefixedLocalAliasAgainstTheSharedTarget(): void
+    {
+        $this->writeSkillsJson(['target' => '.claude/skills']);
+        $this->writeLocalJson(['aliases' => ['./.claude/skills']]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: aliases[0] (./.claude/skills) cannot equal skills.json: target');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectNamesTheInlineBlockWhenALocalTargetHitsAnInlineAlias(): void
+    {
+        $this->writeLocalJson(['target' => '.claude/skills']);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('extra.skills.aliases[0] (.claude/skills) cannot equal skills.local.json: target');
+
+        (new ProjectConfigMapper())->forProject(
+            Path::create($this->tmp),
+            ['skills' => ['aliases' => ['.claude/skills']]],
+        );
+    }
+
+    public function forProjectNamesTheDefaultTargetWhenNoLayerSetsOne(): void
+    {
+        $this->writeLocalJson(['aliases' => ['.agents/skills']]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: aliases[0] (.agents/skills) cannot equal the default target');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectTreatsAnAliasSpelledDifferentlyAsTheSameAlias(): void
+    {
+        $this->writeSkillsJson(['aliases' => ['.claude/skills']]);
+        $this->writeLocalJson(['aliases' => ['.claude/skills/', '.cursor\\skills']]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->aliases, ['.claude/skills', '.cursor\\skills']);
+        Assert::same($resolution->layers[0]->summary, ['aliases +1']);
+    }
+
+    public function forProjectKeepsSharedDependenciesUnderAnEmptyLocalObject(): void
+    {
+        $this->writeSkillsJson(['dependencies' => ['composer' => ['trusted' => ['acme/*']]]]);
+        \file_put_contents($this->tmp . '/skills.local.json', '{"dependencies": {}}');
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::true($resolution->config->trusted->trusts('acme/a'));
+        Assert::same($resolution->layers[0]->summary, []);
+    }
+
+    public function forProjectRejectsANullThatWouldEraseASharedValue(): void
+    {
+        $this->writeSkillsJson(['target' => 'shared/skills']);
+        $this->writeLocalJson(['target' => null]);
+
+        Expect::exception(MalformedProjectConfig::class)
+            ->withMessage('skills.local.json: target must not be null');
+
+        (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+    }
+
+    public function forProjectRecordsTheFileTheTargetComesFrom(): void
+    {
+        $this->writeSkillsJson(['target' => 'shared/skills', 'aliases' => ['.claude/skills']]);
+        $this->writeLocalJson(['aliases' => ['.cursor/skills']]);
+
+        $shared = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        $this->writeLocalJson(['target' => 'mine/skills']);
+        $local = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($shared->config->targetOrigin, 'skills.json');
+        Assert::same($local->config->targetOrigin, 'skills.local.json');
+    }
+
+    public function forProjectRecordsTheFileEachAliasComesFrom(): void
+    {
+        $this->writeSkillsJson(['aliases' => ['.claude/skills', '.cursor/skills']]);
+        $this->writeLocalJson(['aliases' => ['.cursor/skills', '.codex/skills']]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->aliasOrigins, [
+            0 => 'skills.json',
+            1 => 'skills.json',
+            2 => 'skills.local.json',
+        ]);
+    }
+
+    public function forProjectRecordsNoAliasFilesWithoutALocalFile(): void
+    {
+        $this->writeSkillsJson(['aliases' => ['.claude/skills']]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->config->aliasOrigins, []);
+    }
+
+    public function forProjectRecordsTheSourcesTheLocalFileDeclares(): void
+    {
+        $this->writeSkillsJson(['sources' => [['from' => 'dir', 'path' => './team']]]);
+        $this->writeLocalJson(['sources' => [['from' => 'dir', 'path' => './mine']]]);
+
+        $resolution = (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null);
+
+        Assert::same($resolution->layers[0]->sourceIdentities, ['dir||./mine']);
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function writeLocalJson(array $data): void
+    {
+        \file_put_contents(
+            $this->tmp . '/skills.local.json',
+            \json_encode($data, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_THROW_ON_ERROR),
+        );
+    }
+
+    /**
+     * Map `$extra['skills']` as the content of `skills.json`, the only
+     * place a project's own `sources` pull list is read from.
+     *
+     * @param array{skills: array<string, mixed>} $extra
+     */
+    private function viaSkillsJson(array $extra): ProjectConfig
+    {
+        $this->writeSkillsJson($extra['skills']);
+
+        return (new ProjectConfigMapper())->forProject(Path::create($this->tmp), null)->config;
     }
 
     /**

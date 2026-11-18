@@ -81,7 +81,14 @@ final class AddCliDefinition
                 null,
                 InputOption::VALUE_NONE,
                 'Skip the automatic single-entry sync after the add. Only the '
-                . 'skills.json manifest is updated.',
+                . 'config file (skills.json, or skills.local.json with --local) is updated.',
+            )
+            ->addOption(
+                'local',
+                null,
+                InputOption::VALUE_NONE,
+                'Write the entry to the personal, git-ignored skills.local.json '
+                . 'instead of the shared skills.json.',
             );
     }
 
@@ -96,6 +103,7 @@ final class AddCliDefinition
         $ref = self::optionalNonEmptyOption($input, 'ref');
         $skills = self::collectSkillNames($input);
         $noSync = (bool) $input->getOption('no-sync');
+        $local = (bool) $input->getOption('local');
 
         return new AddOptions(
             input: $inputArg,
@@ -104,6 +112,7 @@ final class AddCliDefinition
             ref: $ref,
             sync: !$noSync,
             skills: $skills,
+            local: $local,
         );
     }
 

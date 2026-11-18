@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://raw.githubusercontent.com/roxblnfk/skills/master/resources/skills.schema.json",
     "title": "llm/skills project configuration",
-    "description": "Project-level configuration for the llm/skills Composer plugin, stored at <project-root>/skills.json. When present, this file shadows the inline extra.skills block in composer.json. See https://github.com/roxblnfk/skills for full documentation.",
+    "description": "Project-level configuration for the llm/skills Composer plugin, stored at <project-root>/skills.json. When present, this file shadows the inline extra.skills block in composer.json. The same schema describes the personal, git-ignored <project-root>/skills.local.json layered over the shared configuration; the deprecated keys remote, trusted, trusted-replace and local are rejected there. See https://github.com/roxblnfk/skills for full documentation.",
     "type": "object",
     "additionalProperties": false,
     "properties": {

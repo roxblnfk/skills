@@ -24,34 +24,37 @@ use LLM\Skills\Sync\SyncRunner;
  * and {@see \LLM\Skills\Console\Command\Add}) so the wiring lives in one
  * place instead of two copies that could drift.
  *
- * Works with or without a Composer instance: the standalone bin invoked
- * outside a project passes `null`, which the builder + mapper treat the
- * same as an empty `extra.skills` block — only the just-added remote
- * donor syncs, which is exactly what a `skills:add` invocation means.
+ * Works with or without a Composer instance: the caller passes the root
+ * `extra` it has — from the Composer root package, read from
+ * `composer.json` directly, or `null` outside a project, which the
+ * builder + mapper treat the same as an empty `extra.skills` block.
  *
  * @internal
  */
 final class PostAddSync
 {
     /**
+     * @param mixed $extra raw `extra` of the root `composer.json`, or `null` without one
      * @param string|null $donorPackageName Composer-package name of the just-registered
      *        donor (read from the fetched composer.json's `name`, NOT from the CLI input —
      *        those can differ; e.g. GitHub's `<owner>/<repo>` path is unrelated to the
      *        package's `name`). Scopes the sync to that one donor; `null` widens to no filter.
-     * @param string|false|null $skillsJsonBefore the `skills.json` contents before the entry was
+     * @param string|false|null $configBefore contents of the config file the entry went to before it was
      *        registered, `null` when there was no such file, `false` when it could not be read.
      *        Restored when the sync aborts on a conflict with another donor: the entry would make
      *        every full run abort the same way.
+     * @param non-empty-string $configFile the config file the entry went to, `skills.json` or
+     *        `skills.local.json`
      */
     public static function run(
         Path $projectRoot,
         ?Composer $composer,
+        mixed $extra,
         IOInterface $io,
         ?string $donorPackageName,
-        string|false|null $skillsJsonBefore,
+        string|false|null $configBefore,
+        string $configFile = ExternalProjectConfigLoader::FILE_NAME,
     ): int {
-        /** @var mixed $extra */
-        $extra = $composer?->getPackage()->getExtra();
         $provider = (new DonorProviderBuilder())->build($projectRoot, $composer, $extra);
 
         $syncOptions = new SyncOptions(
@@ -65,21 +68,21 @@ final class PostAddSync
             autoMigrate: false,
         );
 
-        $restore = $skillsJsonBefore === false ? null : static function () use ($projectRoot, $io, $skillsJsonBefore): void {
-            $file = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
+        $restore = $configBefore === false ? null : static function () use ($projectRoot, $io, $configBefore, $configFile): void {
+            $file = (string) $projectRoot->join($configFile);
             try {
-                if ($skillsJsonBefore === null) {
+                if ($configBefore === null) {
                     @\unlink($file);
                 } else {
-                    AtomicFileWriter::write($file, $skillsJsonBefore);
+                    AtomicFileWriter::write($file, $configBefore);
                 }
             } catch (\RuntimeException $e) {
-                $io->writeError('<error>[llm/skills] could not restore skills.json: ' . $e->getMessage() . '</error>');
+                $io->writeError('<error>[llm/skills] could not restore ' . $configFile . ': ' . $e->getMessage() . '</error>');
                 return;
             }
             $io->writeError(
                 '<error>[llm/skills] the entry was not registered, as its skills conflict with another '
-                . "donor's; skills.json is as it was. Narrow it with --skill, or rename one of the skills.</error>",
+                . "donor's; " . $configFile . ' is as it was. Narrow it with --skill, or rename one of the skills.</error>',
             );
         };
 
@@ -87,12 +90,16 @@ final class PostAddSync
     }
 
     /**
-     * The current `skills.json` contents for {@see self::run()}: `null` when there
-     * is no such file, `false` when it cannot be read.
+     * The current contents of the config file `$configFile` for {@see self::run()}:
+     * `null` when there is no such file, `false` when it cannot be read.
+     *
+     * @param non-empty-string $configFile
      */
-    public static function snapshot(Path $projectRoot): string|false|null
-    {
-        $file = (string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME);
+    public static function snapshot(
+        Path $projectRoot,
+        string $configFile = ExternalProjectConfigLoader::FILE_NAME,
+    ): string|false|null {
+        $file = (string) $projectRoot->join($configFile);
         if (!\is_file($file)) {
             return null;
         }

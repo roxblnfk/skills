@@ -31,6 +31,8 @@ final readonly class InspectionReport
      * @param list<AliasInspection> $aliases mirrors of `$target`, each with optional drift info.
      *         Empty list means "no aliases configured", which is the default and corresponds to
      *         the entire 1.x contract — the formatter hides the `Aliases:` header in that case.
+     * @param bool $targetFromLayer whether the target comes from a config layer over the shared
+     *         configuration, such as `skills.local.json`
      *
      * @psalm-mutation-free
      */
@@ -41,5 +43,6 @@ final readonly class InspectionReport
         public bool $discoveryActive = false,
         public int $undeclaredCandidatesCount = 0,
         public array $aliases = [],
+        public bool $targetFromLayer = false,
     ) {}
 }

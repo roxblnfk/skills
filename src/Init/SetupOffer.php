@@ -24,7 +24,8 @@ final class SetupOffer
 {
     /**
      * `true` for a project that has never been configured — no
-     * `skills.json`, and no project keys under inline `extra.skills`. A
+     * `skills.json` or `skills.local.json`, and no project keys under
+     * inline `extra.skills`. A
      * package declaring only the donor-side `source` is not configured as
      * a consumer, so it still gets the offer.
      */
@@ -36,8 +37,12 @@ final class SetupOffer
             return false;
         }
 
-        if (\is_file((string) $projectRoot->join(ExternalProjectConfigLoader::FILE_NAME))) {
-            return false;
+        // A personal `skills.local.json` acts as the main file when it is
+        // alone, so its author has configured the project already.
+        foreach ([ExternalProjectConfigLoader::FILE_NAME, ExternalProjectConfigLoader::LOCAL_FILE_NAME] as $file) {
+            if (\is_file((string) $projectRoot->join($file))) {
+                return false;
+            }
         }
 
         /** @var mixed $skills */

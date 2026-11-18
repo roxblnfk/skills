@@ -46,11 +46,16 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
     private array $lastFailures = [];
 
     /**
+     * @param mixed $extra raw `extra` of the root package, or `null` without one. Its inline
+     *        config is the base of the project config while there is no `skills.json`, so the
+     *        entries read here are the ones the sync resolves.
+     *
      * @psalm-mutation-free
      */
     public function __construct(
         private readonly HostAdapterRegistry $registry,
         private readonly ProjectConfigMapper $mapper = new ProjectConfigMapper(),
+        private readonly mixed $extra = null,
     ) {}
 
     /**
@@ -62,7 +67,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
         $this->lastFailures = [];
 
         try {
-            $config = $this->mapper->forProject($projectRoot, null)->config;
+            $config = $this->mapper->forProject($projectRoot, $this->extra)->config;
         } catch (\Throwable) {
             return;
         }
@@ -104,6 +109,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
                     provenance: $entry->from,
                     skillFilter: $entry->skills,
                     packageHint: $entry->package,
+                    sourceIdentity: $entry->compositeKey(),
                 );
             } catch (RemoteResolveException $e) {
                 $this->lastFailures[] = new SourceFailure(
@@ -142,7 +148,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
     public function hasRefs(Path $projectRoot): bool
     {
         try {
-            $config = $this->mapper->forProject($projectRoot, null)->config;
+            $config = $this->mapper->forProject($projectRoot, $this->extra)->config;
         } catch (\Throwable) {
             return false;
         }
@@ -182,6 +188,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
             provenance: $entry->from,
             skillFilter: $entry->skills,
             packageHint: $entry->package ?? DirDonorRef::derivePackageName($resolved),
+            sourceIdentity: $entry->compositeKey(),
         );
     }
 }

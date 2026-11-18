@@ -188,11 +188,28 @@ final class ReportFormatterTest
             trust: TrustSource::Declared,
             skills: [['dir-hello', SyncStatus::InSync]],
         );
+        $donor = new DonorInspection($donor->donor, $donor->trustSource, $donor->skills, declaredIn: 'skills.json');
 
         $joined = $this->renderJoined($donor);
 
         Assert::true(\str_contains($joined, '[declared in skills.json]'));
         Assert::false(\str_contains($joined, '[via built-in trust]'));
+    }
+
+    public function namesTheLocalFileForADonorItDeclares(): void
+    {
+        $donor = $this->donorInspection(
+            packageName: 'myorg/local-skills',
+            source: '.',
+            trust: TrustSource::Declared,
+            skills: [['dir-hello', SyncStatus::InSync]],
+        );
+        $donor = new DonorInspection($donor->donor, $donor->trustSource, $donor->skills, declaredIn: 'skills.local.json');
+
+        $joined = $this->renderJoined($donor);
+
+        Assert::true(\str_contains($joined, '[declared in skills.local.json]'));
+        Assert::false(\str_contains($joined, '[declared in skills.json]'));
     }
 
     public function doesNotAnnotateProjectOrCliTrust(): void
@@ -447,6 +464,37 @@ final class ReportFormatterTest
             \str_contains($aliasesLine, '[relink: was → /workspace/.agents/skills]'),
             'relink marker must name the current link value. Got: ' . $aliasesLine,
         );
+    }
+
+    public function marksATargetAndAliasesSourcedFromTheLocalFile(): void
+    {
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/mine/skills'),
+            donors: [],
+            skipped: [],
+            aliases: [
+                new AliasInspection(Path::create('/p/.claude/skills')),
+                new AliasInspection(Path::create('/p/.cursor/skills'), fromLayer: true),
+            ],
+            targetFromLayer: true,
+        ));
+
+        Assert::true(\str_ends_with($lines[0], '[local]</>'), 'Got: ' . $lines[0]);
+        $aliasesLine = (string) $this->findLineStartingWith($lines, 'Aliases:');
+        Assert::false(\str_contains($aliasesLine, '.claude/skills <fg=magenta>[local]'), 'Got: ' . $aliasesLine);
+        Assert::true(\str_contains($aliasesLine, '.cursor/skills <fg=magenta>[local]</>'), 'Got: ' . $aliasesLine);
+    }
+
+    public function sharedValuesCarryNoLocalMark(): void
+    {
+        $lines = (new ReportFormatter())->format(new InspectionReport(
+            target: Path::create('/p/.agents/skills'),
+            donors: [],
+            skipped: [],
+            aliases: [new AliasInspection(Path::create('/p/.claude/skills'))],
+        ));
+
+        Assert::false(\str_contains(\implode("\n", $lines), '[local]'));
     }
 
     public function escapesFormatterTagsInTheRelinkValue(): void

@@ -28,6 +28,8 @@ final readonly class AliasInspection
      * @param non-empty-string|null $relinkFrom what the link at the alias points at when the next sync
      *         re-points it: a link leading elsewhere or nowhere, or an absolute POSIX symlink to the
      *         target. `null` when the sync leaves the alias as is.
+     * @param bool $fromLayer whether the alias comes from a config layer over the shared
+     *         configuration, such as `skills.local.json`
      *
      * @psalm-mutation-free
      */
@@ -35,6 +37,7 @@ final readonly class AliasInspection
         public Path $alias,
         public ?string $driftResolvedTo = null,
         public ?string $relinkFrom = null,
+        public bool $fromLayer = false,
     ) {}
 
     /**

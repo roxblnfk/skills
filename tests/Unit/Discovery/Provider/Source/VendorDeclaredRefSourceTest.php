@@ -87,6 +87,24 @@ final class VendorDeclaredRefSourceTest
 
     // ── happy path ──
 
+    public function inlineVendorSourcesToggleDisablesTheSource(): void
+    {
+        // Without skills.json the inline block is the project config, and
+        // the source reads it from the extra it was given.
+        $composer = $this->composerWith(self::declaringPackage('acme/foo', '1.0.0', [
+            ['from' => 'github', 'package' => 'acme/skills'],
+        ]));
+        $source = new VendorDeclaredRefSource(
+            $composer,
+            $this->echoRegistry(),
+            extra: ['skills' => ['vendor-sources' => false]],
+        );
+
+        Assert::false($source->hasRefs($this->root()));
+        Assert::same($this->collect($source->refs($this->root())), []);
+        Assert::same($source->failures(), []);
+    }
+
     public function yieldsDeclaredRefWithTrustAttribution(): void
     {
         $composer = $this->composerWith(self::declaringPackage('acme/foo', '1.0.0', [

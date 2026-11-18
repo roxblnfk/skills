@@ -50,6 +50,9 @@ final readonly class RemoteDonorRef
      *         {@see \LLM\Skills\Config\VendorConfig::$declaredBy} so trust follows the
      *         declaring packages instead of being implicit, and woven into {@see label()}
      *         so diagnostics name every party.
+     * @param string|null $sourceIdentity composite key of the project `sources[]` entry the
+     *         ref was resolved from; `null` for vendor-declared refs. Carried through to
+     *         {@see \LLM\Skills\Config\VendorConfig::$sourceIdentity}.
      *
      * @psalm-mutation-free
      */
@@ -60,6 +63,7 @@ final readonly class RemoteDonorRef
         public ?array $skillFilter = null,
         public ?string $packageHint = null,
         public array $declaredBy = [],
+        public ?string $sourceIdentity = null,
     ) {}
 
     /**

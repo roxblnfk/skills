@@ -59,6 +59,22 @@ final class AddCliDefinitionTest
         Assert::false($opts->sync);
     }
 
+    public function writesToSkillsJsonByDefault(): void
+    {
+        $opts = $this->build(['input' => 'acme/skills']);
+
+        Assert::false($opts->local);
+        Assert::same($opts->configFile(), 'skills.json');
+    }
+
+    public function localFlagWritesToTheLocalFile(): void
+    {
+        $opts = $this->build(['input' => 'acme/skills', '--local' => true]);
+
+        Assert::true($opts->local);
+        Assert::same($opts->configFile(), 'skills.local.json');
+    }
+
     public function emptyInputThrows(): void
     {
         Expect::exception(\InvalidArgumentException::class)

@@ -13,6 +13,10 @@ namespace LLM\Skills\Config;
  * those keys so a confused user sees why their inline `target` (or
  * other key) had no effect.
  *
+ * Also carries what the personal `skills.local.json` layered over the
+ * shared configuration changed, so commands can report it and
+ * `skills:show` can mark the values it sourced.
+ *
  * @psalm-immutable
  */
 final readonly class ProjectConfigResolution
@@ -31,6 +35,12 @@ final readonly class ProjectConfigResolution
      *        `dependencies` key. Empty when the block used `dependencies` or declared no
      *        dependency config. Callers surface a deprecation notice naming these keys;
      *        write-mode callers migrate the file before mapping, so they never observe it set.
+     *        Describes the shared base only; layers above it reject the legacy keys.
+     * @param list<LayerChanges> $layers one record per config layer applied over the shared
+     *        base, in fold order. Empty when no `skills.local.json` exists.
+     * @param bool $deprecatedSourcesKeyInline true when `$usedDeprecatedSourcesKey` comes from the
+     *        inline `extra.skills` block. An inline `remote` list is never fetched; it takes effect
+     *        only once a write-mode run moves it into `sources` in `skills.json`.
      *
      * @psalm-mutation-free
      */
@@ -39,5 +49,7 @@ final readonly class ProjectConfigResolution
         public array $ignoredInlineKeys = [],
         public bool $usedDeprecatedSourcesKey = false,
         public array $usedDeprecatedDependencyKeys = [],
+        public array $layers = [],
+        public bool $deprecatedSourcesKeyInline = false,
     ) {}
 }

@@ -65,7 +65,7 @@ final class Add extends BaseCommand
         );
 
         $runner = new AddRunner($registry, $fetcher);
-        $skillsJsonBefore = PostAddSync::snapshot($projectRoot);
+        $configBefore = PostAddSync::snapshot($projectRoot, $options->configFile());
         $donorPackageName = null;
         $exit = $runner->run(
             $projectRoot,
@@ -74,6 +74,7 @@ final class Add extends BaseCommand
             static function (SourceEntry $_entry, string $packageName) use (&$donorPackageName): void {
                 $donorPackageName = $packageName;
             },
+            $composer->getPackage()->getExtra(),
         );
 
         if ($exit !== self::SUCCESS || !$options->sync) {
@@ -84,6 +85,14 @@ final class Add extends BaseCommand
         // new skills land in the target without re-syncing everything
         // else. Matches `composer require <pkg>` ergonomics, which
         // only installs the requested package's tree.
-        return PostAddSync::run($projectRoot, $composer, $this->getIO(), $donorPackageName, $skillsJsonBefore);
+        return PostAddSync::run(
+            $projectRoot,
+            $composer,
+            $composer->getPackage()->getExtra(),
+            $this->getIO(),
+            $donorPackageName,
+            $configBefore,
+            $options->configFile(),
+        );
     }
 }

@@ -40,6 +40,9 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * untrusted-named), white for intended exclusions (filtered-out, internal),
  * cyan for informational cases (not-declared).
  *
+ * A target or alias sourced from the personal `skills.local.json` is
+ * marked `[local]` in the header.
+ *
  * The `[via built-in trust]` and `[via direct dependency]` annotations
  * are shown only when the donor was approved by that implicit source
  * alone (neither project config nor `--trust=` covers it) — keeps noise
@@ -72,6 +75,12 @@ final readonly class ReportFormatter
     private const CHIP_CONFLICT = '<bg=red;fg=white;options=bold> !! </>  ';
 
     /**
+     * Marks a header value sourced from `skills.local.json` rather than
+     * the shared configuration.
+     */
+    private const LOCAL_MARK = '<fg=magenta>[local]</>';
+
+    /**
      * @return list<string>
      *
      * @psalm-mutation-free
@@ -92,7 +101,7 @@ final readonly class ReportFormatter
         // Target header — one line per concept. `Aliases:` is omitted
         // entirely when there are no aliases so the common single-target
         // setup keeps its short two-line header.
-        $lines = ['Target: ' . (string) $report->target];
+        $lines = ['Target: ' . (string) $report->target . ($report->targetFromLayer ? ' ' . self::LOCAL_MARK : '')];
         if ($report->aliases !== []) {
             $lines[] = $this->formatAliasesHeader($report->aliases);
         }
@@ -128,6 +137,9 @@ final readonly class ReportFormatter
         $parts = [];
         foreach ($aliases as $entry) {
             $label = (string) $entry->alias;
+            if ($entry->fromLayer) {
+                $label .= ' ' . self::LOCAL_MARK;
+            }
             if ($entry->hasDrift()) {
                 /** @var non-empty-string $drift */
                 $drift = $entry->driftResolvedTo;
@@ -192,7 +204,9 @@ final readonly class ReportFormatter
             foreach ($donors as $donor) {
                 [, $pkgTail] = $this->splitName($donor->donor->packageName);
                 $trustNote = match ($donor->trustSource) {
-                    TrustSource::Declared => '    [declared in skills.json]',
+                    TrustSource::Declared => $donor->declaredIn !== null
+                        ? '    [declared in ' . $donor->declaredIn . ']'
+                        : '    [declared]',
                     TrustSource::Builtin => '    [via built-in trust]',
                     TrustSource::DirectDep => '    [via direct dependency]',
                     default => '',

@@ -9,6 +9,7 @@ use Internal\Path;
 use LLM\Skills\Config\AddOptions;
 use LLM\Skills\Config\Exception\MalformedProjectConfig;
 use LLM\Skills\Config\Exception\MalformedVendorConfig;
+use LLM\Skills\Config\Mapper\ExternalProjectConfigLoader;
 use LLM\Skills\Config\Mapper\ProjectConfigMapper;
 use LLM\Skills\Config\Mapper\VendorConfigMapper;
 use LLM\Skills\Config\SourceEntry;
@@ -52,8 +53,9 @@ use Symfony\Component\Console\Command\Command;
  * 5. **Fetch + validate** — download the archive into the cache
  *    and check it ships a `composer.json` with `extra.skills.source`.
  *    Refuse to register a donor we cannot actually use.
- * 6. **Upsert** — write the entry into `skills.json` via
- *    {@see SkillsJsonWriter} (stable-sort + atomic).
+ * 6. **Upsert** — write the entry into `skills.json`, or into
+ *    `skills.local.json` under `--local`, via {@see SkillsJsonWriter}
+ *    (stable-sort + atomic).
  * 7. **Trigger sync** — when {@see AddOptions::$sync} is true (default),
  *    the entrypoint runs `skills:update` so the new skills land
  *    immediately. The runner returns SUCCESS once the manifest is
@@ -100,19 +102,23 @@ final readonly class AddRunner
      *         {@see VendorConfig::$packageName} is
      *         what the planner filters on, so the entrypoint needs the
      *         composer.json `name` to scope the post-add sync correctly.
+     * @param mixed $extra raw `extra` of the root `composer.json`, or `null` without one. Its
+     *         inline config stays the base under `skills.local.json` while there is no
+     *         `skills.json`, so it decides the sync target of an add with `--local`.
      */
     public function run(
         Path $projectRoot,
         IOInterface $io,
         AddOptions $options,
         ?\Closure $onRegistered = null,
+        mixed $extra = null,
     ): int {
         // A `dir` input never flows through a HostAdapter — there is no
         // host, no ref cascade, and no network — so it takes a dedicated
         // branch ahead of adapter selection instead of a synthetic
         // adapter that would have nothing to resolve.
         if (self::isDirInput($options)) {
-            return $this->runDir($projectRoot, $io, $options, $onRegistered);
+            return $this->runDir($projectRoot, $io, $options, $onRegistered, $extra);
         }
 
         // Step 1: adapter selection.
@@ -169,7 +175,7 @@ final readonly class AddRunner
             $io,
             $adapter->id(),
             $parsed,
-            $this->writer->allowlistAfterUpsert($projectRoot, $entry),
+            $this->effectiveAllowlist($projectRoot, $entry, $options, $io),
         );
         if ($donorPackageName === null) {
             return Command::FAILURE;
@@ -177,17 +183,18 @@ final readonly class AddRunner
 
         // Step 6: upsert into skills.json.
         try {
-            $this->writer->upsertSource($projectRoot, $entry);
+            $this->writer->upsertSource($projectRoot, $entry, $options->configFile());
         } catch (\Throwable $e) {
-            $io->writeError('<error>[llm/skills] failed to update skills.json: ' . $e->getMessage() . '</error>');
+            $io->writeError('<error>[llm/skills] failed to update ' . $options->configFile() . ': ' . $e->getMessage() . '</error>');
             return Command::FAILURE;
         }
 
         $io->write(\sprintf(
-            '<info>[llm/skills] registered %s:%s%s</info>',
+            '<info>[llm/skills] registered %s:%s%s%s</info>',
             $entry->from,
             $entry->identifier(),
             $storedRef !== null ? ' @ ' . $storedRef : '',
+            $options->local ? ' in ' . $options->configFile() : '',
         ));
 
         $onRegistered?->__invoke($entry, $donorPackageName);
@@ -287,6 +294,7 @@ final readonly class AddRunner
         IOInterface $io,
         AddOptions $options,
         ?\Closure $onRegistered,
+        mixed $extra,
     ): int {
         // `--ref` / `--host` carry no meaning for a directory; reject
         // them up front with the same framing the mapper uses when it
@@ -321,7 +329,9 @@ final readonly class AddRunner
         // the last fallback. Refusing a non-donor shape here keeps
         // `skills:add` from writing an entry the sync would then ignore
         // — a skill declared but never copied.
-        $target = $this->syncTarget($projectRoot);
+        // A `skills.json` written by this add shadows the inline block; a
+        // `--local` add leaves it in place as the base.
+        $target = $this->syncTarget($projectRoot, $options->local ? $extra : null);
         $inspection = $this->inspector->inspect(
             $resolved,
             DirDonorRef::derivePackageName($resolved),
@@ -349,7 +359,7 @@ final readonly class AddRunner
         $unnamed = $this->installsNothing(
             $inspection,
             $resolved,
-            $this->writer->allowlistAfterUpsert($projectRoot, $entry),
+            $this->effectiveAllowlist($projectRoot, $entry, $options, $io),
             ProviderId::DIR,
             $target,
         );
@@ -362,16 +372,17 @@ final readonly class AddRunner
         $donorPackageName = $inspection->packageName;
 
         try {
-            $this->writer->upsertSource($projectRoot, $entry);
+            $this->writer->upsertSource($projectRoot, $entry, $options->configFile());
         } catch (\Throwable $e) {
-            $io->writeError('<error>[llm/skills] failed to update skills.json: ' . $e->getMessage() . '</error>');
+            $io->writeError('<error>[llm/skills] failed to update ' . $options->configFile() . ': ' . $e->getMessage() . '</error>');
             return Command::FAILURE;
         }
 
         $io->write(\sprintf(
-            '<info>[llm/skills] registered %s:%s</info>',
+            '<info>[llm/skills] registered %s:%s%s</info>',
             $entry->from,
             $entry->identifier(),
+            $options->local ? ' in ' . $options->configFile() : '',
         ));
 
         // Scope the follow-up sync on the donor's true package name: for
@@ -528,15 +539,52 @@ final readonly class AddRunner
     }
 
     /**
-     * The target the follow-up sync writes to, or `null` when the project
-     * config is malformed, which that sync reports itself. Read from
-     * `skills.json` alone: the entry is written there, and the sync then
-     * ignores an inline `extra.skills` block.
+     * The allowlist the sync applies to the entry once it is written: the
+     * allowlist merged into the file the entry goes to, unless the entry
+     * goes to `skills.json` while `skills.local.json` declares the same
+     * source — that local entry replaces it in the merged config, so its
+     * allowlist is the one in effect, and the user is told.
+     *
+     * @return list<non-empty-string>|null
      */
-    private function syncTarget(Path $projectRoot): ?Path
+    private function effectiveAllowlist(Path $projectRoot, SourceEntry $entry, AddOptions $options, IOInterface $io): ?array
+    {
+        $written = $this->writer->allowlistAfterUpsert($projectRoot, $entry, $options->configFile());
+        if ($options->local) {
+            return $written;
+        }
+
+        $local = $this->writer->declaredAllowlist(
+            $projectRoot,
+            $entry,
+            ExternalProjectConfigLoader::LOCAL_FILE_NAME,
+        );
+        if ($local === false) {
+            return $written;
+        }
+
+        $io->writeError(\sprintf(
+            '<warning>[llm/skills] %s declares %s:%s too; its entry replaces the one written to %s</warning>',
+            ExternalProjectConfigLoader::LOCAL_FILE_NAME,
+            $entry->from,
+            $entry->identifier(),
+            ExternalProjectConfigLoader::FILE_NAME,
+        ));
+
+        return $local;
+    }
+
+    /**
+     * The target the follow-up sync writes to, or `null` when the project
+     * config is malformed, which that sync reports itself.
+     *
+     * @param mixed $extra raw root `extra` whose inline config the sync reads, `null` when
+     *        the sync reads the config files alone
+     */
+    private function syncTarget(Path $projectRoot, mixed $extra): ?Path
     {
         try {
-            $project = $this->projectMapper->forProject($projectRoot, null)->config;
+            $project = $this->projectMapper->forProject($projectRoot, $extra)->config;
 
             return $this->planner->target($project, SyncOptions::default(), $projectRoot);
         } catch (MalformedProjectConfig) {

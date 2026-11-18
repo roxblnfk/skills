@@ -370,6 +370,32 @@ final class StandaloneBinTest
         );
     }
 
+    public function addLocalKeepsTheInlineTargetWhenComposerCannotBootstrap(): void
+    {
+        // `require` of the wrong type fails Composer's schema check, so the
+        // binary falls back to reading `extra` from composer.json directly;
+        // with no skills.json, its inline block stays the base under the
+        // local file the add writes.
+        \file_put_contents($this->tmp . '/composer.json', \json_encode([
+            'require' => 'not-an-object',
+            'extra' => ['skills' => ['target' => 'inline-target/skills']],
+        ], \JSON_THROW_ON_ERROR));
+        \mkdir($this->tmp . '/my-skills/dir-hello', 0o777, true);
+        \copy(
+            Info::PROJECT_DIR . '/local-skills/dir-hello/SKILL.md',
+            $this->tmp . '/my-skills/dir-hello/SKILL.md',
+        );
+
+        $process = BinSkillsRunner::run(Path::create($this->tmp), 'add ./my-skills --local');
+
+        $diagnostics = 'stdout: ' . $process->getOutput() . ' / stderr: ' . $process->getErrorOutput();
+        Assert::same($process->getExitCode(), 0, $diagnostics);
+        Assert::true(\str_contains($process->getErrorOutput(), 'Composer bootstrap failed'), $diagnostics);
+        Assert::true(\is_file($this->tmp . '/skills.local.json'), $diagnostics);
+        Assert::false(\is_file($this->tmp . '/skills.json'), $diagnostics);
+        Assert::true(\is_file($this->tmp . '/inline-target/skills/dir-hello/SKILL.md'), $diagnostics);
+    }
+
     /**
      * @return array<string, mixed>
      */
