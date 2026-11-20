@@ -81,6 +81,19 @@ Note that `--no-scripts` does **not** skip it: that flag only disables the `scri
 `composer.json`, while auto-sync is a plugin event listener. To skip it for a single invocation,
 use `--no-plugins`, which disables every Composer plugin for that run.
 
+### The bundled `llm-skills` skill
+
+The package ships one skill of its own, `llm-skills`, synced like any other. Invoke it by
+hand (`/llm-skills` in Claude Code) whenever you want an agent to help with skills: configure
+`skills.json`, publish skills from a package, decide what to trust, audit a third-party skill,
+find or write a new one. It carries deterministic checks the agent runs for you:
+
+```bash
+php .agents/skills/llm-skills/scripts/validate-skill.php path/to/skill   # spec + plugin rules
+php .agents/skills/llm-skills/scripts/check-project.php                  # config and git hygiene
+php .agents/skills/llm-skills/scripts/scan-skill.php path/to/skill       # security pre-screen
+```
+
 ### Global composer installation
 
 Install once and use the `skills:*` commands in any project:

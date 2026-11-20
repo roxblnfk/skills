@@ -61,6 +61,9 @@
     },
     "extra": {
         "class": "LLM\\Skills\\Composer\\SkillsPlugin",
+        "skills": {
+            "source": "resources/skills"
+        },
         "bamarni-bin": {
             "bin-links": true,
             "forward-command": false,

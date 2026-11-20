@@ -36,7 +36,10 @@ final class Filesystem
         }
 
         if (\is_file($path)) {
-            @\unlink($path);
+            // Windows refuses to delete a read-only file, such as a git object.
+            if (!@\unlink($path) && @\chmod($path, 0o666)) {
+                @\unlink($path);
+            }
             return;
         }
 

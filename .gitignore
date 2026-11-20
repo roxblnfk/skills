@@ -12,9 +12,12 @@
 /*.md
 !/README.md
 !/CHANGELOG.md
-!/CLAUDE.md
+!/AGENTS.md
 !/LICENSE.md
 
 # Tools installed via bamarni/composer-bin-plugin.
 /tools/*/vendor/
 /tools/*/composer.lock
+
+# Personal llm/skills layer over skills.json.
+/skills.local.json

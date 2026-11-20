@@ -40,3 +40,11 @@ installs them into the consumer project (default `.agents/skills/`, configurable
   `composer.json`, and run `composer update <vendor>/<name>` inside the
   sandbox so `installed.json` reflects the new metadata. Unit tests alone are
   not enough: they pass the mapper, miss the end-to-end pipeline.
+- **The bundled `llm-skills` skill tracks the plugin.** `resources/skills/llm-skills/`
+  is the user-facing manual agents read in consumer projects. A change to a
+  command, flag, `skills.json` key, trust rule, discovery or sync behaviour,
+  or warning text lands together with the matching edit to that skill — the
+  same commit, like the acceptance test. Edit it by the rules of the
+  `writing-for-agents` skill: `SKILL.md` stays a short table of contents,
+  each fact lives in exactly one reference file, and the validator scripts
+  under `scripts/` mirror the plugin's own checks.
