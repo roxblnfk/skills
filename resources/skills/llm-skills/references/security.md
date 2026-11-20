@@ -19,7 +19,7 @@ A Composer package is copied when any of these hold:
 
 1. It is a **direct dependency** — listed in the root `require` or `require-dev`.
 2. It matches the **built-in list**: `cycle/*`, `doctrine/*`, `internal/*`, `laravel/*`,
-   `llm/*`, `moonshine/*`, `phpstan/*`, `spiral/*`, `symfony/*`, `tempest/*`, `temporal/*`,
+   `llm/skills`, `moonshine/*`, `phpstan/*`, `spiral/*`, `symfony/*`, `tempest/*`, `temporal/*`,
    `testo/*`, `yiisoft/*`.
 3. It matches the project's `dependencies.composer.trusted`.
 4. It matches a `--trust` pattern of the current run, or is named as a positional

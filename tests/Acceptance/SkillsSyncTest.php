@@ -55,7 +55,7 @@ use Testo\Test;
  *                            `9999999-dev` `AliasPackage` sharing one install path.
  *                            One `alias-guide` skill; exercises donor deduplication.
  * - `llm/skills`           — the plugin itself, through the sandbox's path repository.
- *                            Built-in `llm/*` trust. Source `resources/skills`.
+ *                            Built-in `llm/skills` trust. Source `resources/skills`.
  *                            Skills: `llm-skills/`.
  *
  * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro",
@@ -158,7 +158,7 @@ final class SkillsSyncTest
         // skills are skipped), the one skill from spiral/skills-demo (built-in
         // `spiral/*` trust), the two skills from mono/skills-repo (project
         // trust), and the bundled llm-skills of llm/skills itself (built-in
-        // `llm/*` trust).
+        // `llm/skills` trust).
         $this->runSync();
 
         $entries = $this->listTargetEntries();
@@ -364,7 +364,7 @@ final class SkillsSyncTest
         //   (declared under the sandbox's root `require`),
         // - spiral/skills-demo via direct-dep trust AND the built-in
         //   `spiral/*` pattern, and llm/skills (its bundled llm-skills)
-        //   the same way through `llm/*`,
+        //   the same way through the built-in `llm/skills` entry,
         // - evil/payload via the project wildcard (it is a *transitive*
         //   dep through transit/untrusted-relay, so direct-dep trust
         //   does not cover it — the wildcard is what unlocks it).
