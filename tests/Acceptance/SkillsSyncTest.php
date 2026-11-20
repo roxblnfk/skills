@@ -31,9 +31,8 @@ use Testo\Test;
  *                            `bug-repro/`, which are marked `metadata.internal` and
  *                            never installed (see {@see SkillsInternalTest}).
  * - `acme/skills-rootlike` — declares `extra.skills` with only root-level options
- *                            (`aliases`, `auto-sync`) and no `source`. Mirrors the
- *                            shape of `llm/skills` itself when seen as a vendor: must
- *                            be skipped silently, not surfaced as malformed.
+ *                            (`aliases`, `auto-sync`) and no `source`: must be
+ *                            skipped silently, not surfaced as malformed.
  * - `clash/skills-conflict`— untrusted. Declares a `greeting` skill that collides
  *                            with `acme/skills-basic` once trusted. Different vendor
  *                            namespace so it is *not* matched by `acme/*` filters.
@@ -55,6 +54,9 @@ use Testo\Test;
  *                            Composer loads it twice — the real package plus a
  *                            `9999999-dev` `AliasPackage` sharing one install path.
  *                            One `alias-guide` skill; exercises donor deduplication.
+ * - `llm/skills`           — the plugin itself, through the sandbox's path repository.
+ *                            Built-in `llm/skills` trust. Source `resources/skills`.
+ *                            Skills: `llm-skills/`.
  *
  * Sandbox project config: `extra.skills.trusted = ["acme/skills-basic", "acme/skills-pro",
  * "mono/skills-repo"]` with the default `trusted-replace: false` — so built-in patterns
@@ -154,15 +156,19 @@ final class SkillsSyncTest
         // from acme/skills-basic and acme/skills-pro (project trust), the one
         // public skill from acme/skills-internal (direct-dep trust; its internal
         // skills are skipped), the one skill from spiral/skills-demo (built-in
-        // `spiral/*` trust), and the two skills from mono/skills-repo (project
-        // trust).
+        // `spiral/*` trust), the two skills from mono/skills-repo (project
+        // trust), and the bundled llm-skills of llm/skills itself (built-in
+        // `llm/skills` trust).
         $this->runSync();
 
         $entries = $this->listTargetEntries();
 
         Assert::same(
             $entries,
-            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor', 'usage-guide'],
+            [
+                'auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting',
+                'llm-skills', 'migrate', 'refactor', 'usage-guide',
+            ],
         );
     }
 
@@ -357,7 +363,8 @@ final class SkillsSyncTest
         //   (public skill only) via direct-dep trust
         //   (declared under the sandbox's root `require`),
         // - spiral/skills-demo via direct-dep trust AND the built-in
-        //   `spiral/*` pattern,
+        //   `spiral/*` pattern, and llm/skills (its bundled llm-skills)
+        //   the same way through the built-in `llm/skills` entry,
         // - evil/payload via the project wildcard (it is a *transitive*
         //   dep through transit/untrusted-relay, so direct-dep trust
         //   does not cover it — the wildcard is what unlocks it).
@@ -371,7 +378,7 @@ final class SkillsSyncTest
             $this->listTargetEntries(),
             [
                 'auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting',
-                'migrate', 'refactor', 'tutorial', 'usage-guide',
+                'llm-skills', 'migrate', 'refactor', 'tutorial', 'usage-guide',
             ],
             'project wildcard unlocks evil/payload; direct-dep trust covers the rest. stderr: '
             . $process->getErrorOutput(),
@@ -443,7 +450,8 @@ final class SkillsSyncTest
         // the built-in list approves spiral/skills-demo, and direct-dep
         // trust approves every donor declared under the sandbox's root
         // `require` (acme/skills-basic, acme/skills-pro, the public skill of
-        // acme/skills-internal, and again spiral/skills-demo). The transitive evil/payload and
+        // acme/skills-internal, again spiral/skills-demo, and llm/skills with
+        // its bundled llm-skills). The transitive evil/payload and
         // clash/skills-conflict have no pattern coverage and stay
         // skipped.
         $process = $this->runSync();
@@ -451,7 +459,10 @@ final class SkillsSyncTest
         Assert::same($process->getExitCode(), 0);
         Assert::same(
             $this->listTargetEntries(),
-            ['auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting', 'migrate', 'refactor', 'usage-guide'],
+            [
+                'auth-guides', 'code-review', 'demo', 'dto-guides', 'greeting',
+                'llm-skills', 'migrate', 'refactor', 'usage-guide',
+            ],
         );
     }
 
@@ -620,8 +631,6 @@ final class SkillsSyncTest
         // acme/skills-rootlike declares extra.skills with only `aliases` and
         // `auto-sync` (root-level keys) and no `source`. It is not opting in
         // as a donor, so even -v must not warn about it — silent skip.
-        // This is the same shape `llm/skills` itself has when installed as a
-        // vendor dependency.
         $process = $this->runSync('-v');
         $combined = $process->getOutput() . $process->getErrorOutput();
 
@@ -631,6 +640,17 @@ final class SkillsSyncTest
             'package without extra.skills.source must not appear anywhere in sync output. '
             . 'Got: ' . $combined,
         );
+    }
+
+    public function pluginInstallsItsOwnBundledSkillWithScripts(): void
+    {
+        $process = $this->runSync('llm/skills');
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::same($this->listTargetEntries(), ['llm-skills']);
+        Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/SKILL.md'));
+        Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/references/security.md'));
+        Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/scripts/validate-skill.php'));
     }
 
     // ── --discovery ─────────────────────────────────────────────────────────

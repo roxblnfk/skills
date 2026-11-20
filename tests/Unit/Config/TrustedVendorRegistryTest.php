@@ -125,13 +125,17 @@ final class TrustedVendorRegistryTest
     public function composerFilePatternsAreParsedToVendorPatterns(): void
     {
         // Spot-check that bundled patterns survive parsing into
-        // VendorPattern instances. `llm/*` is the project's own
-        // namespace and ships in the trust file by definition.
+        // VendorPattern instances. The plugin trusts itself by exact
+        // name, not the whole `llm` vendor namespace.
         $vendors = (new TrustedVendorRegistry())->loadForProvider(ProviderId::COMPOSER);
 
         Assert::true(
+            $vendors->trusts('llm/skills'),
+            'llm/skills must be matched by the bundled trust file',
+        );
+        Assert::false(
             $vendors->trusts('llm/anything'),
-            'llm/* must be matched by the bundled trust file',
+            'other llm/* packages must not be trusted by the bundled trust file',
         );
     }
 

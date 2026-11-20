@@ -50,7 +50,7 @@ cycle/*
 doctrine/*
 internal/*
 laravel/*
-llm/*
+llm/skills
 moonshine/*
 phpstan/*
 spiral/*

@@ -277,9 +277,8 @@ final class SkillsShowTest
         // `auto-sync` — root-level options that are meaningful for the root
         // project but not for a vendor donor. Because it sets no `source`,
         // the package is not a donor and must not appear anywhere in show
-        // output: not in the main listing, not in `Skipped:` as malformed.
-        // This mirrors what `llm/skills` itself looks like when seen as a
-        // vendor dependency (issue #10).
+        // output: not in the main listing, not in `Skipped:` as malformed
+        // (issue #10).
         $process = $this->runShow();
         $combined = $process->getOutput() . $process->getErrorOutput();
 
