@@ -46,6 +46,7 @@
 # (`vendor/package`) rather than claiming the whole `vendor/*` namespace —
 # this keeps the attack surface small and makes future audits easier.
 
+buggregator/trap
 cycle/*
 doctrine/*
 internal/*
