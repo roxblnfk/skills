@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.21.0](https://github.com/roxblnfk/skills/compare/1.20.0...1.21.0) (2026-11-20)
+
+
+### Features
+
+* **skills:** bundle the llm-skills skill with validation, project-check and scan scripts ([#90](https://github.com/roxblnfk/skills/issues/90)) ([857d808](https://github.com/roxblnfk/skills/commit/857d808ffbadefff9261d221c2816c0be828ce9c))
+* **trust:** narrow the built-in llm entry from llm/* to llm/skills ([857d808](https://github.com/roxblnfk/skills/commit/857d808ffbadefff9261d221c2816c0be828ce9c))
+
+
+### Documentation
+
+* add the project logo to the README ([56d6b23](https://github.com/roxblnfk/skills/commit/56d6b23865454794c69a4373a871f4ffa420deae))
+
 ## [1.20.0](https://github.com/roxblnfk/skills/compare/1.19.0...1.20.0) (2026-11-18)
 
 
