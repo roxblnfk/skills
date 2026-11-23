@@ -165,8 +165,8 @@ skills — see [Donor sources](#donor-sources).
 | `--discovery`, `--no-discovery` | init | Pre-fill `discovery`.                                                                                                                                    |
 | `--clean`, `--no-clean` | init | Pre-fill `clean`, replacing the value proposed from what the target holds.                                                                   |
 | `--from=ID`           | update | Scope the sync to a single provider id (`composer`, `github`, …). See [Donor sources](#donor-sources).                                                              |
-| `--clean`             | update | Delete installed skills before copying instead of merging into them. See [Clean install](#clean-install).                                                           |
-| `--no-clean`          | update | Merge for this run even when `skills.json` sets `"clean": true`. Wins over `--clean` when both are given.                                                         |
+| `--clean`             | update | Delete installed skills before copying, including ones no donor ships any more. See [Clean install](#clean-install).                                                |
+| `--no-clean`          | update | Skip the clean for this run even when `skills.json` sets `"clean": true`. Wins over `--clean` when both are given.                                                |
 | `--dry-run`           | update | Print actions; no files written.                                                                                                                                   |
 | `--local`             | add    | Write the entry to the personal, git-ignored `skills.local.json` instead of `skills.json`. See [Personal overrides](#personal-overrides-skillslocaljson).             |
 
@@ -884,23 +884,35 @@ A junction or symlink that escapes the package root is silently rejected.
 
 ## Sync behaviour
 
-- **Non-destructive merge.** Files inside the target directory that the donor does *not* ship
-  are left alone (your local notes survive). Files the donor *does* ship are overwritten — the
-  donor is the source of truth.
+- **Per-skill replace.** Each skill the run writes replaces its directory in the target as a
+  whole: the donor is the source of truth, so a file it dropped, a local edit and a file you
+  added inside the skill all go. A skill directory the run does not write — a hand-written
+  skill, or one of a donor left out of this run — stays untouched. A donor skill whose name
+  matches a hand-written skill in the target replaces it too. A directory without a
+  `SKILL.md` is no installed skill: a donor skill of the same name is copied into it, and
+  nothing in it is deleted. The same holds when the donor's copy has no `SKILL.md`. A skill directory the sync cannot fully delete first (a file held
+  open on Windows, a permission error) is reported as `[remove-failed]` and copied over; only
+  an explicit `--clean` fails the run for it.
 - **Idempotent.** Running `skills:update` twice produces the same state with no errors.
-- **Never writes through a link in the target.** A symlink or junction inside the target, such
-  as `.agents/skills/pdf` pointing at a local checkout of your own skill, or a linked
-  `pdf/scripts`, is left as it is: nothing is copied into it, and each one is reported as a
-  `[skip]` line on every sync. A skill whose directory is such a link is not counted as synced,
+- **Never writes through a link in the target.** A skill directory that is a symlink or
+  junction, such as `.agents/skills/pdf` pointing at a local checkout of your own skill, is
+  left as it is: nothing is copied into it, and it is reported as a `[skip]` line on every
+  sync. A link deeper inside a synced skill, such as a linked `pdf/scripts`, goes with the
+  replaced skill directory: the link itself is removed, never what it points at, and the
+  donor copy takes its place. Where the directory is copied into instead of replaced (no
+  `SKILL.md` on either side, a source inside it, a donor copy that cannot be read in full, a
+  failed removal), a deeper link is left as it is and
+  reported as `[skip]` by the real run only, since a dry run does not walk the skills. A
+  skill whose directory is such a link is not counted as synced,
   and `skills:show` lists it under `Skipped:` as `target-is-link` instead of comparing it with
   the donor. The exception is a skill directory linked to that skill's own source: it already
   holds what the donor ships, so it counts as in place, with no `[skip]` line. `--dry-run`
-  reports a linked skill directory; a link deeper inside a skill is reported by the real run
-  only, since a dry run does not walk the skills. When `--clean` deletes a linked skill, it
+  reports a linked skill directory. When `--clean` deletes a linked skill, it
   removes the link itself, never what it points at, and installs a fresh copy in its place.
   `--dry-run --clean` assumes that removal succeeds: if the real run cannot remove the link, it
   reports the failed removal and skips the link instead. A hard-linked file in the target is
-  replaced with a new file, so its other names keep their content.
+  replaced with a new file, so its other names keep their content; this matters only where the
+  directory is copied into instead of replaced.
 - **Transactional on conflicts.** If two donors declare a skill with the same directory name,
   sync aborts *before* touching the filesystem; nothing is written. Every offending package is
   listed in the output. A scoped run (`skills:update <package>`, `--from`, the sync after
@@ -912,10 +924,10 @@ A junction or symlink that escapes the package root is silently rejected.
 
 ### Clean install
 
-The merge above never deletes, so anything a donor stops shipping stays in the target forever:
-a file dropped from a skill, a skill renamed upstream, or a whole directory left behind by a
-package that is no longer a dependency. `--clean` removes the installed skills before copying,
-so what lands is exactly what the donors ship right now.
+A plain sync replaces only the skills it writes, so a skill no donor ships any more stays in the
+target: one renamed upstream, or a whole directory left behind by a package that is no longer a
+dependency. `--clean` removes the installed skills before copying, so what lands is exactly what
+the donors ship right now.
 
 ```bash
 composer skills:update --clean                    # wipe every skill in the target, reinstall all
@@ -968,8 +980,8 @@ To keep the target an exact mirror of the donors without remembering the flag, s
 ```
 
 Every sync then runs as `--clean` does — auto-sync after `composer install` / `update`, the sync
-`skills:init` and `skills:add` run, and a plain `skills:update`. `--no-clean` merges for a single
-run. The key is read from `skills.json` only: inline `extra.skills` in `composer.json` describes
+`skills:init` and `skills:add` run, and a plain `skills:update`. `--no-clean` skips the clean for
+a single run. The key is read from `skills.json` only: inline `extra.skills` in `composer.json` describes
 the package to its consumers, so a `clean` there is ignored.
 
 A clean that comes from the config runs unattended, the way `composer update` does:
@@ -977,10 +989,10 @@ A clean that comes from the config runs unattended, the way `composer update` do
 - It never asks, even in an interactive terminal. An explicit `--clean` still asks.
 - Where an explicit unscoped `--clean` would refuse because a donor contributed nothing, it
   reinstalls only the skills this run writes and keeps the rest, with a `clean narrowed`
-  warning. A target it cannot read is merged into instead.
-- A skill it cannot delete is reported and merged into, without failing the run.
-- It applies to the configured target only. A run with `--target` pointing elsewhere merges
-  unless `--clean` is passed as well.
+  warning. A target it cannot read is synced without the clean instead.
+- A skill it cannot delete is reported and copied over, without failing the run.
+- It applies to the configured target only. A run with `--target` pointing elsewhere skips the
+  clean unless `--clean` is passed as well.
 
 The warning above applies in full: an unscoped run wipes every skill directory in the target,
 hand-written ones included. `skills:init` asks about `clean` as its last question and proposes

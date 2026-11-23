@@ -15,12 +15,8 @@ namespace LLM\Skills\Show;
  * - {@see SyncStatus::InSync} — the target copy exists and matches the
  *   donor byte-for-byte. `update` would be a no-op for this skill.
  * - {@see SyncStatus::Drift} — the target copy exists but differs from
- *   the donor (donor-owned files differ or are missing locally).
- *   `update` would overwrite the differing files.
- *
- * User-added files inside a synced skill directory are **not** drift —
- * `skills:update` is non-destructive and never touches them. Drift is
- * strictly about donor-owned content.
+ *   the donor: donor-owned files differ or are missing locally, or the copy
+ *   holds entries the donor does not ship. `update` would replace it.
  */
 enum SyncStatus: string
 {

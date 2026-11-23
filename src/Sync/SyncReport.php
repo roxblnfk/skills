@@ -27,14 +27,16 @@ use LLM\Skills\Discovery\Skill;
  * - `removed`      — names of installed skills deleted by the purge phase
  *                    (or that *would* have been deleted, in dry-run mode);
  *                    empty unless the caller passed a purge list.
- * - `removalFailures` — names the purge phase could not fully delete. The copy
- *                    still ran over them, so their content is a merge of the
- *                    leftovers and the donor — a silent partial wipe would
- *                    look exactly like a successful clean install.
- * - `keptSources`  — names the caller asked to purge but the purge left in
- *                    place, because the directory is or holds the source of a
- *                    skill being synced. Surfaced so the skipped deletion is
- *                    not mistaken for a clean reinstall.
+ * - `removalFailures` — names the purge, or the replace before a skill's copy,
+ *                    could not fully delete. The copy still ran over them, so
+ *                    their content is a merge of the leftovers and the donor —
+ *                    a silent partial wipe would look exactly like a successful
+ *                    reinstall.
+ * - `keptSources`  — names the purge or the replace left in place, because the
+ *                    directory is or holds the source of a skill being synced
+ *                    or of one a scoped run leaves out.
+ *                    Surfaced so the skipped deletion is not mistaken for a
+ *                    clean reinstall.
  * - `targetAsSource` — names of skills whose source directory is the target
  *                    itself, left out of `copied` because there is nowhere to
  *                    copy them to.

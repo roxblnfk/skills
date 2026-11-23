@@ -161,19 +161,16 @@ final class SkillsShowTest
         Assert::true(\str_contains($out, ' OK '));
     }
 
-    public function userAddedFilesInsideASyncedSkillAreNotDrift(): void
+    public function userAddedFilesInsideASyncedSkillAreDrift(): void
     {
-        // Non-destructive merge promise: user notes alongside SKILL.md must
-        // not cause the skill to be flagged as drifted.
+        // The next sync replaces the skill directory, so the added file would go.
         $this->runUpdate();
         \file_put_contents(self::TARGET_DIR . '/greeting/my-notes.md', 'mine');
 
         $process = $this->runShow();
         $out = $process->getOutput();
 
-        // greeting still OK, no MOD chip anywhere in the output.
-        Assert::true(\str_contains($out, ' OK '));
-        Assert::false(\str_contains($out, ' MOD'));
+        Assert::true(\preg_match('/ MOD .*greeting/', $out) === 1, $out);
     }
 
     // ── trust annotations ───────────────────────────────────────────────────

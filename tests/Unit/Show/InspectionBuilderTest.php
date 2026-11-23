@@ -16,6 +16,7 @@ use LLM\Skills\Show\InspectionBuilder;
 use LLM\Skills\Show\InspectionReport;
 use LLM\Skills\Show\SkippedDonor;
 use LLM\Skills\Show\SkipReason;
+use LLM\Skills\Show\SyncStatus;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Testo\Assert;
 use Testo\Lifecycle\AfterTest;
@@ -120,12 +121,45 @@ final class InspectionBuilderTest
         Assert::null($report->donors[0]->declaredIn);
     }
 
+    public function aSkillHoldingAnotherSkillsSourceIsNotDriftForWhatTheSyncKeeps(): void
+    {
+        // The sync merges into `pdf` instead of replacing it, so `pack/` survives every sync.
+        $installed = $this->tmp . '/.agents/skills/pdf';
+        \mkdir($installed . '/pack/skills/inner', 0o777, true);
+        \file_put_contents($installed . '/SKILL.md', "---\nname: pdf\n---\n");
+        \file_put_contents($installed . '/pack/skills/inner/SKILL.md', "---\nname: inner\n---\n");
+        $packed = new VendorConfig(
+            packageName: 'acme/pack',
+            packageRoot: Path::create($installed . '/pack'),
+            source: 'skills',
+            provenance: ProviderId::DIR,
+            implicitTrust: true,
+        );
+
+        $report = $this->build([$this->donor(ProviderId::DIR), $packed]);
+
+        Assert::same($this->statusOf($report, 'pdf'), SyncStatus::InSync);
+    }
+
+    public function anExtraFileInAReplacedSkillIsDrift(): void
+    {
+        $installed = $this->tmp . '/.agents/skills/pdf';
+        \mkdir($installed, 0o777, true);
+        \file_put_contents($installed . '/SKILL.md', "---\nname: pdf\n---\n");
+        \file_put_contents($installed . '/notes.md', 'mine');
+
+        $report = $this->build($this->donor(ProviderId::DIR));
+
+        Assert::same($this->statusOf($report, 'pdf'), SyncStatus::Drift);
+    }
+
     /**
+     * @param VendorConfig|list<VendorConfig> $donors
      * @param list<LayerChanges> $layers
      */
-    private function build(VendorConfig $donor, array $layers = []): InspectionReport
+    private function build(VendorConfig|array $donors, array $layers = []): InspectionReport
     {
-        $provider = new class([$donor]) implements DonorProvider {
+        $provider = new class(\is_array($donors) ? $donors : [$donors]) implements DonorProvider {
             /**
              * @param list<VendorConfig> $donors
              */
@@ -191,6 +225,19 @@ final class InspectionBuilderTest
             provenance: $provenance,
             implicitTrust: true,
         );
+    }
+
+    private function statusOf(InspectionReport $report, string $name): ?SyncStatus
+    {
+        foreach ($report->donors as $donor) {
+            foreach ($donor->skills as $skill) {
+                if ($skill->skill->name === $name) {
+                    return $skill->status;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Acceptance;
 
 use Internal\Path;
+use LLM\Skills\Filesystem\LinkGuard;
 use LLM\Skills\Tests\Testo\Composer\ComposerRunner;
 use LLM\Skills\Tests\Testo\Composer\WithSkillsJson;
 use LLM\Skills\Tests\Testo\Filesystem;
@@ -18,7 +19,9 @@ use Testo\Test;
 /**
  * End-to-end proof that `skills:update` never writes through a symlink or
  * NTFS junction the user made inside the target directory, and that
- * `skills:show` reports such a skill the way the sync treats it.
+ * `skills:show` reports such a skill the way the sync treats it. A link
+ * deeper inside a synced skill goes with the replaced skill directory; only
+ * the link is removed, never what it points at.
  *
  * The installed `dir-hello` skill of the sandbox's `dir` fixture donor
  * (`tests/Sandbox/project/local-skills/`) is replaced by a link to a
@@ -188,7 +191,7 @@ final class SkillsTargetLinkSkipTest
         Assert::false(\str_contains($out, 'target-is-link'), $out);
     }
 
-    public function showIgnoresALinkDeeperInsideAnInstalledSkill(): void
+    public function showFlagsALinkDeeperInsideAnInstalledSkillAsDrift(): void
     {
         $this->composer('skills:update');
         $templates = self::TARGET_DIR . '/refactor/templates';
@@ -201,14 +204,13 @@ final class SkillsTargetLinkSkipTest
         $out = $process->getOutput();
 
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
-        Assert::true(\str_contains($out, 'refactor'), $out);
-        Assert::false(
-            \str_contains($out, ' MOD'),
-            'a linked directory the sync never writes through is not drift. stdout: ' . $out,
+        Assert::true(
+            \preg_match('/ MOD .*refactor/', $out) === 1,
+            'the next sync replaces the link, so it is drift. stdout: ' . $out,
         );
     }
 
-    public function updateLeavesALinkDeeperInsideAnInstalledSkillAlone(): void
+    public function updateReplacesALinkDeeperInsideAnInstalledSkillAndLeavesItsTargetAlone(): void
     {
         $this->composer('skills:update');
         $templates = self::TARGET_DIR . '/refactor/templates';
@@ -217,23 +219,20 @@ final class SkillsTargetLinkSkipTest
         if (!Filesystem::makeDirLink($this->checkoutDir, $templates)) {
             throw new SkipTest('platform refuses both symlink and junction creation');
         }
-        \unlink(self::TARGET_DIR . '/refactor/SKILL.md');
 
         $process = $this->composer('skills:update');
 
         Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
-        Assert::true(
-            \preg_match(
-                '#\[skip\] \S*\.agents/skills/refactor/templates: a link inside the target#',
-                $process->getErrorOutput(),
-            ) === 1,
-            'the skipped link must be reported at the default verbosity. stderr: ' . $process->getErrorOutput(),
+        Assert::false(
+            \str_contains($process->getErrorOutput(), 'a link inside the target'),
+            'stderr: ' . $process->getErrorOutput(),
         );
         Assert::same(\scandir($this->checkoutDir), ['.', '..', 'mine.md'], 'nothing is written through the link');
         Assert::same(\file_get_contents($this->checkoutDir . '/mine.md'), 'mine');
+        Assert::false(LinkGuard::isLink($templates), 'the link is replaced with the donor copy');
         Assert::true(
-            \is_file(self::TARGET_DIR . '/refactor/SKILL.md'),
-            'the rest of the skill is still copied. stderr: ' . $process->getErrorOutput(),
+            \is_file($templates . '/suggestion.md'),
+            'the donor templates land in its place. stderr: ' . $process->getErrorOutput(),
         );
         Assert::true(\str_contains($process->getOutput(), '[copy] refactor'), $process->getOutput());
     }

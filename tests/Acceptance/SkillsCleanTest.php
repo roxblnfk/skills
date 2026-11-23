@@ -17,10 +17,10 @@ use Testo\Test;
  * Acceptance tests for `composer skills:update --clean`.
  *
  * The sandbox donors are described in {@see SkillsSyncTest}. What matters
- * here is the difference between the default merge and the wipe: a plain
- * `skills:update` never deletes, so anything that a donor stopped shipping —
- * a file, a whole skill, an entire package — lingers in the target until a
- * `--clean` run removes it.
+ * here is the difference between the default sync and the wipe: a plain
+ * `skills:update` replaces only the skills it writes, so a whole skill a donor
+ * stopped shipping — or one an entire removed package left — lingers in the
+ * target until a `--clean` run removes it.
  */
 #[Test]
 final class SkillsCleanTest
@@ -62,16 +62,44 @@ final class SkillsCleanTest
         Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
     }
 
-    public function plainSyncKeepsTheFileThatCleanWouldRemove(): void
+    public function plainSyncReplacesASyncedSkillButKeepsTheOrphanCleanWouldRemove(): void
     {
-        // The contrast that makes the flag worth having: without it the merge
-        // is non-destructive, so the leftover stays.
         $this->runSync();
+        $this->plantSkill('gone-from-donor');
         \file_put_contents(self::TARGET_DIR . '/greeting/leftover.md', 'dropped by the donor');
 
-        $this->runSync();
+        $process = $this->runSync();
 
-        Assert::true(\is_file(self::TARGET_DIR . '/greeting/leftover.md'));
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::false(
+            \is_file(self::TARGET_DIR . '/greeting/leftover.md'),
+            'a synced skill is replaced as a whole, so a file the donor dropped goes',
+        );
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+        Assert::true(
+            \is_dir(self::TARGET_DIR . '/gone-from-donor'),
+            'a skill the run does not write is left alone without --clean',
+        );
+        Assert::false(
+            \str_contains($process->getOutput(), '[remove]'),
+            'a replace is not reported as a removal. stdout: ' . $process->getOutput(),
+        );
+    }
+
+    public function plainSyncCopiesIntoADirectoryWithoutSkillMdAndDeletesNothing(): void
+    {
+        \mkdir(self::TARGET_DIR . '/greeting/drafts', 0o777, true);
+        \file_put_contents(self::TARGET_DIR . '/greeting/drafts/mine.md', 'work in progress');
+
+        $process = $this->runSync();
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+        Assert::same(
+            \file_get_contents(self::TARGET_DIR . '/greeting/drafts/mine.md'),
+            'work in progress',
+            'a directory that is no installed skill is copied into, never emptied',
+        );
     }
 
     public function scopedCleanLeavesSkillsOutsideTheFilterAlone(): void

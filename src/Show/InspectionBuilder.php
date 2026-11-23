@@ -19,6 +19,7 @@ use LLM\Skills\Discovery\Provider\DonorProvider;
 use LLM\Skills\Discovery\Skill;
 use LLM\Skills\Discovery\SkillEnumerator;
 use LLM\Skills\Discovery\SkillFrontmatterReader;
+use LLM\Skills\Discovery\SkillTreeScanner;
 use LLM\Skills\Filesystem\LinkGuard;
 use LLM\Skills\Filesystem\PathContainment;
 use LLM\Skills\Sync\LinkStatus;
@@ -173,6 +174,7 @@ final readonly class InspectionBuilder
             $attributor,
             $conflictMap,
             $installedByKey,
+            \array_fill_keys($conflictReport->keptSources, true),
             self::sourceOrigins($layers),
         );
 
@@ -430,6 +432,8 @@ final readonly class InspectionBuilder
      * @param list<Skill> $approvedSkills
      * @param array<string, list<non-empty-string>> $conflictMap
      * @param array<string, list<InstalledSkill>> $installedByKey
+     * @param array<string, true> $merged names whose installed directory the sync merges into
+     *        instead of replacing, because it holds the source of a skill
      * @param array<string, non-empty-string> $sourceOrigins config file declaring each project
      *        `sources[]` entry a layer over the shared configuration contributed, by identity;
      *        every other project `sources[]` entry is declared in `skills.json`
@@ -442,6 +446,7 @@ final readonly class InspectionBuilder
         TrustAttributor $attributor,
         array $conflictMap,
         array $installedByKey,
+        array $merged,
         array $sourceOrigins = [],
     ): array {
         $result = [];
@@ -458,7 +463,7 @@ final readonly class InspectionBuilder
             foreach ($donorSkills as $skill) {
                 $skillInspections[] = new SkillInspection(
                     skill: $skill,
-                    status: $this->resolveStatus($skill, $installedByKey),
+                    status: $this->resolveStatus($skill, $installedByKey, $merged),
                     conflictWith: $this->resolveConflictPartner($skill, $conflictMap),
                     description: $this->resolveDescription($skill),
                 );
@@ -513,15 +518,20 @@ final readonly class InspectionBuilder
 
     /**
      * @param array<string, list<InstalledSkill>> $installedByKey
+     * @param array<string, true> $merged
      */
-    private function resolveStatus(Skill $skill, array $installedByKey): SyncStatus
+    private function resolveStatus(Skill $skill, array $installedByKey, array $merged): SyncStatus
     {
         $installed = $this->findInstalled($skill, $installedByKey[SkillConflict::collisionKey($skill->name)] ?? []);
         if ($installed === null) {
             return SyncStatus::NotSynced;
         }
 
-        return $this->drift->differs($skill->sourceDir, $installed->dir)
+        // The sync merges instead of replacing where a source sits inside the
+        // installed directory, or where the donor's copy brings no SKILL.md.
+        $replaced = !isset($merged[$skill->name]) && SkillTreeScanner::holdsSkillMd($skill->sourceDir);
+
+        return $this->drift->differs($skill->sourceDir, $installed->dir, $replaced)
             ? SyncStatus::Drift
             : SyncStatus::InSync;
     }
@@ -606,7 +616,7 @@ final readonly class InspectionBuilder
      * @param list<\LLM\Skills\Discovery\SkillNotice> $refusedSkills one per skill refused for its
      *         directory name
      * @param list<VendorConfig> $unactivatedDiscoverable packages that ship undeclared skills
-     *         (found by {@see \LLM\Skills\Discovery\SkillTreeScanner}) but were not promoted
+     *         (found by {@see SkillTreeScanner}) but were not promoted
      *         into the run (because `--discovery` is off); listed under `not-declared` so the
      *         user sees their names alongside the actionable hint
      *

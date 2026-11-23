@@ -31,9 +31,9 @@ Package arguments and `--trust` take `vendor/package` or `vendor/*`
 `skills:show`
 
 - Never writes or migrates.
-- Status chips per skill: `OK` in sync · `NEW` not synced yet · `MOD` drift (a donor file
-  is missing or differs in the target; extra files in the target are not drift) · `!!`
-  name conflict. `[discovered]` marks a donor found without `extra.skills.source`.
+- Status chips per skill: `OK` in sync · `NEW` not synced yet · `MOD` drift (the next sync
+  would change it: a donor file is missing or differs, or the skill holds an extra file or
+  a link) · `!!` name conflict. `[discovered]` marks a donor found without `extra.skills.source`.
 - Trust annotations: [security.md](security.md#reading-trust-in-skillsshow). Skip
   reasons: [troubleshooting.md](troubleshooting.md#skip-reasons-skillsshow).
 

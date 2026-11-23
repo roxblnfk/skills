@@ -445,7 +445,7 @@ final readonly class InitRunner
     /**
      * The `clean` value to propose for a target: `true` when it holds no
      * skills yet, so nothing there can be lost to a wipe. A target that
-     * already holds skills keeps the merge, with a notice saying why. One
+     * already holds skills keeps clean off, with a notice saying why. One
      * that cannot be listed keeps it too, silently: the sync reports it.
      *
      * @param non-empty-string $target as written to `skills.json`

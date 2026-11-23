@@ -48,7 +48,8 @@ Contents: first steps · a skill did not arrive · skip reasons · messages.
 | `Invalid vendor pattern "*"` | A pattern must name a vendor | `vendor/*` or `vendor/package` |
 | `no installed donor package matches: …` (exit 2) | Package filter matched nothing approved | Check the name with `skills:show` |
 | `archive contains an unsafe entry path` | Remote archive with path-traversal entries | Treat the repository as hostile; leave it out |
-| `[skip] … a link inside the target` | A link in the target is never written through | Expected for linked checkouts |
+| `[skip] … a link inside the target` | A link in the target is never written through: a linked skill directory, or a deeper link in one the sync copies into instead of replacing | Expected for linked checkouts |
+| `[remove-failed]` | A skill directory could not be deleted before the copy, e.g. a file open on Windows; the leftovers stay merged with the donor copy | Close what holds it and sync again |
 | `[warn] skipped symlink/junction` (`-v`) | Donor ships links; their content is not copied | Ask the vendor to ship real files |
 | `clean narrowed` | `clean: true` limited itself because a donor contributed nothing | Fix the failing donor |
 | `[deprecated] …` | Legacy keys in use | Run any write-mode command to migrate |

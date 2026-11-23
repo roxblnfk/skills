@@ -112,6 +112,45 @@ final class TreeRemoverTest
         Assert::true(\is_dir($dir), 'a tree the remover gave up on stays on disk for the caller to report');
     }
 
+    public function removesReadOnlyFilesAndDirectories(): void
+    {
+        $dir = $this->makeTree('skill', ['SKILL.md' => '# Skill', 'notes.md' => 'mine', 'sub/a.md' => 'a']);
+        \chmod($dir . '/notes.md', 0o444);
+        if (\DIRECTORY_SEPARATOR === '\\') {
+            // On POSIX a 0555 directory refuses deleting its entries, which is a real failure.
+            \chmod($dir . '/sub', 0o555);
+        }
+
+        Assert::true((new TreeRemover())->remove($dir));
+        Assert::false(\is_dir($dir));
+    }
+
+    public function reportsAnUnreadableDirectoryUnderAThrowingErrorHandler(): void
+    {
+        if (\DIRECTORY_SEPARATOR === '\\' || \function_exists('posix_getuid') && \posix_getuid() === 0) {
+            throw new SkipTest('directory read permissions are not enforced here');
+        }
+
+        $dir = $this->makeTree('skill', ['SKILL.md' => '# Skill', 'locked/a.md' => 'a']);
+        \chmod($dir . '/locked', 0o000);
+        // Composer's handler: every reported warning becomes an exception, `@` silences it.
+        \set_error_handler(static function (int $level, string $message): bool {
+            if ((\error_reporting() & $level) === 0) {
+                return false;
+            }
+            throw new \ErrorException($message, 0, $level);
+        });
+
+        try {
+            $removed = (new TreeRemover())->remove($dir);
+        } finally {
+            \restore_error_handler();
+            \chmod($dir . '/locked', 0o777);
+        }
+
+        Assert::false($removed);
+    }
+
     /**
      * @param non-empty-string $name
      * @param array<non-empty-string, string> $files map of relative path → contents
