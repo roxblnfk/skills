@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.22.0](https://github.com/roxblnfk/skills/compare/1.21.0...1.22.0) (2026-11-23)
+
+
+### Features
+
+* **commands:** add skills:lint to check any skill directory against the spec and the plugin's rules ([3b35e3f](https://github.com/roxblnfk/skills/commit/3b35e3f7aa621bbfb0ff33af40cd87b1ecf3bf53))
+* **commands:** add skills:validate to check a project's config, shipped skills and donors ([3b35e3f](https://github.com/roxblnfk/skills/commit/3b35e3f7aa621bbfb0ff33af40cd87b1ecf3bf53))
+* **show:** report files and links the next sync would drop as drift ([564e434](https://github.com/roxblnfk/skills/commit/564e43472446d94583fd7d476136a0616c29d99e))
+* **sync:** replace each synced skill directory instead of merging into it ([#94](https://github.com/roxblnfk/skills/issues/94)) ([564e434](https://github.com/roxblnfk/skills/commit/564e43472446d94583fd7d476136a0616c29d99e))
+* **sync:** skip auto-sync in CI ([79b1d05](https://github.com/roxblnfk/skills/commit/79b1d054f20d8057862189f3eda79299e8f15e52))
+
+
+### Dependencies
+
+* **trusted-composer:** add buggregator/trap to trusted packages list ([a46f5ff](https://github.com/roxblnfk/skills/commit/a46f5ffc3086ae86556b1008e9d9bdaf5ff73088))
+
 ## [1.21.0](https://github.com/roxblnfk/skills/compare/1.20.0...1.21.0) (2026-11-20)
 
 
