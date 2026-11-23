@@ -83,18 +83,18 @@ final class SyncCliDefinition
                 'clean',
                 null,
                 InputOption::VALUE_NONE,
-                'Delete installed skills before copying instead of merging into them, so '
-                . 'files dropped by a donor do not linger. Without a package filter every '
-                . 'skill directory in the target is wiped, including ones you wrote by hand; '
-                . 'with a filter only the skills this run reinstalls are. Overrides the '
-                . 'skills.json clean setting for this run.',
+                'Delete installed skills before copying, so a skill no donor ships any more '
+                . 'does not linger. Without a package filter every skill directory in the '
+                . 'target is wiped, including ones you wrote by hand; with a filter only the '
+                . 'skills this run reinstalls are. Overrides the skills.json clean setting '
+                . 'for this run.',
             )
             ->addOption(
                 'no-clean',
                 null,
                 InputOption::VALUE_NONE,
-                'Merge into installed skills even when skills.json turns clean on. '
-                . 'Overrides the clean setting for this run.',
+                'Replace only the skills this run writes, even when skills.json turns clean '
+                . 'on. Overrides the clean setting for this run.',
             )
             ->addOption(
                 'discovery',
@@ -148,7 +148,7 @@ final class SyncCliDefinition
             discovery: FlagPair::negativeWins($input, 'discovery', 'no-discovery'),
             aliasOverrides: $aliasOverrides,
             fromFilter: $fromFilter,
-            // Both at once merges: a merge cannot delete anything.
+            // Both at once skips the clean: it deletes no skill the run does not write.
             clean: FlagPair::negativeWins($input, 'clean', 'no-clean'),
         );
     }

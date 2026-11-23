@@ -123,7 +123,7 @@ final class InitCliDefinition
                 'no-clean',
                 null,
                 InputOption::VALUE_NONE,
-                'Leave clean off, so syncs merge into the installed skills.',
+                'Leave clean off, so syncs replace only the skills they write.',
             );
     }
 

@@ -30,7 +30,7 @@ final readonly class CleanPolicy
      * @param bool|null $flag `--clean` / `--no-clean`, `null` when neither was passed
      * @param bool $configured whether `skills.json` turns clean on for this run's target
      *
-     * @return self|null `null` when the run merges
+     * @return self|null `null` when the run replaces only the skills it writes
      *
      * @psalm-pure
      */
@@ -56,7 +56,7 @@ final readonly class CleanPolicy
 
     /**
      * Whether a target that cannot be listed stops the run. Otherwise the run
-     * merges into it.
+     * syncs into it without the clean.
      *
      * @psalm-mutation-free
      */
@@ -77,7 +77,7 @@ final readonly class CleanPolicy
 
     /**
      * Whether a skill that could not be deleted fails the run, since what
-     * landed there is a merge rather than a clean install.
+     * landed there is the leftovers merged with the donor copy rather than a clean install.
      *
      * @psalm-mutation-free
      */

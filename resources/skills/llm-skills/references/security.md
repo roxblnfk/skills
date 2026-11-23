@@ -113,7 +113,10 @@ What the plugin enforces regardless of trust:
 
 - Symlinks and junctions in a donor are never followed or copied (`[warn] skipped
   symlink/junction` under `-v`).
-- A link inside the target is never written through (`[skip] … a link inside the target`).
+- A link inside the target is never written through: a skill directory that is a link is
+  skipped (`[skip] … a link inside the target`); a link deeper inside a synced skill is
+  removed with the replaced directory, never what it points at, or skipped the same way
+  where the directory is copied into instead.
 - Hard-linked target files are detached before being overwritten.
 - `target` and aliases must resolve inside the project root.
 - Remote archives with unsafe entry names (absolute, `..`, drive letters, NUL) are refused

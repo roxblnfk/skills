@@ -56,7 +56,7 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  *   4. {@see SyncPlanner}: trust + filter partitioning → {@see SyncPlan}.
  *   5. {@see SkillEnumerator}: enumerate skill subdirs for approved donors.
  *   6. {@see PurgePlanner}: under `--clean`, pick the installed skills to
- *      delete first; otherwise the list is empty and the copy merges.
+ *      delete first; otherwise the list is empty and only the copied skills are replaced.
  *   7. {@see SyncEngine}: detect conflicts, delete, write files.
  *   8. Format the {@see SyncReport} grouped by package, add a `[failed]` row
  *      for every donor that contributed nothing, and emit the trailing
@@ -333,7 +333,7 @@ final readonly class SyncRunner
             if ($installed === null && !$clean->refusesUnreadableTarget()) {
                 $io->writeError(\sprintf(
                     '<warning>[llm/skills] clean skipped: %s could not be read, so this run '
-                    . 'merges into it.</warning>',
+                    . 'replaces only the skills it writes.</warning>',
                     (string) $plan->target,
                 ));
             } elseif ($installed === null) {
@@ -817,7 +817,7 @@ final readonly class SyncRunner
     {
         foreach ($names as $name) {
             $io->writeError(\sprintf(
-                '<warning>[kept] %s holds the source of a skill being synced, so it was not removed.</warning>',
+                '<warning>[kept] %s holds the source of a configured skill, so it was not removed.</warning>',
                 $name,
             ));
         }

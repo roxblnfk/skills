@@ -82,8 +82,10 @@ writes merged values back; `init` and migrations touch `skills.json` only.
 
 ## Target and aliases
 
-- The target receives copies; a sync is a non-destructive merge: donor files overwrite,
-  extra files in the target stay.
+- The target receives copies. A sync replaces each skill it writes as a whole directory, so
+  files the donor dropped and files added inside it go. A skill directory it does not
+  write stays untouched, and a same-named directory without `SKILL.md` is copied into,
+  never emptied.
 - Each alias is a link to the target. An alias path already occupied by a real directory
   or file is never replaced (`[link-failed]`, exit 1) — move its contents into the target
   or elsewhere, delete it, then sync.
@@ -98,7 +100,7 @@ alias for each agent directory already present in the project.
 Keep hand-written project skills **outside** the target (for example `skills/<name>/`)
 and pull them in with `{"from": "dir", "path": "skills"}` in `sources[]`: an unscoped
 clean deletes every skill directory in the target, hand-written ones included, and a
-donor skill of the same name merges into it.
+donor skill of the same name replaces it.
 
 ## Git hygiene
 
@@ -122,12 +124,15 @@ The target is a trade-off:
 
 ## Clean installs
 
+Every sync replaces the skills it writes. A clean also deletes skill directories no
+donor ships any more — renamed upstream, or left by a removed package:
+
 | Mode | What is deleted before copying |
 |---|---|
 | `skills:update --clean` (unscoped) | Every directory in the target holding `SKILL.md` — hand-written ones too. Asks in a terminal; refuses when any donor contributed nothing |
 | `skills:update <package> --clean`, `--from=… --clean`, post-`add` | Only the skills this run reinstalls |
 | `"clean": true` in config | Every sync, unattended; narrows itself instead of refusing; skipped for a one-off `--target` |
-| `--no-clean` | Wins over both |
+| `--no-clean` | Wins over both; only the skills this run writes are replaced |
 
 Preview any clean with `--dry-run`.
 

@@ -61,17 +61,53 @@ final class DriftDetectorTest
         Assert::true((new DriftDetector())->differs($donor, $installed));
     }
 
-    public function returnsFalseWhenTargetHasExtraUserFilesNotInDonor(): void
+    public function returnsTrueWhenTargetHasAFileTheDonorDoesNotShip(): void
     {
-        // The detector must not flag user-added files as drift — sync is
-        // non-destructive and never touches them.
+        // The next sync replaces the skill directory, so the extra file goes.
         $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting']);
         $installed = $this->makeDir('installed', [
             'SKILL.md' => '# Greeting',
             'local-notes.md' => 'mine',
         ]);
 
-        Assert::false((new DriftDetector())->differs($donor, $installed));
+        Assert::true((new DriftDetector())->differs($donor, $installed));
+    }
+
+    public function ignoresExtraEntriesInADirectoryTheSyncMergesInto(): void
+    {
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting']);
+        $installed = $this->makeDir('installed', [
+            'SKILL.md' => '# Greeting',
+            'inner/SKILL.md' => '# A source the sync keeps',
+        ]);
+
+        Assert::false((new DriftDetector())->differs($donor, $installed, replaced: false));
+    }
+
+    public function returnsTrueWhenTargetHasANestedDirectoryTheDonorDoesNotShip(): void
+    {
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting', 'templates/a.md' => 'a']);
+        $installed = $this->makeDir('installed', [
+            'SKILL.md' => '# Greeting',
+            'templates/a.md' => 'a',
+            'templates/old/b.md' => 'dropped upstream',
+        ]);
+
+        Assert::true((new DriftDetector())->differs($donor, $installed));
+    }
+
+    public function returnsFalseForASkillDirectoryLinkedToItsOwnSource(): void
+    {
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting']);
+        $this->makeDir('elsewhere', ['payload.md' => 'not copied']);
+        if (!Filesystem::makeDirLink($this->tmp . '/elsewhere', (string) $donor . '/linked')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+        if (!Filesystem::makeDirLink((string) $donor, $this->tmp . '/installed')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        Assert::false((new DriftDetector())->differs($donor, Path::create($this->tmp . '/installed')));
     }
 
     public function comparesNestedDonorTreesRecursively(): void
@@ -138,16 +174,29 @@ final class DriftDetectorTest
         Assert::false((new DriftDetector())->differs($donor, $installed));
     }
 
-    public function ignoresLinksInTheTargetTheSyncNeverWritesThrough(): void
+    public function returnsTrueForALinkInsideTheInstalledSkill(): void
     {
+        // The next sync replaces the skill directory, link included.
         $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting', 'scripts/run.sh' => 'donor']);
         $installed = $this->makeDir('installed', ['SKILL.md' => '# Greeting']);
-        $this->makeDir('elsewhere', ['other.sh' => 'mine']);
+        $this->makeDir('elsewhere', ['run.sh' => 'donor']);
         if (!Filesystem::makeDirLink($this->tmp . '/elsewhere', (string) $installed . '/scripts')) {
             throw new SkipTest('platform refuses both symlink and junction creation');
         }
 
-        Assert::false((new DriftDetector())->differs($donor, $installed));
+        Assert::true((new DriftDetector())->differs($donor, $installed));
+    }
+
+    public function returnsTrueForALinkTheDonorDoesNotShip(): void
+    {
+        $donor = $this->makeDir('donor', ['SKILL.md' => '# Greeting']);
+        $installed = $this->makeDir('installed', ['SKILL.md' => '# Greeting']);
+        $this->makeDir('elsewhere', ['other.sh' => 'mine']);
+        if (!Filesystem::makeDirLink($this->tmp . '/elsewhere', (string) $installed . '/mine')) {
+            throw new SkipTest('platform refuses both symlink and junction creation');
+        }
+
+        Assert::true((new DriftDetector())->differs($donor, $installed));
     }
 
     public function stopsAtTheDepthTheSyncCopiesTo(): void

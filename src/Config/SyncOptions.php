@@ -36,7 +36,7 @@ final readonly class SyncOptions
      *         this id. The vocabulary is shared with `skills.json` `dependencies.{id}` and
      *         `sources[].from`.
      * @param bool|null $clean `--clean` / `--no-clean`: `true` deletes installed skills before
-     *         copying instead of merging into them, `false` merges, `null` (default) defers to
+     *         copying, `false` replaces only the skills the run writes, `null` (default) defers to
      *         the `skills.json` `clean` key. {@see isScoped()} narrows what a scoped run is
      *         allowed to delete.
      *

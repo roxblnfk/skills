@@ -46,7 +46,9 @@ final readonly class TreeRemover
         }
 
         if (\is_file($path)) {
-            return @\unlink($path);
+            // Windows refuses to unlink a read-only file until the attribute is cleared.
+            return @\unlink($path)
+                || \DIRECTORY_SEPARATOR === '\\' && @\chmod($path, 0o666) && @\unlink($path);
         }
 
         if (!\is_dir($path)) {
@@ -57,7 +59,8 @@ final readonly class TreeRemover
             return false;
         }
 
-        $entries = \scandir($path);
+        // Silenced: Composer turns the warning into an exception, and `false` is reported below.
+        $entries = @\scandir($path);
         if ($entries === false) {
             return false;
         }
@@ -72,6 +75,10 @@ final readonly class TreeRemover
 
         // rmdir only succeeds on an empty directory, so a survivor below
         // propagates up as a failure on its own.
-        return @\rmdir($path) && $complete;
+        // A read-only directory refuses rmdir on Windows the same way a read-only file refuses unlink.
+        $gone = @\rmdir($path)
+            || \DIRECTORY_SEPARATOR === '\\' && @\chmod($path, 0o777) && @\rmdir($path);
+
+        return $gone && $complete;
     }
 }

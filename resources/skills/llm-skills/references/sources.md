@@ -106,15 +106,15 @@ Re-audit before widening a ref ([audit.md](audit.md#auditing-updates)).
 
 ## Removing
 
-There is no remove command, and a sync never deletes on its own: removing a `sources[]`
-entry or uninstalling a package leaves its skills in the target. Remove the entry or
+There is no remove command, and a sync never deletes a whole skill on its own: removing a
+`sources[]` entry or uninstalling a package leaves its skills in the target. Remove the entry or
 package, then either delete the skill directories by hand or run
 `composer skills:update --clean` ([config.md](config.md#clean-installs)).
 
 ## Customising an installed skill
 
-Edits to a donor's files in the target are overwritten on the next sync (`skills:show`
-shows `MOD` until then); files you add next to them survive. To customise, copy the skill
-outside the target under a new name and add it as a `dir` source. A donor skill whose name
-matches a hand-written skill in the target merges into it silently — `[conflict]` only
+The next sync replaces an installed skill's directory with the donor copy: edits, added
+files and links inside it go (`skills:show` shows `MOD` until then). To customise, copy the
+skill outside the target under a new name and add it as a `dir` source. A donor skill whose
+name matches a hand-written skill in the target replaces it silently — `[conflict]` only
 fires between donors — so give hand-written skills distinct names.

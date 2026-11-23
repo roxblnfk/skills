@@ -229,18 +229,163 @@ final class SyncEngineTest
         Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'new content');
     }
 
-    public function preservesUserFilesNotPresentInVendor(): void
+    public function replacesTheInstalledSkillDirectoryWithTheDonorCopy(): void
     {
-        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => '# Greeting']);
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version']);
+        $this->installTarget('greeting', [
+            'SKILL.md' => 'old version',
+            'dropped.md' => 'no longer shipped',
+            'old/nested.md' => 'no longer shipped',
+        ]);
 
-        // User-added file inside the same skill dir.
-        \mkdir($this->targetPath('greeting'), 0o777, true);
-        \file_put_contents($this->targetPath('greeting/local-notes.md'), 'mine');
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same($report->copied, [$skill]);
+        Assert::same($report->removed, [], 'a replace is not a purge and is not reported as one');
+        Assert::same($report->removalFailures, []);
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'donor version');
+        Assert::false(\file_exists($this->targetPath('greeting/dropped.md')));
+        Assert::false(\file_exists($this->targetPath('greeting/old')));
+    }
+
+    public function leavesSkillsTheRunDoesNotWriteAlone(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version']);
+        $this->installTarget('mine', ['SKILL.md' => '# Mine', 'notes.md' => 'mine']);
 
         (new SyncEngine())->sync([$skill], $this->target());
 
-        Assert::true(\is_file($this->targetPath('greeting/local-notes.md')));
-        Assert::same(\file_get_contents($this->targetPath('greeting/local-notes.md')), 'mine');
+        Assert::same(\file_get_contents($this->targetPath('mine/SKILL.md')), '# Mine');
+        Assert::same(\file_get_contents($this->targetPath('mine/notes.md')), 'mine');
+    }
+
+    public function keepsAnInstalledSkillThatHoldsTheSourceOfAnotherSkill(): void
+    {
+        $bundle = $this->makeSkill('acme/basic', 'bundle', ['SKILL.md' => 'donor version']);
+        $this->installTarget('bundle', ['SKILL.md' => 'old', 'notes.md' => 'mine', 'inner/SKILL.md' => '# Inner']);
+        $inner = new Skill(
+            name: 'inner',
+            canonicalName: 'inner',
+            sourceDir: $this->target()->join('bundle', 'inner'),
+            packageName: 'project/inner',
+        );
+
+        $report = (new SyncEngine())->sync([$bundle, $inner], $this->target());
+
+        Assert::same($report->keptSources, ['bundle']);
+        Assert::same(\file_get_contents($this->targetPath('bundle/SKILL.md')), 'donor version');
+        Assert::same(\file_get_contents($this->targetPath('bundle/notes.md')), 'mine');
+        Assert::same(\file_get_contents($this->targetPath('inner/SKILL.md')), '# Inner');
+    }
+
+    public function mergesIntoADirectoryWithoutSkillMdInsteadOfReplacingIt(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'docs', ['SKILL.md' => 'donor version']);
+        $this->installTarget('docs', ['drafts/mine.md' => 'mine']);
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same($report->removalFailures, []);
+        Assert::same(\file_get_contents($this->targetPath('docs/SKILL.md')), 'donor version');
+        Assert::same(\file_get_contents($this->targetPath('docs/drafts/mine.md')), 'mine');
+    }
+
+    public function keepsAnInstalledSkillThatHoldsTheSourceOfABystander(): void
+    {
+        $bundle = $this->makeSkill('acme/basic', 'bundle', ['SKILL.md' => 'donor version']);
+        $this->installTarget('bundle', ['SKILL.md' => 'old', 'pack/inner/SKILL.md' => '# Inner']);
+        $bystander = new Skill(
+            name: 'inner',
+            canonicalName: 'inner',
+            sourceDir: $this->target()->join('bundle', 'pack', 'inner'),
+            packageName: 'project/pack',
+        );
+
+        $report = (new SyncEngine())->sync([$bundle], $this->target(), bystanders: [$bystander]);
+
+        Assert::same($report->keptSources, ['bundle']);
+        Assert::same(\file_get_contents($this->targetPath('bundle/pack/inner/SKILL.md')), '# Inner');
+    }
+
+    public function dryRunNamesTheSkillsTheReplaceKeepsLikeTheRealRun(): void
+    {
+        $bundle = $this->makeSkill('acme/basic', 'bundle', ['SKILL.md' => 'donor version']);
+        $this->installTarget('bundle', ['SKILL.md' => 'old', 'inner/SKILL.md' => '# Inner']);
+        $inner = new Skill(
+            name: 'inner',
+            canonicalName: 'inner',
+            sourceDir: $this->target()->join('bundle', 'inner'),
+            packageName: 'project/inner',
+        );
+
+        $dryRun = (new SyncEngine())->sync([$bundle, $inner], $this->target(), dryRun: true);
+        $report = (new SyncEngine())->sync([$bundle, $inner], $this->target());
+
+        Assert::same($dryRun->keptSources, ['bundle']);
+        Assert::same($report->keptSources, ['bundle']);
+    }
+
+    public function keepsTheInstalledSkillWhenItsSourceHasNoSkillMd(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['notes.md' => 'half-installed']);
+        $this->installTarget('greeting', ['SKILL.md' => 'installed version']);
+
+        (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'installed version');
+        Assert::same(\file_get_contents($this->targetPath('greeting/notes.md')), 'half-installed');
+    }
+
+    public function keepsTheInstalledSkillWhenTheDonorSkillMdIsALink(): void
+    {
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['notes.md' => 'donor notes']);
+        \file_put_contents($this->tmp . '/README.md', '# Readme');
+        if (!Filesystem::makeFileLink($this->tmp . '/README.md', (string) $skill->sourceDir . '/SKILL.md')) {
+            throw new SkipTest('platform refuses file symlink creation');
+        }
+        $this->installTarget('greeting', ['SKILL.md' => 'installed version']);
+
+        (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'installed version');
+    }
+
+    public function keepsTheInstalledSkillWhenPartOfTheDonorTreeCannotBeRead(): void
+    {
+        if (\DIRECTORY_SEPARATOR === '\\' || \function_exists('posix_getuid') && \posix_getuid() === 0) {
+            throw new SkipTest('directory read permissions are not enforced here');
+        }
+
+        $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version', 'sub/a.md' => 'a']);
+        $this->installTarget('greeting', ['SKILL.md' => 'installed version', 'notes.md' => 'mine']);
+        \chmod((string) $skill->sourceDir . '/sub', 0o000);
+
+        // The copy itself still warns on the unreadable directory.
+        \set_error_handler(static fn(): bool => true);
+        try {
+            (new SyncEngine())->sync([$skill], $this->target());
+        } finally {
+            \restore_error_handler();
+            \chmod((string) $skill->sourceDir . '/sub', 0o777);
+        }
+
+        Assert::same(\file_get_contents($this->targetPath('greeting/notes.md')), 'mine', 'nothing was deleted first');
+    }
+
+    public function keepsTheInstalledSkillWhenItsSourceCannotBeRead(): void
+    {
+        $skill = new Skill(
+            name: 'greeting',
+            canonicalName: 'greeting',
+            sourceDir: Path::create($this->tmp . '/skills/missing/greeting'),
+            packageName: 'acme/missing',
+        );
+        $this->installTarget('greeting', ['SKILL.md' => 'installed version']);
+
+        $report = (new SyncEngine())->sync([$skill], $this->target());
+
+        Assert::same($report->removalFailures, []);
+        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'installed version');
     }
 
     public function reportsConflictWhenTwoSkillsShareAName(): void
@@ -385,16 +530,23 @@ final class SyncEngineTest
         Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'pre-existing');
     }
 
-    public function emptyPurgeListKeepsTheMergeNonDestructive(): void
+    public function purgeFailureIsNotRetriedByTheReplace(): void
     {
+        if (\DIRECTORY_SEPARATOR === '\\' || \function_exists('posix_getuid') && \posix_getuid() === 0) {
+            throw new SkipTest('directory write permissions are not enforced here');
+        }
+
         $skill = $this->makeSkill('acme/basic', 'greeting', ['SKILL.md' => 'donor version']);
-        $this->installTarget('greeting', ['SKILL.md' => 'old', 'notes.md' => 'user notes']);
+        $installed = $this->installTarget('greeting', ['SKILL.md' => 'old', 'notes.md' => 'user notes']);
+        \chmod($this->targetPath('greeting'), 0o555);
 
-        $report = (new SyncEngine())->sync([$skill], $this->target());
+        try {
+            $report = (new SyncEngine())->sync([$skill], $this->target(), purge: [$installed]);
+        } finally {
+            \chmod($this->targetPath('greeting'), 0o777);
+        }
 
-        Assert::same($report->removed, []);
-        Assert::same(\file_get_contents($this->targetPath('greeting/SKILL.md')), 'donor version');
-        Assert::true(\is_file($this->targetPath('greeting/notes.md')));
+        Assert::same($report->removalFailures, ['greeting']);
     }
 
     public function skipsSymlinkedDirectoriesAndFilesAndReportsThem(): void
@@ -489,12 +641,13 @@ final class SyncEngineTest
         Assert::same($report->linkedDestinations, [(string) $link]);
     }
 
-    public function neverWritesThroughALinkDeeperInsideAnInstalledSkill(): void
+    public function replacesADirectoryLinkInsideAnInstalledSkillWithoutTouchingWhatItPointsAt(): void
     {
         $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'scripts/run.sh' => 'donor']);
         $elsewhere = $this->tmp . '/elsewhere';
         \mkdir($elsewhere, 0o777, true);
-        \mkdir($this->targetPath('pdf'), 0o777, true);
+        \file_put_contents($elsewhere . '/mine.sh', 'mine');
+        $this->installTarget('pdf', ['SKILL.md' => 'old version']);
         $link = (string) $this->target()->join('pdf', 'scripts');
         if (!Filesystem::makeDirLink($elsewhere, $link)) {
             throw new SkipTest('platform refuses both symlink and junction creation');
@@ -503,18 +656,19 @@ final class SyncEngineTest
         $report = (new SyncEngine())->sync([$skill], $this->target());
 
         Assert::true($report->isSuccess());
-        Assert::same(\file_get_contents($this->targetPath('pdf/SKILL.md')), 'donor version');
+        Assert::same($report->linkedDestinations, []);
+        Assert::false(LinkGuard::isLink($link));
+        Assert::same(\file_get_contents($this->targetPath('pdf/scripts/run.sh')), 'donor');
+        Assert::same(\file_get_contents($elsewhere . '/mine.sh'), 'mine');
         Assert::false(\file_exists($elsewhere . '/run.sh'));
-        Assert::same(\count($report->copied), 1);
-        Assert::same($report->linkedDestinations, [$link]);
     }
 
-    public function neverWritesThroughAFileLinkInsideTheTarget(): void
+    public function replacesAFileLinkInsideAnInstalledSkillWithoutTouchingWhatItPointsAt(): void
     {
         $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'notes.md' => 'donor notes']);
         $outsideFile = $this->tmp . '/outside.md';
         \file_put_contents($outsideFile, 'mine');
-        \mkdir($this->targetPath('pdf'), 0o777, true);
+        $this->installTarget('pdf', ['SKILL.md' => 'old version']);
         $link = (string) $this->target()->join('pdf', 'notes.md');
         if (!Filesystem::makeFileLink($outsideFile, $link)) {
             throw new SkipTest('platform refuses file symlink creation');
@@ -523,9 +677,10 @@ final class SyncEngineTest
         $report = (new SyncEngine())->sync([$skill], $this->target());
 
         Assert::true($report->isSuccess());
-        Assert::same(\file_get_contents($this->targetPath('pdf/SKILL.md')), 'donor version');
+        Assert::same($report->linkedDestinations, []);
+        Assert::false(LinkGuard::isLink($link));
+        Assert::same(\file_get_contents($this->targetPath('pdf/notes.md')), 'donor notes');
         Assert::same(\file_get_contents($outsideFile), 'mine');
-        Assert::same($report->linkedDestinations, [$link]);
     }
 
     public function dryRunReportsALinkedSkillDirectoryUnlessThePurgeStripsIt(): void
@@ -646,15 +801,16 @@ final class SyncEngineTest
         }
 
         Assert::same(\file_get_contents($outsideFile), 'mine');
+        Assert::same($report->removalFailures, ['pdf'], 'the replace could not delete the skill first');
         Assert::same($report->linkedDestinations, [$link]);
     }
 
     public function aDirectoryWhereTheDonorShipsAFileIsNotReportedAsALink(): void
     {
         // A POSIX directory has a link count of two or more, as a hard-linked file does.
+        // Without SKILL.md the directory is no installed skill, so the copy merges into it.
         $skill = $this->makeSkill('acme/pdf', 'pdf', ['SKILL.md' => 'donor version', 'notes' => 'donor notes']);
-        \mkdir($this->targetPath('pdf/notes'), 0o777, true);
-        \file_put_contents($this->targetPath('pdf/notes/mine.md'), 'mine');
+        $this->installTarget('pdf', ['notes/mine.md' => 'mine']);
 
         $report = (new SyncEngine())->sync([$skill], $this->target());
 
