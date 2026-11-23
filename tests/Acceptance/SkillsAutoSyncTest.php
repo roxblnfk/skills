@@ -10,6 +10,7 @@ use LLM\Skills\Tests\Testo\Composer\WithSandboxExtras;
 use LLM\Skills\Tests\Testo\Filesystem;
 use Symfony\Component\Process\Process;
 use Testo\Assert;
+use Testo\Data\DataSet;
 use Testo\Lifecycle\BeforeTest;
 use Testo\Test;
 
@@ -144,13 +145,47 @@ final class SkillsAutoSyncTest
         );
     }
 
-    private function runScript(string $event): Process
+    #[DataSet(['true'])]
+    #[DataSet(['1'])]
+    public function autoSyncIsSkippedInACiJob(string $ci): void
+    {
+        $process = $this->runScript('post-install-cmd', ['CI' => $ci]);
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::string($process->getOutput())->contains('CI detected, auto-sync skipped');
+        Assert::false(\is_dir(self::TARGET_DIR), 'auto-sync must not install skills in CI');
+    }
+
+    #[DataSet(['false'])]
+    #[DataSet(['0'])]
+    #[DataSet([''])]
+    public function aCiVariableSwitchedOffDoesNotSkipAutoSync(string $ci): void
+    {
+        $process = $this->runScript('post-install-cmd', ['CI' => $ci]);
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'), 'stderr: ' . $process->getErrorOutput());
+    }
+
+    public function anExplicitUpdateStillSyncsInACiJob(): void
+    {
+        $process = ComposerRunner::run(Path::create(Info::PROJECT_DIR), 'skills:update', mustSucceed: false, env: ['CI' => 'true']);
+
+        Assert::same($process->getExitCode(), 0, 'stderr: ' . $process->getErrorOutput());
+        Assert::true(\is_file(self::TARGET_DIR . '/greeting/SKILL.md'));
+    }
+
+    /**
+     * @param array<string, string|false> $env
+     */
+    private function runScript(string $event, array $env = []): Process
     {
         return ComposerRunner::run(
             Path::create(Info::PROJECT_DIR),
             'run-script ' . $event,
             timeout: 60,
             mustSucceed: false,
+            env: $env,
         );
     }
 }

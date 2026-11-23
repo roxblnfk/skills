@@ -26,12 +26,15 @@ final class ComposerRunner
      *        Pass `false` when the caller wants to inspect the {@see Process}'s
      *        exit code or output regardless of success — typical for acceptance
      *        tests that assert on the result of the command itself.
+     * @param array<string, string|false> $env variables to set, or with `false` to unset, on top of
+     *        the defaults: `CI` is unset, so the sandbox auto-syncs inside a CI job as it does locally
      */
     public static function run(
         Path $projectRoot,
         string $command,
         int $timeout = 180,
         bool $mustSucceed = true,
+        array $env = [],
     ): Process {
         \fwrite(\STDERR, "[acceptance] composer {$command} in {$projectRoot} …\n");
 
@@ -41,7 +44,7 @@ final class ComposerRunner
             // Override SHELL_VERBOSITY so the inner composer is not silenced when
             // the outer testo run is invoked with -q/-v. Without this, acceptance
             // tests that assert on composer's stdout become flaky-on-flags.
-            env: ['SHELL_VERBOSITY' => '0'],
+            env: [...['SHELL_VERBOSITY' => '0', 'CI' => false], ...$env],
         );
         $process->setTimeout($timeout);
 

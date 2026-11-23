@@ -31,7 +31,7 @@ use LLM\Skills\Sync\SyncRunner;
  *
  * Auto-sync listens to {@see ScriptEvents::POST_INSTALL_CMD} and
  * {@see ScriptEvents::POST_UPDATE_CMD} and runs `skills:update` unless the
- * project sets `auto-sync: false`. `composer --no-scripts` does not suppress
+ * project sets `auto-sync: false` or Composer runs in a CI job. `composer --no-scripts` does not suppress
  * it: in that mode Composer drops only the root package's `scripts`
  * listeners and still dispatches the events to plugin subscribers.
  *
@@ -120,10 +120,20 @@ final class SkillsPlugin implements PluginInterface, Capable, EventSubscriberInt
      * Either way, the explicit `composer skills:update` is the
      * unambiguous trigger for the migration; the auto-sync hook
      * just opportunistically takes the same code path on `update`.
+     *
+     * In a CI job ({@see CiEnvironment}) the hook does nothing but say
+     * so: skills serve development, and installing them there costs
+     * network and time. A job that wants them runs `skills:update`.
      */
     public function onPostInstallOrUpdate(ScriptEvent $event): void
     {
         if ($this->composer === null || $this->io === null) {
+            return;
+        }
+
+        if (CiEnvironment::detected()) {
+            $this->io->write('<info>[llm/skills] CI detected, auto-sync skipped; run `composer skills:update` to install skills here</info>');
+
             return;
         }
 

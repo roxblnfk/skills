@@ -145,7 +145,9 @@ location and the sync aborts when it does not match.
 - Gate the job on `composer skills:validate`: it exits `1` on a malformed config, an
   invalid shipped skill, or a name conflict between donors that would abort the sync, with
   no network and nothing installed ([commands.md](commands.md#behaviour---help-leaves-out)).
-- Jobs that do not use agents can skip the sync with `composer install --no-plugins`.
+- `composer install` installs no skills in CI: auto-sync is skipped where `CI` is set
+  ([commands.md](commands.md#auto-sync)). A job that needs them runs
+  `composer skills:update`.
 - Remote `sources[]` need network and a GitHub/GitLab token in `COMPOSER_AUTH`
   ([sources.md](sources.md#source-entries)); `composer skills:validate --fetch` checks them
   too and exits `1` on an entry of the project's own that cannot be fetched, which a sync
