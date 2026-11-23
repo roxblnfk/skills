@@ -15,7 +15,6 @@ use Symfony\Component\Process\Process;
  */
 final class SkillScript
 {
-    public const VALIDATE = 'validate-skill.php';
     public const CHECK_PROJECT = 'check-project.php';
     public const SCAN = 'scan-skill.php';
 

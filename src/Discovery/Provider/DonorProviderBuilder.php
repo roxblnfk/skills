@@ -15,6 +15,7 @@ use LLM\Skills\Discovery\Provider\Source\Adapter\HostAdapterRegistry;
 use LLM\Skills\Discovery\Provider\Source\CachePathBuilder;
 use LLM\Skills\Discovery\Provider\Source\Http\ComposerHttpClient;
 use LLM\Skills\Discovery\Provider\Source\HttpArchiveFetcher;
+use LLM\Skills\Discovery\Provider\Source\NullDonorRefSource;
 use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
 use LLM\Skills\Discovery\Provider\Source\SourceProvider;
 use LLM\Skills\Discovery\Provider\Source\VendorDeclaredRefSource;
@@ -75,13 +76,16 @@ final readonly class DonorProviderBuilder
     /**
      * @param mixed $extra raw value of the root package's `extra` field, used as
      *        the fallback when no `skills.json` is present.
+     * @param bool $remote whether donors that need the network take part: `sources[]`
+     *        entries other than `dir`, and the sources installed packages declare. Without
+     *        it only installed packages and `dir` entries are read.
      */
-    public function build(Path $projectRoot, ?Composer $composer, mixed $extra): DonorProvider
+    public function build(Path $projectRoot, ?Composer $composer, mixed $extra, bool $remote = true): DonorProvider
     {
         $composerEnabled = $this->resolveManagerEnabled($projectRoot, $extra, ProviderId::COMPOSER);
 
         $local = new ComposerProvider($composer, enabled: $composerEnabled);
-        [$vendorSource, $projectSource] = $this->buildSourceProviders($composer, $extra);
+        [$vendorSource, $projectSource] = $this->buildSourceProviders($composer, $extra, $remote);
 
         return new CompositeDonorProvider($local, $vendorSource, $projectSource);
     }
@@ -116,7 +120,7 @@ final readonly class DonorProviderBuilder
      * @return array{SourceProvider, SourceProvider} vendor-declared provider first,
      *         project provider second — the wiring order the composite relies on
      */
-    private function buildSourceProviders(?Composer $composer, mixed $extra): array
+    private function buildSourceProviders(?Composer $composer, mixed $extra, bool $remote): array
     {
         $config = $composer?->getConfig() ?? Factory::createConfig(new NullIO());
         $httpClient = ComposerHttpClient::fromConfig($config);
@@ -133,8 +137,10 @@ final readonly class DonorProviderBuilder
             CachePathBuilder::fromVendorDir($config->get('vendor-dir')),
         );
 
-        $vendorSource = new VendorDeclaredRefSource($composer, $registry, projectMapper: $this->mapper, extra: $extra);
-        $projectSource = new SkillsJsonDonorRefSource($registry, $this->mapper, $extra);
+        $vendorSource = $remote
+            ? new VendorDeclaredRefSource($composer, $registry, projectMapper: $this->mapper, extra: $extra)
+            : new NullDonorRefSource();
+        $projectSource = new SkillsJsonDonorRefSource($registry, $this->mapper, $extra, $remote);
 
         return [
             new SourceProvider($vendorSource, $fetcher),

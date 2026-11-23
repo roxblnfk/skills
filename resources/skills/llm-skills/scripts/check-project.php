@@ -13,8 +13,9 @@ Usage: php check-project.php [--json] [--root=DIR]
 Checks a project's llm/skills setup: skills.json and skills.local.json (validity,
 unknown and deprecated keys, trust patterns, sources), legacy inline extra.skills,
 git hygiene of the target, aliases and skills.local.json, and - for a package that
-ships skills - its extra.skills.source, the shipped skills themselves,
-.gitattributes export-ignore and duplicate skill copies.
+ships skills - its extra.skills.source, .gitattributes export-ignore and duplicate
+skill copies. The shipped skills themselves are validated by
+"composer skills:lint"; the run ends with that command for them.
 
 Options:
   --root=DIR  project root to check (default: current directory)
@@ -52,6 +53,9 @@ final class ProjectChecker
     private const CONTAINERS = ['.agents/skills', '.claude/skills', '.cursor/skills', 'skills', 'resources/skills'];
 
     private ?bool $git = null;
+
+    /** @var list<string> directories holding shipped skills, for the lint hint */
+    private array $shippedDirs = [];
 
     public function __construct(private readonly Report $report, private readonly string $root)
     {
@@ -592,7 +596,6 @@ final class ProjectChecker
         }
         $rel = $this->path('composer.json');
         $text = (string) @\file_get_contents($this->root . '/composer.json');
-        $validator = new SkillValidator($this->report);
         $hasAttributes = \is_file($this->root . '/.gitattributes');
         $git = $this->gitReady();
         /** @var list<string> $shipped skill directories consumers receive */
@@ -643,11 +646,13 @@ final class ProjectChecker
                 } elseif ($git && $hasAttributes) {
                     $this->report->info($this->path($n), null, 'export-ignore-status', 'declared skills source is included in dist archives; no action needed');
                 }
-                foreach ($validator->validateSource($dir) as $skill) {
-                    $shipped[] = $skill['dir'];
-                    if ($skill['internal']) {
-                        $this->report->info(Fs::rel($skill['dir']), null, 'skill-internal', 'skill is marked metadata.internal, so consumers skip it unless their allowlist names it; no action needed if that is intended');
-                    }
+                $sourceSkills = $this->sourceSkills($dir);
+                if ($sourceSkills !== []) {
+                    $this->shippedDirs[] = $dir;
+                }
+                foreach ($sourceSkills as $skill) {
+                    $shipped[] = $skill;
+                    $this->inspectSkill($skill);
                 }
             }
             foreach (self::CONTAINERS as $c) {
@@ -680,12 +685,10 @@ final class ProjectChecker
                 if ($c === $target) {
                     $this->report->warn($this->path($c), null, 'target-shipped', 'the sync target is committed and shipped, so consumers discover these installed copies as this package\'s skills; export-ignore or untrack it');
                 }
+                $this->shippedDirs[] = $dir;
                 foreach ($skills as $s) {
-                    $info = $validator->validateSkill($s);
                     $shipped[] = $s;
-                    if ($info['internal']) {
-                        $this->report->info(Fs::rel($s), null, 'skill-internal', 'skill is marked metadata.internal, so consumers skip it unless their allowlist names it; no action needed if that is intended');
-                    }
+                    $this->inspectSkill($s);
                 }
             }
         }
@@ -695,16 +698,103 @@ final class ProjectChecker
             $groups[Text::collisionKey(\basename($dir))][] = $dir;
         }
         foreach ($groups as $dirs) {
-            if (\count($dirs) < 2 || \count(\array_unique(\array_map('basename', $dirs))) > 1) {
+            if (\count($dirs) < 2) {
                 continue;
             }
+            $spellings = \array_unique(\array_map('basename', $dirs));
+            if (\count($spellings) > 1) {
+                foreach ($dirs as $d) {
+                    $others = \array_map(static fn(string $o): string => '"' . Fs::rel($o) . '"', \array_values(\array_filter($dirs, static fn(string $o): bool => \basename($o) !== \basename($d))));
+                    $this->report->error(Fs::rel($d), null, 'name-collision', 'skill directory "' . \basename($d) . '" collides with ' . \implode(', ', $others)
+                        . ' when compared case-insensitively/after Unicode NFC, which aborts a consumer sync; rename one of them');
+                }
+            }
             foreach ($dirs as $d) {
-                $others = \array_map(static fn(string $o): string => '"' . Fs::rel($o) . '"', \array_values(\array_diff($dirs, [$d])));
+                $copies = \array_values(\array_filter($dirs, static fn(string $o): bool => $o !== $d && \basename($o) === \basename($d)));
+                if ($copies === []) {
+                    continue;
+                }
+                $others = \array_map(static fn(string $o): string => '"' . Fs::rel($o) . '"', $copies);
                 $this->report->error(Fs::rel($d), null, 'duplicate-shipped-skill', 'skill "' . \basename($d) . '" also ships from ' . \implode(', ', $others)
                     . ', and a consumer sync aborts on duplicate names from one package; export-ignore or untrack the extra copy, or declare extra.skills.source');
             }
         }
-        $validator->reportCollisions();
+    }
+
+    /**
+     * Lines printed after the findings: the command that validates the shipped skills.
+     *
+     * @return list<string>
+     */
+    public function hints(): array
+    {
+        if ($this->shippedDirs === []) {
+            return [];
+        }
+        $args = \array_map(
+            // No quoting survives every Windows shell, and escapeshellarg() there blanks out
+            // "%" and "!"; double quotes at least keep spaces together.
+            static fn(string $d): string => match (true) {
+                \preg_match('~^[\w./-]+$~', Fs::rel($d)) === 1 => Fs::rel($d),
+                \PHP_OS_FAMILY === 'Windows' => '"' . Fs::rel($d) . '"',
+                default => \escapeshellarg(Fs::rel($d)),
+            },
+            \array_values(\array_unique($this->shippedDirs)),
+        );
+
+        return [
+            'Validate the shipped skills themselves with: composer skills:lint -- ' . \implode(' ', $args),
+            '(with the standalone llm/skills binary: skills lint -- ' . \implode(' ', $args) . ')',
+        ];
+    }
+
+    /**
+     * Skill directories of a declared extra.skills.source, which llm/skills copies one
+     * subdirectory at a time; reports subdirectories that would ship but are not skills.
+     *
+     * @return list<string>
+     */
+    private function sourceSkills(string $dir): array
+    {
+        $skills = [];
+        foreach (Fs::entries($dir) as $entry) {
+            $child = "$dir/$entry";
+            if (!\is_dir($child)) {
+                continue;
+            }
+            if ($entry[0] === '.') {
+                $this->report->info(Fs::rel($child), null, 'hidden-dir-skipped', 'hidden directory in a skills source is never installed by llm/skills; rename it if it is meant to ship');
+                continue;
+            }
+            if (self::skillFile($child) === null) {
+                $this->report->warn(Fs::rel($child), null, 'source-subdir-not-skill', 'directory has no SKILL.md, yet llm/skills copies every subdirectory of a declared extra.skills.source as a skill; add a SKILL.md or move it out of the source directory');
+                continue;
+            }
+            $skills[] = Fs::abs($child);
+        }
+
+        return $skills;
+    }
+
+    /**
+     * Reports a skill file named in the wrong case and a skill marked metadata.internal.
+     */
+    private function inspectSkill(string $skillDir): void
+    {
+        $file = self::skillFile($skillDir) ?? 'SKILL.md';
+        if ($file !== 'SKILL.md') {
+            $this->report->warn(Fs::rel("$skillDir/$file"), null, 'skill-md-wrong-case', "file is named \"$file\", which llm/skills does not find on case-sensitive filesystems; rename it to SKILL.md");
+        }
+        $content = (string) @\file_get_contents("$skillDir/$file");
+        $doc = SkillDocument::parse($content);
+        // The frontmatter test llm/skills applies: exact "---" lines within the first 4 KiB.
+        $head = (string) \preg_replace('/\A\xEF\xBB\xBF/', '', \substr($content, 0, 4096));
+        $visible = \preg_match('/\A---\R.*?\R---(\R|$)/s', $head) === 1;
+        $frontmatter = $visible ? Yaml::plain($doc->frontmatter) : null;
+        $flag = \is_array($frontmatter) && \is_array($frontmatter['metadata'] ?? null) ? ($frontmatter['metadata']['internal'] ?? null) : null;
+        if (\is_string($flag) && \in_array(\strtolower(\trim($flag)), ['true', '1'], true)) {
+            $this->report->info(Fs::rel($skillDir), null, 'skill-internal', 'skill is marked metadata.internal, so consumers skip it unless their allowlist names it; no action needed if that is intended');
+        }
     }
 
     /**
@@ -720,18 +810,39 @@ final class ProjectChecker
             if (!\is_dir($p) || Fs::isLink($p)) {
                 continue;
             }
-            if (\is_file("$p/SKILL.md")) {
+            if (self::skillFile($p) !== null) {
                 $out[] = Fs::abs($p);
                 continue;
             }
             foreach (Fs::entries($p) as $e2) {
-                if (\is_dir("$p/$e2") && !Fs::isLink("$p/$e2") && \is_file("$p/$e2/SKILL.md")) {
+                if (\is_dir("$p/$e2") && !Fs::isLink("$p/$e2") && self::skillFile("$p/$e2") !== null) {
                     $out[] = Fs::abs("$p/$e2");
                 }
             }
         }
 
         return $out;
+    }
+
+    /**
+     * Name of the skill file in a directory as it is on disk: "SKILL.md", else a differently
+     * cased variant; null when there is none. Compares names, since is_file() ignores case
+     * on Windows and macOS.
+     */
+    private static function skillFile(string $dir): ?string
+    {
+        $variant = null;
+        foreach (Fs::entries($dir) as $entry) {
+            if (\strcasecmp($entry, 'SKILL.md') !== 0 || !\is_file("$dir/$entry")) {
+                continue;
+            }
+            if ($entry === 'SKILL.md') {
+                return $entry;
+            }
+            $variant ??= $entry;
+        }
+
+        return $variant;
     }
 }
 
@@ -750,7 +861,8 @@ exit(Cli::run(static function () use ($usage): int {
         throw new UsageError("--root \"$root\" is not a directory");
     }
     $report = new Report();
-    (new ProjectChecker($report, $root))->run();
+    $checker = new ProjectChecker($report, $root);
+    $checker->run();
 
-    return $report->emit(isset($opts['json']));
+    return $report->emit(isset($opts['json']), $checker->hints());
 }, $usage));

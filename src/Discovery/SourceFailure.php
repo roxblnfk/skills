@@ -37,6 +37,8 @@ final readonly class SourceFailure
      * @param string|null $detail underlying error text — transport message, parser
      *        error, whatever the layer below produced. `null` when the summary already
      *        says everything there is to say.
+     * @param bool $declaredByPackage whether an installed package declared the source in its
+     *        `extra.skills.sources`, rather than the project in its own `sources[]`
      *
      * @psalm-mutation-free
      */
@@ -44,6 +46,7 @@ final readonly class SourceFailure
         public string $label,
         public string $summary,
         public ?string $detail = null,
+        public bool $declaredByPackage = false,
     ) {}
 
     /**

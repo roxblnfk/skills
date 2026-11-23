@@ -79,10 +79,12 @@ Mechanical limits; the writing itself is `writing-for-agents` territory.
 ## Validation
 
 ```bash
-php <this-skill>/scripts/validate-skill.php path/to/my-skill
+composer skills:lint path/to/my-skill
 ```
 
-Fix every `ERROR`. Each `WARN` is either fixed or a deliberate choice (for example an
+Each finding is one line, `<LEVEL> <file>[:<line>]: <message>`: the level is `ERROR`,
+`WARN` or `INFO` padded to five characters, and the message ends in its fix; `--json`
+gives the same as objects. Fix every `ERROR`. Each `WARN` is either fixed or a deliberate choice (for example an
 agent-specific key) the user is told about. The spec's reference validator is
 `skills-ref validate <path>` from `agentskills/agentskills`.
 

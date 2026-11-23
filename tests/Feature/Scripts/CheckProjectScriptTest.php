@@ -189,6 +189,91 @@ final class CheckProjectScriptTest
         Assert::count($run->withCode('duplicate-shipped-skill', 'ERROR', '.claude/skills/shared'), 1, $run->dump());
     }
 
+    public function reportsTheLayoutOfADeclaredSourceAndPointsAtLint(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package', 'extra' => ['skills' => ['source' => 'resources/skills']]]);
+        $this->write('resources/skills/private/SKILL.md', "---\nname: private\ndescription: Internal skill.\nmetadata:\n  internal: true\n---\n\nBody.\n");
+        $this->write('resources/skills/notes/README.md', "Not a skill.\n");
+        $this->write('resources/skills/.drafts/SKILL.md', "---\nname: drafts\n---\n");
+
+        $run = $this->check();
+
+        Assert::same($run->exitCode, 0, $run->dump());
+        Assert::count($run->withCode('skill-internal', 'INFO', 'resources/skills/private'), 1, $run->dump());
+        Assert::count($run->withCode('source-subdir-not-skill', 'WARN', 'resources/skills/notes'), 1, $run->dump());
+        Assert::count($run->withCode('hidden-dir-skipped', 'INFO', 'resources/skills/.drafts'), 1, $run->dump());
+        Assert::string($run->stderr)->contains('composer skills:lint -- resources/skills');
+    }
+
+    public function warnsAboutALowercaseSkillFileInADeclaredSource(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package', 'extra' => ['skills' => ['source' => 'resources/skills']]]);
+        $this->write('resources/skills/lower/skill.md', "---\nname: lower\ndescription: Fixture.\n---\n");
+
+        $run = $this->check();
+
+        Assert::count($run->withCode('skill-md-wrong-case', 'WARN', 'resources/skills/lower/skill.md'), 1, $run->dump());
+        Assert::same($run->withCode('source-subdir-not-skill'), [], $run->dump());
+    }
+
+    public function rejectsShippedSkillsWhoseNamesDifferOnlyInCase(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package']);
+        $this->write('skills/Shared/SKILL.md', "---\nname: Shared\ndescription: Fixture.\n---\n");
+        $this->write('.claude/skills/shared/SKILL.md', "---\nname: shared\ndescription: Fixture.\n---\n");
+
+        $run = $this->check();
+
+        Assert::same($run->exitCode, 1, $run->dump());
+        Assert::count($run->withCode('name-collision', 'ERROR', 'skills/Shared'), 1, $run->dump());
+        Assert::count($run->withCode('name-collision', 'ERROR', '.claude/skills/shared'), 1, $run->dump());
+    }
+
+    public function reportsAnExactDuplicateBesideASpellingCollision(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package']);
+        $skill = "---\nname: shared\ndescription: Fixture.\n---\n";
+        $this->write('skills/Shared/SKILL.md', $skill);
+        $this->write('.claude/skills/shared/SKILL.md', $skill);
+        $this->write('.agents/skills/shared/SKILL.md', $skill);
+
+        $run = $this->check();
+
+        Assert::count($run->withCode('name-collision', 'ERROR'), 3, $run->dump());
+        Assert::count($run->withCode('duplicate-shipped-skill', 'ERROR', '.claude/skills/shared'), 1, $run->dump());
+        Assert::count($run->withCode('duplicate-shipped-skill', 'ERROR', '.agents/skills/shared'), 1, $run->dump());
+    }
+
+    public function ignoresAnInternalFlagThePluginCannotSee(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package', 'extra' => ['skills' => ['source' => 'resources/skills']]]);
+        $this->write('resources/skills/padded/SKILL.md', "--- \nname: padded\ndescription: Fixture.\nmetadata:\n  internal: true\n---\n");
+
+        $run = $this->check();
+
+        Assert::same($run->withCode('skill-internal'), [], $run->dump());
+    }
+
+    public function finishesOnAnUnterminatedQuoteInAFlowCollection(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package', 'extra' => ['skills' => ['source' => 'resources/skills']]]);
+        $this->write('resources/skills/broken/SKILL.md', "---\nname: broken\ndescription: Fixture.\ntags: [a'b,'c]\n---\n");
+
+        $run = $this->check();
+
+        Assert::same($run->exitCode, 0, $run->dump());
+    }
+
+    public function omitsTheValidateHintForASourceWithoutSkills(): void
+    {
+        $this->writeJson('composer.json', ['name' => 'acme/package', 'extra' => ['skills' => ['source' => 'resources/skills']]]);
+        $this->write('resources/skills/notes/README.md', "Not a skill.\n");
+
+        $run = $this->check();
+
+        Assert::false(\str_contains($run->stderr, 'skills:lint'), $run->stderr);
+    }
+
     public function warnsAboutATrackedTarget(): void
     {
         $this->initGit();

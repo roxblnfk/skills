@@ -49,6 +49,8 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
      * @param mixed $extra raw `extra` of the root package, or `null` without one. Its inline
      *        config is the base of the project config while there is no `skills.json`, so the
      *        entries read here are the ones the sync resolves.
+     * @param bool $remote whether to yield entries that need the network; without it only
+     *        path-only entries (`dir`) are read, and the rest are passed over without a failure
      *
      * @psalm-mutation-free
      */
@@ -56,6 +58,7 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
         private readonly HostAdapterRegistry $registry,
         private readonly ProjectConfigMapper $mapper = new ProjectConfigMapper(),
         private readonly mixed $extra = null,
+        private readonly bool $remote = true,
     ) {}
 
     /**
@@ -79,6 +82,9 @@ final class SkillsJsonDonorRefSource implements DonorRefSource
             // directory the provider reads in place.
             if (ProviderId::isPathOnlySource($entry->from)) {
                 yield $this->resolveDirEntry($projectRoot, $entry);
+                continue;
+            }
+            if (!$this->remote) {
                 continue;
             }
 

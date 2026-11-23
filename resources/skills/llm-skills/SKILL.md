@@ -50,18 +50,18 @@ Read only the file for the branch at hand.
 | Write, edit or improve a skill; frontmatter rules | [references/authoring.md](references/authoring.md) |
 | A `[skip]`, `[conflict]`, `[link-failed]` or other message to explain; a skill that did not arrive | [references/troubleshooting.md](references/troubleshooting.md) |
 
-## Scripts
+## Checks
 
-Deterministic checks, run with PHP from the project root; each accepts `--help` and
-`--json`.
+Deterministic checks, run from the project root; each accepts `--help` and `--json`.
 
 | Command | Checks |
 |---|---|
-| `php <this-skill>/scripts/validate-skill.php [PATH...]` | Skill structure and frontmatter against the Agent Skills spec and the plugin's own rules |
-| `php <this-skill>/scripts/check-project.php [--root=DIR]` | `skills.json` / `skills.local.json`, git hygiene of target and aliases, a package's shipped skills |
+| `composer skills:validate [--fetch]` | The project, for CI: its config, the skills it ships, and the donors and skills a sync would install |
+| `composer skills:lint [PATH...]` | Skill structure and frontmatter against the Agent Skills spec and the plugin's own rules |
+| `php <this-skill>/scripts/check-project.php [--root=DIR]` | `skills.json` / `skills.local.json`, git hygiene of target and aliases, a package's skills source layout |
 | `php <this-skill>/scripts/scan-skill.php PATH...` | Security pre-screen of third-party skills: hidden Unicode, pipe-to-shell, secret reads, injection phrasing, binaries |
 
-Run `check-project.php` before changing configuration and again after; run
-`validate-skill.php` on every skill you write or edit; run `scan-skill.php` on every skill
-from a donor you are about to trust. A finding's message names its fix; report every
+Run `check-project.php` before changing configuration and `skills:validate` after; run
+`skills:lint` on every skill you write or edit; run `scan-skill.php` on every
+skill from a donor you are about to trust. A finding's message names its fix; report every
 `ERROR` to the user before calling the work done.

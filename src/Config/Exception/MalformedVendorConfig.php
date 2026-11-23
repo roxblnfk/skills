@@ -21,7 +21,7 @@ final class MalformedVendorConfig extends ConfigException
      */
     public function __construct(
         public readonly string $packageName,
-        string $reason,
+        public readonly string $reason,
     ) {
         parent::__construct(\sprintf('Package "%s": %s', $packageName, $reason));
     }

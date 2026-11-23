@@ -86,12 +86,13 @@ use `--no-plugins`, which disables every Composer plugin for that run.
 The package ships one skill of its own, `llm-skills`, synced like any other. Invoke it by
 hand (`/llm-skills` in Claude Code) whenever you want an agent to help with skills: configure
 `skills.json`, publish skills from a package, decide what to trust, audit a third-party skill,
-find or write a new one. It carries deterministic checks the agent runs for you:
+find or write a new one. It runs deterministic checks for you:
 
 ```bash
-php .agents/skills/llm-skills/scripts/validate-skill.php path/to/skill   # spec + plugin rules
-php .agents/skills/llm-skills/scripts/check-project.php                  # config and git hygiene
-php .agents/skills/llm-skills/scripts/scan-skill.php path/to/skill       # security pre-screen
+composer skills:validate                                            # config, shipped skills, donor conflicts
+composer skills:lint path/to/skill                                  # spec + plugin rules
+php .agents/skills/llm-skills/scripts/check-project.php             # config and git hygiene
+php .agents/skills/llm-skills/scripts/scan-skill.php path/to/skill  # security pre-screen
 ```
 
 ### Global composer installation
@@ -137,6 +138,8 @@ composer skills:init   [options]                  # alias: skills:i
 composer skills:update [<package>...] [options]   # alias: skills:u
 composer skills:show   [<package>...] [options]   # alias: skills:s
 composer skills:add    <input> [options]          # alias: skills:a
+composer skills:validate [--fetch] [--json]
+composer skills:lint [<path>...] [--json]
 ```
 
 `skills:update` copies skills into the target directory. `skills:show` is read-only — it lists
@@ -146,7 +149,14 @@ written, and (when `composer.json` carries legacy inline project keys) migrates 
 plugin offers the same thing on its own — as a single confirmation — the first time it runs in
 a project that has no configuration. `skills:add` registers
 a donor that lives outside Composer (e.g. a GitHub repository) and immediately fetches its
-skills — see [Donor sources](#donor-sources).
+skills — see [Donor sources](#donor-sources). `skills:validate` is the CI check of a project:
+it validates the skills configuration, what `composer.json` declares for distribution and the
+skills shipped from `extra.skills.source`, and checks the donors a sync would install from
+— in `vendor/`, and with `--fetch` the remote sources too — without installing anything. It
+exits `1` on any error, including two trusted donors shipping one skill name; problems inside
+a donor's skills are warnings, since the project cannot fix them. `skills:lint` checks any skill
+directories against the Agent Skills specification and the rules this plugin installs by,
+printing one finding per line with its fix and exiting `1` on any error.
 
 | Option                | Where  | Description                                                                                                                                                        |
 |-----------------------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|

@@ -2,8 +2,8 @@
 
 /**
  * Shared code for the llm-skills helper scripts: findings report, CLI parsing,
- * path helpers, a YAML-subset parser for SKILL.md frontmatter and the skill
- * validator. Dependency-free; PHP 8.2+.
+ * path helpers and a YAML-subset parser for SKILL.md frontmatter. Dependency-free;
+ * PHP 8.2+. Skill validation itself is the plugin's `skills:lint` command.
  */
 
 declare(strict_types=1);
@@ -79,7 +79,7 @@ final class Report
         if ($json) {
             echo \json_encode($this->items, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_INVALID_UTF8_SUBSTITUTE), "\n";
             foreach ($trailer as $line) {
-                \fwrite(\STDERR, $line . "\n");
+                \fwrite(\STDERR, self::escape($line) . "\n");
             }
         } else {
             foreach ($this->items as $i) {
@@ -88,7 +88,7 @@ final class Report
             }
             \printf("%d error(s), %d warning(s)\n", $this->count('ERROR'), $this->count('WARN'));
             foreach ($trailer as $line) {
-                echo $line, "\n";
+                echo self::escape($line), "\n";
             }
         }
 
@@ -290,25 +290,6 @@ final class Fs
         return $list;
     }
 
-    /**
-     * Real on-disk name of the skill file in a directory: "SKILL.md" or a differently cased
-     * variant such as "skill.md"; null when none exists.
-     */
-    public static function skillFileName(string $dir): ?string
-    {
-        $found = null;
-        foreach (self::entries($dir) as $entry) {
-            if ($entry === 'SKILL.md' && \is_file("$dir/$entry")) {
-                return $entry;
-            }
-            if ($found === null && \strcasecmp($entry, 'SKILL.md') === 0 && \is_file("$dir/$entry")) {
-                $found = $entry;
-            }
-        }
-
-        return $found;
-    }
-
     public static function readJson(string $file, ?string &$error): mixed
     {
         $error = null;
@@ -342,15 +323,6 @@ final class Fs
 
 final class Text
 {
-    public static function length(string $s): int
-    {
-        if (\function_exists('mb_strlen')) {
-            return \mb_strlen($s, 'UTF-8');
-        }
-
-        return (int) \preg_match_all('/./su', $s);
-    }
-
     /**
      * UTF-8 encoding of a code point.
      */
@@ -375,30 +347,19 @@ final class Text
         return $s;
     }
 
-    public static function nfkc(string $s): string
-    {
-        if (\class_exists(\Normalizer::class)) {
-            $n = \Normalizer::normalize($s, \Normalizer::FORM_KC);
-
-            return \is_string($n) ? $n : $s;
-        }
-
-        return $s;
-    }
-
-    public static function lower(string $s): string
-    {
-        return \function_exists('mb_strtolower') ? \mb_strtolower($s, 'UTF-8') : \strtolower($s);
-    }
-
     /**
      * The key llm/skills compares directory names by: NFC, then simple case folding.
      */
     public static function collisionKey(string $s): string
     {
+        // Folding would turn invalid UTF-8 into "?" and make distinct names collide.
+        if (\preg_match('//u', $s) !== 1) {
+            return \strtolower($s);
+        }
         $s = self::nfc($s);
 
-        return \function_exists('mb_convert_case') ? \mb_convert_case($s, \MB_CASE_FOLD_SIMPLE, 'UTF-8') : \strtolower($s);
+        // The mbstring polyfill lacks this constant, and its full folding merges "ß" and "ss".
+        return \defined('MB_CASE_FOLD_SIMPLE') ? \mb_convert_case($s, \MB_CASE_FOLD_SIMPLE, 'UTF-8') : \strtolower($s);
     }
 
     /**
@@ -715,10 +676,13 @@ final class Yaml
         $inner = \substr($quoted, 1, -1);
         // Folding: a single line break becomes a space, each extra empty line a newline.
         $inner = \preg_replace_callback(
-            '/[ \t]*(\\\\?)\n((?:[ \t]*\n)*)[ \t]*/',
-            static fn(array $m): string => $q === '"' && $m[1] === '\\'
-                ? \str_repeat("\n", \substr_count($m[2], "\n"))
-                : $m[1] . ($m[2] === '' ? ' ' : \str_repeat("\n", \substr_count($m[2], "\n"))),
+            // A line-ending backslash escapes the break only when it is not itself escaped,
+            // so a run of backslashes splits into pairs and an optional last one.
+            // Trailing blanks drop only from a line ending unescaped; before a backslash they stay.
+            '/((?:\\\\\\\\)*)(\\\\?)[ \t]*\n((?:[ \t]*\n)*)[ \t]*/',
+            static fn(array $m): string => $m[1] . ($q === '"' && $m[2] === '\\'
+                ? \str_repeat("\n", \substr_count($m[3], "\n"))
+                : $m[2] . ($m[3] === '' ? ' ' : \str_repeat("\n", \substr_count($m[3], "\n")))),
             $inner,
         ) ?? $inner;
         if ($q === "'") {
@@ -1017,6 +981,9 @@ final class Yaml
                     if ($key['t'] !== 'str') {
                         throw new YamlError('flow mapping keys must be scalars', $no);
                     }
+                    if (\array_key_exists($key['v'], $items)) {
+                        throw new YamlError("duplicate key \"{$key['v']}\"", $no);
+                    }
                     $items[$key['v']] = $value;
                 } else {
                     $items[] = $this->flowValue($s, $i, $no);
@@ -1036,6 +1003,9 @@ final class Yaml
         }
         if ($c === '"' || $c === "'") {
             $end = self::quotedEnd(\substr($s, $i));
+            if ($end < 0) {
+                throw new YamlError("unterminated quoted string in a flow collection; add the closing $c", $no);
+            }
             $node = ['t' => 'str', 'v' => self::unquote(\substr($s, $i, $end), $no), 'line' => $no, 'style' => $c === '"' ? 'double' : 'single'];
             $i += $end;
 
@@ -1139,756 +1109,5 @@ final class SkillDocument
         $doc->notes = [...$doc->notes, ...$yaml->notes];
 
         return $doc;
-    }
-}
-
-/**
- * Validates skill directories against the Agent Skills spec, common agent extensions and
- * llm/skills plugin behaviour.
- */
-final class SkillValidator
-{
-    public const SPEC_KEYS = ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools'];
-
-    /** Frontmatter keys some agents understand beyond the spec, with the agents that read them. */
-    public const EXTENSION_KEYS = [
-        'when_to_use' => ['Claude Code'],
-        'argument-hint' => ['Claude Code', 'VS Code/Copilot'],
-        'arguments' => ['Claude Code'],
-        'disable-model-invocation' => ['Claude Code', 'Cursor', 'VS Code/Copilot'],
-        'user-invocable' => ['Claude Code', 'VS Code/Copilot'],
-        'disallowed-tools' => ['Claude Code'],
-        'model' => ['Claude Code'],
-        'effort' => ['Claude Code'],
-        'context' => ['Claude Code', 'VS Code/Copilot'],
-        'agent' => ['Claude Code'],
-        'background' => ['Claude Code'],
-        'hooks' => ['Claude Code'],
-        'paths' => ['Claude Code', 'Cursor'],
-        'shell' => ['Claude Code'],
-        'globs' => ['Cursor'],
-        'icon' => ['Cursor'],
-        'color' => ['Cursor'],
-    ];
-
-    /** Directory names the walk never enters. */
-    public const SKIP_DIRS = ['vendor', 'node_modules', '.git'];
-
-    private const DEVICE_NAME = '/^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]) *(?:\..*)?$/iuD';
-
-    /** @var array<string, list<string>> collision key => skill directories */
-    private array $names = [];
-
-    public function __construct(private readonly Report $report)
-    {
-    }
-
-    /**
-     * Skill directories under a path: the path itself when it holds SKILL.md, else a walk
-     * that does not descend into skills, linked duplicates, or vendor/node_modules/.git.
-     *
-     * @return list<string> absolute skill directories
-     */
-    public static function discover(string $path, int $maxDepth = 6): array
-    {
-        $path = Fs::abs($path);
-        if (\is_file($path)) {
-            return \strcasecmp(\basename($path), 'SKILL.md') === 0 ? [\dirname($path)] : [];
-        }
-        if (!\is_dir($path)) {
-            return [];
-        }
-        $found = [];
-        $visited = [];
-        $walk = static function (string $dir, int $depth) use (&$walk, &$found, &$visited, $maxDepth): void {
-            $real = \realpath($dir);
-            $key = $real === false ? $dir : Fs::normalize($real);
-            $key = \PHP_OS_FAMILY === 'Windows' ? \strtolower($key) : $key;
-            if (isset($visited[$key])) {
-                return;
-            }
-            $visited[$key] = true;
-            if (Fs::skillFileName($dir) !== null) {
-                $found[] = $dir;
-
-                return;
-            }
-            if ($depth >= $maxDepth) {
-                return;
-            }
-            foreach (Fs::entries($dir) as $entry) {
-                if (\in_array($entry, self::SKIP_DIRS, true) || !\is_dir("$dir/$entry")) {
-                    continue;
-                }
-                $walk("$dir/$entry", $depth + 1);
-            }
-        };
-        $walk($path, 0);
-
-        return $found;
-    }
-
-    /**
-     * Validates every skill under a PATH argument; reports a PATH holding no skill.
-     */
-    public function validatePath(string $path, bool $explicit): void
-    {
-        $abs = Fs::abs($path);
-        if (!\file_exists($abs)) {
-            $this->report->error(Fs::rel($abs), null, 'path-missing', 'path does not exist; pass a skill directory, a SKILL.md file, or a directory that contains skills');
-
-            return;
-        }
-        $skills = self::discover($abs);
-        if ($skills === []) {
-            $msg = 'no SKILL.md found here or below; a skill is a directory holding a SKILL.md file';
-            $explicit
-                ? $this->report->error(Fs::rel($abs), null, 'skill-md-missing', $msg . ' — create one or point at the right directory')
-                : $this->report->warn(Fs::rel($abs), null, 'skill-md-missing', $msg . ' — pass the skills directory explicitly');
-
-            return;
-        }
-        foreach ($skills as $dir) {
-            $this->validateSkill($dir);
-        }
-        // An explicitly named container of skills may be a package's declared source.
-        if ($explicit && \is_dir($abs) && !\in_array($abs, $skills, true)) {
-            $this->checkSourceChildren($abs, false);
-        }
-    }
-
-    /**
-     * Validates a declared extra.skills.source directory as llm/skills reads it: every
-     * immediate subdirectory is copied as a skill.
-     *
-     * @return list<array{dir: string, name: string, internal: bool}>
-     */
-    public function validateSource(string $dir): array
-    {
-        $out = [];
-        foreach (Fs::entries($dir) as $entry) {
-            $child = "$dir/$entry";
-            if (!\is_dir($child) || $entry[0] === '.' || Fs::skillFileName($child) === null) {
-                continue;
-            }
-            $info = $this->validateSkill($child);
-            $out[] = ['dir' => $child, 'name' => $entry, 'internal' => $info['internal']];
-        }
-        $this->checkSourceChildren($dir, true);
-
-        return $out;
-    }
-
-    /**
-     * Reports subdirectories of a skills container that are not skills themselves.
-     *
-     * @param bool $declared whether the container is a declared source (catalog folders count too)
-     */
-    private function checkSourceChildren(string $dir, bool $declared): void
-    {
-        $children = \array_filter(Fs::entries($dir), static fn(string $e): bool => \is_dir("$dir/$e"));
-        $hasSkill = false;
-        foreach ($children as $e) {
-            if (Fs::skillFileName("$dir/$e") !== null) {
-                $hasSkill = true;
-                break;
-            }
-        }
-        if (!$hasSkill && !$declared) {
-            return;
-        }
-        foreach ($children as $e) {
-            $child = "$dir/$e";
-            if (Fs::skillFileName($child) !== null) {
-                continue;
-            }
-            if ($e[0] === '.') {
-                if ($declared) {
-                    $this->report->info(Fs::rel($child), null, 'hidden-dir-skipped', 'hidden directory in a skills source is never installed by llm/skills; rename it if it is meant to ship');
-                }
-                continue;
-            }
-            if (!$declared && self::discover($child, 2) !== []) {
-                continue;
-            }
-            $this->report->warn(Fs::rel($child), null, 'source-subdir-not-skill', 'directory has no SKILL.md, yet llm/skills copies every subdirectory of a declared extra.skills.source as a skill; add a SKILL.md or move it out of the source directory');
-        }
-    }
-
-    /**
-     * Reports skill directories whose names differ but collide case-insensitively or after NFC.
-     */
-    public function reportCollisions(): void
-    {
-        foreach ($this->names as $dirs) {
-            $spellings = \array_unique(\array_map('basename', $dirs));
-            if (\count($spellings) < 2) {
-                continue;
-            }
-            foreach ($dirs as $dir) {
-                $others = \array_values(\array_filter($dirs, static fn(string $d): bool => \basename($d) !== \basename($dir)));
-                $this->report->error(Fs::rel($dir), null, 'name-collision', \sprintf(
-                    'skill directory "%s" collides with %s when compared case-insensitively/after Unicode NFC, which aborts an llm/skills sync and overwrites on case-insensitive filesystems; rename one of them',
-                    \basename($dir),
-                    \implode(', ', \array_map(static fn(string $d): string => '"' . Fs::rel($d) . '"', $others)),
-                ));
-            }
-        }
-    }
-
-    /**
-     * @return array{name: string|null, internal: bool, allowedTools: mixed, frontmatter: mixed}
-     */
-    public function validateSkill(string $dir): array
-    {
-        try {
-            return $this->validateSkillUnguarded($dir);
-        } catch (\Throwable $e) {
-            $this->report->error(Fs::rel($dir), null, 'validation-failed', 'skill could not be validated (' . $e->getMessage() . '); inspect SKILL.md by hand');
-
-            return ['name' => null, 'internal' => false, 'allowedTools' => null, 'frontmatter' => null];
-        }
-    }
-
-    /**
-     * @return array{name: string|null, internal: bool, allowedTools: mixed, frontmatter: mixed}
-     */
-    private function validateSkillUnguarded(string $dir): array
-    {
-        $result = ['name' => null, 'internal' => false, 'allowedTools' => null, 'frontmatter' => null];
-        $dir = Fs::abs($dir);
-        $base = \basename($dir);
-        $relDir = Fs::rel($dir);
-        $key = Text::collisionKey($base);
-        $this->names[$key][] = $dir;
-        $this->names[$key] = \array_values(\array_unique($this->names[$key]));
-
-        if (($reason = self::refusedDirName($base)) !== null) {
-            $this->report->error($relDir, null, 'dir-name-refused', "skill directory name \"$base\" $reason, so llm/skills refuses to install it; rename the directory (lowercase letters, digits and hyphens are safe)");
-        }
-
-        $fileName = Fs::skillFileName($dir);
-        if ($fileName === null) {
-            $this->report->error($relDir, null, 'skill-md-missing', 'missing required file SKILL.md; create SKILL.md with name and description frontmatter');
-
-            return $result;
-        }
-        $file = "$dir/$fileName";
-        $rel = Fs::rel($file);
-        if ($fileName !== 'SKILL.md') {
-            $this->report->warn($rel, null, 'skill-md-wrong-case', "file is named \"$fileName\", which agents on case-sensitive filesystems and llm/skills do not find; rename it to SKILL.md");
-        }
-        $content = @\file_get_contents($file);
-        if ($content === false) {
-            $this->report->error($rel, null, 'skill-md-unreadable', 'SKILL.md cannot be read; fix its permissions');
-
-            return $result;
-        }
-        if (\preg_match('//u', $content) !== 1) {
-            $this->report->error($rel, null, 'not-utf8', 'SKILL.md is not valid UTF-8; re-save it with UTF-8 encoding');
-
-            return $result;
-        }
-
-        $doc = SkillDocument::parse($content);
-        if ($doc->bom) {
-            $this->report->warn($rel, 1, 'utf8-bom', 'file starts with a UTF-8 byte-order mark, so strict parsers such as skills-ref do not see "---" first; save it without BOM');
-        }
-        if ($doc->missing === 'frontmatter-missing') {
-            $this->report->error($rel, 1, 'frontmatter-missing', 'SKILL.md must start with YAML frontmatter (---) on its very first line; add a --- block with name and description');
-        } elseif ($doc->missing === 'frontmatter-unclosed') {
-            $this->report->error($rel, 1, 'frontmatter-unclosed', 'SKILL.md frontmatter is not closed with ---; add a line containing only --- after the last frontmatter key');
-
-            return $result;
-        } elseif ($doc->frontmatterEnd !== null && $doc->frontmatterEnd > 4096) {
-            $this->report->warn($rel, $doc->bodyStart - 1, 'frontmatter-over-4k', 'frontmatter ends past the first 4 KiB, which is all llm/skills reads, so it cannot see name, description or metadata.internal; shorten the frontmatter');
-        }
-        foreach ($doc->notes as $note) {
-            $this->report->warn($rel, $note['line'], $note['code'], $note['message']);
-        }
-        if ($doc->frontmatterError !== null) {
-            $this->report->error($rel, $doc->frontmatterErrorLine, 'yaml-invalid', 'invalid YAML in frontmatter: ' . $doc->frontmatterError);
-        } elseif ($doc->frontmatter !== null) {
-            $result = $this->checkFrontmatter($doc->frontmatter, $base, $rel) + $result;
-        }
-        $this->checkBody($doc, $dir, $rel);
-        $this->checkReferenceFiles($dir);
-
-        return $result;
-    }
-
-    /**
-     * Why llm/skills refuses a skill directory name, or null when it accepts it.
-     */
-    public static function refusedDirName(string $name): ?string
-    {
-        return match (true) {
-            $name === '' || $name[0] === '.' => 'is hidden',
-            \preg_match('/~\d/', $name) === 1 => 'looks like a Windows short name',
-            \preg_match('//u', $name) !== 1 => 'is not valid UTF-8',
-            \preg_match('/[\x00-\x1f\/\\\\:<>"|?*]/', $name) === 1 => 'holds a character Windows does not allow in a directory name',
-            \in_array($name[-1], ['.', ' '], true) => 'ends in a dot or space, which Windows strips',
-            \preg_match(self::DEVICE_NAME, $name) === 1 => 'is a Windows device name',
-            default => null,
-        };
-    }
-
-    /**
-     * @return array{name: string|null, internal: bool, allowedTools: mixed, frontmatter: mixed}
-     */
-    private function checkFrontmatter(array $root, string $dirName, string $rel): array
-    {
-        $r = $this->report;
-        $plain = Yaml::plain($root);
-        $out = ['name' => null, 'internal' => false, 'allowedTools' => null, 'frontmatter' => $plain];
-        if ($root['t'] !== 'map') {
-            $r->error($rel, $root['line'], 'frontmatter-not-mapping', 'SKILL.md frontmatter must be a YAML mapping of "key: value" lines; rewrite it as such');
-
-            return $out;
-        }
-        /** @var array<string, array> $fields */
-        $fields = $root['v'];
-
-        // Unknown and extension keys.
-        $known = [...self::SPEC_KEYS, ...\array_keys(self::EXTENSION_KEYS)];
-        foreach ($fields as $key => $node) {
-            $key = (string) $key;
-            if (\in_array($key, self::SPEC_KEYS, true)) {
-                continue;
-            }
-            if ($key === 'internal') {
-                $r->warn($rel, $node['line'], 'internal-top-level', 'top-level "internal" is ignored by llm/skills and rejected by skills-ref; move it under metadata: as "internal: true"');
-                continue;
-            }
-            if (isset(self::EXTENSION_KEYS[$key])) {
-                $r->warn($rel, $node['line'], 'extension-key', \sprintf(
-                    '"%s" is a %s extension, not an Agent Skills spec field, so other agents ignore it and skills-ref/claude.ai upload reject it; keep it only if you target %s',
-                    $key,
-                    \implode(' / ', self::EXTENSION_KEYS[$key]),
-                    \count(self::EXTENSION_KEYS[$key]) > 1 ? 'those agents' : 'that agent',
-                ));
-                continue;
-            }
-            $guess = Text::nearest($key, $known);
-            $r->warn($rel, $node['line'], 'unknown-key', $guess !== null
-                ? "unknown frontmatter key \"$key\" (possible typo of \"$guess\"); rename it, since agents silently ignore unknown keys and skills-ref rejects them"
-                : "unknown frontmatter key \"$key\" is ignored by agents and rejected by skills-ref; remove it or move it under metadata:");
-        }
-
-        // name
-        $name = $fields['name'] ?? null;
-        if ($name === null) {
-            $r->error($rel, $root['line'], 'name-missing', 'missing required field "name"; add "name: ' . $dirName . '" matching the directory name');
-        } elseif ($name['t'] !== 'str' || \trim($name['v']) === '' || $name['style'] === 'null') {
-            $r->error($rel, $name['line'], 'name-empty', 'field "name" must be a non-empty string; set it to the directory name "' . $dirName . '"');
-        } else {
-            $value = Text::nfkc(\trim($name['v']));
-            $out['name'] = $value;
-            $line = $name['line'];
-            $len = Text::length($value);
-            if ($len > 64) {
-                $r->error($rel, $line, 'name-too-long', "skill name exceeds the 64 character limit ($len chars); shorten it and rename the directory to match");
-            }
-            if (Text::lower($value) !== $value) {
-                $suggest = \trim((string) \preg_replace('/[^a-z0-9]+/', '-', \strtolower($value)), '-');
-                $r->error($rel, $line, 'name-not-lowercase', "skill name \"$value\" must be lowercase; use e.g. \"$suggest\" and rename the directory to match");
-            }
-            if (\str_starts_with($value, '-') || \str_ends_with($value, '-')) {
-                $r->error($rel, $line, 'name-hyphen-edge', "skill name \"$value\" cannot start or end with a hyphen; remove the leading/trailing hyphen");
-            }
-            if (\str_contains($value, '--')) {
-                $r->error($rel, $line, 'name-double-hyphen', "skill name \"$value\" cannot contain consecutive hyphens; use a single hyphen");
-            }
-            if (\preg_match('/[^a-z0-9A-Z-]/u', $value) === 1) {
-                $r->error($rel, $line, 'name-invalid-chars', "skill name \"$value\" contains invalid characters; use only lowercase letters a-z, digits and hyphens");
-            }
-            if (Text::nfkc($dirName) !== $value) {
-                $skillDir = Fs::abs(\dirname($rel));
-                // A repository or package root is installed by llm/skills under its frontmatter name.
-                if (\file_exists("$skillDir/composer.json") || \file_exists("$skillDir/.git")) {
-                    $r->warn($rel, $line, 'name-dir-mismatch', "directory name \"$dirName\" differs from skill name \"$value\"; llm/skills installs this repository-root skill as \"$value\", but other agents expect them to match, so rename one if the skill is also used in place");
-                } else {
-                    $r->error($rel, $line, 'name-dir-mismatch', "directory name \"$dirName\" must match skill name \"$value\"; rename the directory or change the name");
-                }
-            }
-            foreach (['anthropic', 'claude'] as $word) {
-                if (\str_contains(Text::lower($value), $word)) {
-                    $r->warn($rel, $line, 'name-reserved-word', "skill name contains the reserved word \"$word\", which claude.ai and the Claude API reject on upload; pick a name without it if you publish there");
-                }
-            }
-        }
-
-        // description
-        $desc = $fields['description'] ?? null;
-        if ($desc === null) {
-            $r->error($rel, $root['line'], 'description-missing', 'missing required field "description"; add one saying what the skill does and when to use it');
-        } elseif ($desc['t'] !== 'str' || \trim($desc['v']) === '' || $desc['style'] === 'null') {
-            $r->error($rel, $desc['line'], 'description-empty', 'field "description" must be a non-empty string; describe what the skill does and when to use it');
-        } else {
-            $len = Text::length($desc['v']);
-            if ($len > 1024) {
-                $r->error($rel, $desc['line'], 'description-too-long', "description exceeds the 1024 character limit ($len chars); shorten it and move detail into the body");
-            }
-            if (\strpbrk($desc['v'], '<>') !== false) {
-                $r->warn($rel, $desc['line'], 'description-angle-brackets', 'description contains "<" or ">", which Anthropic packaging rejects and Claude Code shows escaped; rephrase without angle brackets');
-            }
-        }
-
-        // compatibility
-        if (isset($fields['compatibility'])) {
-            $c = $fields['compatibility'];
-            if ($c['t'] !== 'str') {
-                $r->error($rel, $c['line'], 'compatibility-not-string', 'field "compatibility" must be a string; write the environment requirements as one sentence');
-            } elseif (\trim($c['v']) === '' || $c['style'] === 'null') {
-                $r->error($rel, $c['line'], 'compatibility-empty', 'field "compatibility" must not be empty; remove it or state the environment requirements');
-            } elseif (($len = Text::length($c['v'])) > 500) {
-                $r->error($rel, $c['line'], 'compatibility-too-long', "compatibility exceeds the 500 character limit ($len chars); shorten it");
-            }
-        }
-
-        // metadata
-        if (isset($fields['metadata'])) {
-            $m = $fields['metadata'];
-            if ($m['t'] !== 'map') {
-                if (!($m['t'] === 'str' && $m['style'] === 'null')) {
-                    $hint = $m['t'] === 'str' && \preg_match('/^[\w-]+:\S/', $m['v']) === 1 ? ' (add a space after the colon in "' . $m['v'] . '")' : '';
-                    $r->error($rel, $m['line'], 'metadata-not-mapping', 'field "metadata" must be a mapping of string keys to string values; write it as indented "key: value" lines' . $hint);
-                }
-            } else {
-                foreach ($m['v'] as $k => $v) {
-                    if ($v['t'] !== 'str') {
-                        $r->warn($rel, $v['line'], 'metadata-value-not-string', "metadata.$k holds a nested " . ($v['t'] === 'map' ? 'mapping' : 'list') . ', but metadata values must be strings; flatten it to a string');
-                    }
-                }
-                if (isset($m['v']['internal'])) {
-                    $iv = $m['v']['internal'];
-                    $val = $iv['t'] === 'str' ? \strtolower(\trim($iv['v'])) : '';
-                    if (\in_array($val, ['true', '1'], true)) {
-                        $out['internal'] = true;
-                    } elseif ($val !== 'false' && $val !== '0') {
-                        $r->warn($rel, $iv['line'], 'internal-value-ignored', 'llm/skills treats metadata.internal as set only when it is true or 1; write "internal: true" or remove it');
-                    }
-                }
-            }
-        }
-
-        // license
-        if (isset($fields['license']) && $fields['license']['t'] !== 'str') {
-            $r->warn($rel, $fields['license']['line'], 'license-not-string', 'field "license" should be a short string such as "MIT" or "Proprietary. LICENSE.txt has complete terms"; rewrite it as one');
-        }
-
-        // allowed-tools
-        if (isset($fields['allowed-tools'])) {
-            $t = $fields['allowed-tools'];
-            $out['allowedTools'] = Yaml::plain($t);
-            if ($t['t'] === 'list') {
-                $r->warn($rel, $t['line'], 'allowed-tools-list', 'allowed-tools is a YAML list, which only some agents accept; the spec form is one space-separated string such as "Bash(git:*) Read"');
-            } elseif ($t['t'] === 'map') {
-                $r->error($rel, $t['line'], 'allowed-tools-invalid', 'allowed-tools must be a space-separated string of tool names; rewrite it as e.g. "Bash(git:*) Read"');
-            }
-        }
-
-        return $out;
-    }
-
-    /**
-     * Blanks out fenced and indented code blocks and HTML comments, keeping line numbering.
-     *
-     * @return list<string>
-     */
-    private static function proseLines(string $text): array
-    {
-        $out = [];
-        $fence = null;
-        $inComment = false;
-        $inIndented = false;
-        $prevBlank = true;
-        $inList = false;
-        foreach (\preg_split('/\r\n|\n|\r/', $text) ?: [] as $line) {
-            if ($fence === null) {
-                $clean = '';
-                $rest = $line;
-                while (true) {
-                    if ($inComment) {
-                        $end = \strpos($rest, '-->');
-                        if ($end === false) {
-                            break;
-                        }
-                        $rest = \substr($rest, $end + 3);
-                        $inComment = false;
-                    }
-                    $start = \strpos($rest, '<!--');
-                    if ($start === false) {
-                        $clean .= $rest;
-                        break;
-                    }
-                    $clean .= \substr($rest, 0, $start);
-                    $rest = \substr($rest, $start + 4);
-                    $inComment = true;
-                }
-                $line = $clean;
-                $blank = \trim($line) === '';
-                // Four-space indented code starts after a blank line, unless it continues a list item.
-                if (!$blank && \preg_match('/^(?: {4}|\t)/', $line) === 1 && ($inIndented || ($prevBlank && !$inList))) {
-                    $inIndented = true;
-                    $prevBlank = false;
-                    $out[] = '';
-                    continue;
-                }
-                if (!$blank) {
-                    $inIndented = false;
-                    $inList = \preg_match('/^\s*(?:[-*+]|\d+[.)])\s/', $line) === 1 || ($inList && \preg_match('/^\s/', $line) === 1);
-                }
-                $prevBlank = $blank;
-            }
-            if (\preg_match('/^\s{0,3}(`{3,}|~{3,})/', $line, $m) === 1) {
-                if ($fence === null) {
-                    $fence = $m[1];
-                    $out[] = '';
-                    continue;
-                }
-                if ($m[1][0] === $fence[0] && \strlen($m[1]) >= \strlen($fence) && \trim($line) === $m[1]) {
-                    $fence = null;
-                    $out[] = '';
-                    continue;
-                }
-            }
-            $out[] = $fence === null ? $line : '';
-        }
-
-        return $out;
-    }
-
-    /**
-     * Relative link targets in Markdown prose (inline links, images, reference definitions).
-     *
-     * @return list<array{line: int, target: string}>
-     */
-    private static function links(string $text, int $firstLine): array
-    {
-        $links = [];
-        foreach (self::proseLines($text) as $i => $line) {
-            $noCode = \preg_replace('/(`+)(?:(?!\1).)+\1/', '', $line) ?? $line;
-            $targets = [];
-            if (\preg_match_all('/!?\[(?:[^\[\]]|\[[^\]]*\])*\]\(\s*(<[^>]*>|[^()\s]*(?:\([^()\s]*\)[^()\s]*)*)(?:\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\)))?\s*\)/', $noCode, $m) > 0) {
-                $targets = $m[1];
-            }
-            // Reference definitions; "[^1]:" is a footnote, not a link.
-            if (\preg_match('/^\s{0,3}\[(?!\^)[^\]]+\]:\s*(\S+)/', $noCode, $m) === 1) {
-                $targets[] = $m[1];
-            }
-            foreach ($targets as $t) {
-                $t = \trim($t, '<>');
-                if ($t !== '') {
-                    $links[] = ['line' => $firstLine + $i, 'target' => $t];
-                }
-            }
-        }
-
-        return $links;
-    }
-
-    /**
-     * Resolves a link target to a path inside or near the skill, or null when it is not a local file link.
-     */
-    private static function resolveLink(string $target, string $fromDir): ?string
-    {
-        if (\preg_match('~^(?:[a-z][a-z0-9+.-]*:|#|//|/)~i', $target) === 1 || \strpbrk($target, '{}$*') !== false) {
-            return null;
-        }
-        $path = (string) \preg_replace('/[#?].*$/s', '', $target);
-        if ($path === '') {
-            return null;
-        }
-
-        return Fs::abs(\str_replace('\\', '/', \rawurldecode($path)), $fromDir);
-    }
-
-    private static function inside(string $path, string $dir): bool
-    {
-        $fold = \PHP_OS_FAMILY === 'Windows' ? 'strtolower' : static fn(string $s): string => $s;
-
-        return $fold($path) === $fold($dir) || \str_starts_with($fold($path), $fold(\rtrim($dir, '/') . '/'));
-    }
-
-    /**
-     * Checks one Markdown file's links; returns the in-skill .md files it links to.
-     *
-     * @return list<array{line: int, path: string}>
-     */
-    private function checkLinks(string $text, int $firstLine, string $file, string $skillDir, bool $inlinePaths): array
-    {
-        $rel = Fs::rel($file);
-        $mdLinks = [];
-        foreach (self::links($text, $firstLine) as $link) {
-            $target = $link['target'];
-            $resolved = self::resolveLink($target, \dirname($file));
-            if ($resolved === null) {
-                continue;
-            }
-            if (\str_contains($target, '\\')) {
-                $this->report->warn($rel, $link['line'], 'link-backslash', "link \"$target\" uses backslashes, which break on non-Windows systems; use forward slashes");
-            }
-            if (!\file_exists($resolved)) {
-                $this->report->error($rel, $link['line'], 'link-missing', "link target \"$target\" does not exist; fix the path or add the file");
-                continue;
-            }
-            if (!self::inside($resolved, $skillDir)) {
-                $this->report->info($rel, $link['line'], 'link-outside-skill', "link \"$target\" leaves the skill directory, so it resolves only where that file is installed alongside; copy the file into the skill if it must always be available");
-                continue;
-            }
-            if (\str_ends_with(\strtolower($resolved), '.md') && \is_file($resolved)) {
-                $mdLinks[] = ['line' => $link['line'], 'path' => $resolved];
-            }
-        }
-
-        // Inline-code paths such as `references/api.md` or `scripts/run.py`, checked in SKILL.md only:
-        // reference files often name paths of the upstream repository instead.
-        foreach ($inlinePaths ? self::proseLines($text) : [] as $i => $line) {
-            if (\preg_match_all('/(`+)((?:(?!\1).)+)\1/', $line, $spans) === 0) {
-                continue;
-            }
-            foreach ($spans[2] as $span) {
-                if (\preg_match_all('~(?<![\w./\\\\-])(?:\./)?(?:references|scripts|assets)([/\\\\])[\w.\\\\/-]*[\w-]~', $span, $pm, \PREG_SET_ORDER) === 0) {
-                    continue;
-                }
-                foreach ($pm as $p) {
-                    $path = $p[0];
-                    if (\str_contains($path, '\\')) {
-                        $this->report->warn($rel, $firstLine + $i, 'path-backslash', "path \"$path\" uses backslashes, which break on non-Windows systems; use forward slashes");
-                        $path = \str_replace('\\', '/', $path);
-                    }
-                    $abs = Fs::abs($path, $skillDir);
-                    $last = \basename($path);
-                    if (!\str_contains($last, '.') || \file_exists($abs) || \file_exists(Fs::abs($path, \dirname($file)))) {
-                        continue;
-                    }
-                    // Prose often names a file of a sibling skill ("see other-skill → references/x.md").
-                    if ((\glob(\dirname($skillDir) . '/*/' . \ltrim($path, './'), \GLOB_NOSORT) ?: []) !== []) {
-                        continue;
-                    }
-                    $this->report->warn($rel, $firstLine + $i, 'path-missing', "path \"$path\" is not present in the skill directory; fix the path or add the file");
-                }
-            }
-        }
-
-        return $mdLinks;
-    }
-
-    private function checkBody(SkillDocument $doc, string $dir, string $rel): void
-    {
-        $lines = $doc->missing === null ? \count(\preg_split('/\r\n|\n|\r/', \rtrim($doc->body)) ?: []) : 0;
-        if ($lines > 500) {
-            $this->report->warn($rel, null, 'body-too-long', "SKILL.md body has $lines lines, over the recommended 500; move detail into reference files linked from SKILL.md");
-        }
-        $tokens = intdiv(Text::length($doc->body), 4);
-        if ($tokens > 5000) {
-            $this->report->warn($rel, null, 'body-too-many-tokens', "SKILL.md body is about $tokens tokens, over the recommended 5000; move detail into reference files linked from SKILL.md");
-        }
-        $level1 = $this->checkLinks($doc->body, $doc->bodyStart, "$dir/SKILL.md", $dir, true);
-        $direct = [];
-        foreach ($level1 as $l) {
-            $direct[\strtolower($l['path'])] = true;
-        }
-        $skillMd = \strtolower(Fs::abs("$dir/SKILL.md"));
-        $checked = [];
-        foreach ($level1 as $l) {
-            $key = \strtolower($l['path']);
-            if ($key === $skillMd || isset($checked[$key])) {
-                continue;
-            }
-            $checked[$key] = true;
-            $text = (string) @\file_get_contents($l['path']);
-            foreach ($this->checkLinks($text, 1, $l['path'], $dir, false) as $deeper) {
-                $dkey = \strtolower($deeper['path']);
-                if ($dkey === $skillMd || $dkey === $key || isset($direct[$dkey])) {
-                    continue;
-                }
-                $this->report->warn(Fs::rel($l['path']), $deeper['line'], 'reference-nested', \sprintf(
-                    'links to "%s", which SKILL.md does not link directly; agents may read nested references only partially, so link it from SKILL.md (references one level deep)',
-                    Fs::rel($deeper['path']),
-                ));
-            }
-        }
-    }
-
-    /**
-     * Long reference Markdown files should open with a table of contents.
-     */
-    private function checkReferenceFiles(string $dir): void
-    {
-        $files = [];
-        $walk = static function (string $d, int $depth) use (&$walk, &$files): void {
-            foreach (Fs::entries($d) as $e) {
-                $p = "$d/$e";
-                if (\is_dir($p)) {
-                    if ($depth < 4 && $e[0] !== '.' && !\in_array($e, ['assets', 'scripts', ...self::SKIP_DIRS], true) && !Fs::isLink($p)) {
-                        $walk($p, $depth + 1);
-                    }
-                } elseif (\str_ends_with(\strtolower($e), '.md') && ($depth > 0 || \strcasecmp($e, 'SKILL.md') !== 0)) {
-                    $files[] = $p;
-                }
-            }
-        };
-        $walk($dir, 0);
-        foreach ($files as $f) {
-            $text = (string) @\file_get_contents($f);
-            $lines = \preg_split('/\r\n|\n|\r/', \rtrim($text)) ?: [];
-            if (\count($lines) <= 100 || self::hasToc($lines)) {
-                continue;
-            }
-            $this->report->warn(Fs::rel($f), null, 'reference-no-toc', \sprintf(
-                'reference file has %d lines but no table of contents near the top; add a short "Contents" list of its sections so agents see the whole scope from a partial read',
-                \count($lines),
-            ));
-        }
-    }
-
-    /**
-     * @param list<string> $lines
-     */
-    private static function hasToc(array $lines): bool
-    {
-        $head = \array_slice($lines, 0, 50);
-        $anchorItems = 0;
-        $listItems = [];
-        foreach ($head as $line) {
-            if (\preg_match('/^\s*(?:#{1,6}\s*|\*\*|__)?(?:table of contents|contents|toc|on this page|in this (?:file|document|reference)|sections|index)\b/i', $line) === 1) {
-                return true;
-            }
-            if (\preg_match('/^\s*(?:[-*+]|\d+\.)\s+(.*)$/', $line, $m) === 1) {
-                if (\str_contains($m[1], '](#')) {
-                    $anchorItems++;
-                }
-                $listItems[] = self::plainText($m[1]);
-            }
-        }
-        if ($anchorItems >= 3) {
-            return true;
-        }
-        // An early list naming at least three of the file's headings works as a contents list.
-        $headings = [];
-        foreach ($lines as $line) {
-            if (\preg_match('/^#{2,6}\s+(.*)$/', $line, $m) === 1) {
-                $headings[self::plainText($m[1])] = true;
-            }
-        }
-        $hits = 0;
-        foreach ($listItems as $item) {
-            if ($item !== '' && isset($headings[$item])) {
-                $hits++;
-            }
-        }
-
-        return $hits >= 3;
-    }
-
-    private static function plainText(string $s): string
-    {
-        $s = (string) \preg_replace('/\[([^\]]*)\]\([^)]*\)/', '$1', $s);
-        $s = (string) \preg_replace('/[`*_]/', '', $s);
-        $s = (string) \preg_replace('/\s+[—–-]\s+.*$/u', '', $s);
-
-        return \strtolower(\trim($s, " \t:."));
     }
 }

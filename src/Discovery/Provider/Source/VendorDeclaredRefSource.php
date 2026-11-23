@@ -155,6 +155,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
                     label: ProviderId::COMPOSER . ':' . $name,
                     summary: 'invalid extra.skills.sources',
                     detail: $reason,
+                    declaredByPackage: true,
                 );
                 continue;
             }
@@ -166,6 +167,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
                     if ($ref === null) {
                         $this->lastFailures[] = new SourceFailure(
                             label: $this->entryLabel($name, $entry),
+                            declaredByPackage: true,
                             summary: \sprintf(
                                 'cannot bind self.version — package version "%s" is not usable as a ref',
                                 $package->getPrettyVersion(),
@@ -216,6 +218,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
             } catch (UnknownAdapterException $e) {
                 $this->lastFailures[] = new SourceFailure(
                     label: $this->entryLabel($declaredBy, $entry),
+                    declaredByPackage: true,
                     summary: 'unknown source adapter',
                     detail: $e->getMessage(),
                 );
@@ -240,6 +243,7 @@ final class VendorDeclaredRefSource implements DonorRefSource
             } catch (RemoteResolveException $e) {
                 $this->lastFailures[] = new SourceFailure(
                     label: $this->entryLabel($declaredBy, $entry),
+                    declaredByPackage: true,
                     summary: $e->reason,
                 );
                 continue;

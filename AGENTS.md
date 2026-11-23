@@ -29,7 +29,9 @@ installs them into the consumer project (default `.agents/skills/`, configurable
 - The `LLM\Skills\…` namespace appearing in some files is legacy from an earlier project
   name and should be migrated to `LLM\Skills\…`; do not propagate it in new code.
 - File paths in commands and services should flow through the `Internal\Path` value object
-  (provided by the `internal/path` dependency).
+  (provided by the `internal/path` dependency). The skill validator (`src/Validation/` and the
+  `validate` / `lint` commands feeding it) is the exception: it reports on names byte for byte, which `Path` normalizes away, so it
+  keeps plain strings through `Validation\PathDisplay`.
 - **Behavioural changes require acceptance coverage.** Whenever a change alters
   observable plugin behaviour — what gets discovered, copied, skipped, warned
   about, or how output looks — add or update an acceptance test in

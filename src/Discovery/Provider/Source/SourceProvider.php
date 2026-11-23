@@ -105,6 +105,7 @@ final readonly class SourceProvider implements DonorProvider
                     $failures[] = new SourceFailure(
                         label: $ref->label(),
                         summary: 'no fetcher is configured for remote sources',
+                        declaredByPackage: $ref->declaredBy !== [],
                     );
                     $fetcherWarned = true;
                 }
@@ -116,6 +117,7 @@ final readonly class SourceProvider implements DonorProvider
             } catch (RemoteFetchException $e) {
                 $failures[] = new SourceFailure(
                     label: $ref->label(),
+                    declaredByPackage: $ref->declaredBy !== [],
                     // The ref matters more than the URL here: a fetch
                     // that 404s on a ref the user pinned by hand is the
                     // common case, and naming it points straight at the
@@ -254,6 +256,7 @@ final readonly class SourceProvider implements DonorProvider
         if ($rejection !== null) {
             $failures[] = new SourceFailure(
                 label: $ref->label(),
+                declaredByPackage: $ref instanceof RemoteDonorRef && $ref->declaredBy !== [],
                 summary: $this->describeRejection($rejection, $inspection->detail),
             );
             return [];
