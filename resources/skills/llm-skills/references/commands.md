@@ -114,7 +114,9 @@ Add `-v` to see per-file warnings such as skipped symlinks and allowlist misses.
 
 Runs on `post-install-cmd` / `post-update-cmd` as a plugin event listener, so
 `composer --no-scripts` still runs it; `--no-plugins` or `"auto-sync": false` stops it.
-Its failures never fail Composer. Only `post-update-cmd` migrates deprecated config.
+It is skipped in a CI job, detected by a `CI` variable set to anything but empty, `0` or
+`false`; there an explicit `skills:update` installs skills. Its failures never fail Composer.
+Only `post-update-cmd` migrates deprecated config.
 
 ## Standalone binary
 

@@ -79,7 +79,9 @@ Auto-sync after every `composer install` / `update` is **on by default**, so aft
 get fresh skills with no further setup. To opt out, set `"auto-sync": false` in `skills.json`.
 Note that `--no-scripts` does **not** skip it: that flag only disables the `scripts` section of
 `composer.json`, while auto-sync is a plugin event listener. To skip it for a single invocation,
-use `--no-plugins`, which disables every Composer plugin for that run.
+use `--no-plugins`, which disables every Composer plugin for that run. In CI — wherever the `CI`
+environment variable is set, as GitHub Actions, GitLab CI and most others do — auto-sync is
+skipped, since skills serve development; run `composer skills:update` in a job that needs them.
 
 ### The bundled `llm-skills` skill
 
