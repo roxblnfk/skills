@@ -132,6 +132,6 @@ Consumers can switch this off with `"vendor-sources": false`.
 The release is ready when all four hold:
 
 1. `php <this-skill>/scripts/check-project.php` — no errors.
-2. `php <this-skill>/scripts/validate-skill.php resources/skills` — no errors.
+2. `composer skills:validate` — no errors.
 3. The dist archive holds every shipped skill and no dev skill.
 4. In a consumer project, `composer skills:show acme/orm` lists every shipped skill.

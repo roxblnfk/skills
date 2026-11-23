@@ -79,7 +79,7 @@ Lightest first. All are third-party tools the user installs; ask before installi
 
 SkillSpector is the scanner NVIDIA gates its own skills catalog with; it runs on a CPU,
 and its LLM stage uses whichever provider you configure. Format validators
-(`skills-ref validate`, `validate-skill.php`) check structure, not safety.
+(`skills-ref validate`, `composer skills:lint`) check structure, not safety.
 
 Registries publish their own verdicts — skills.sh shows Gen Agent Trust Hub, Socket and
 Snyk results per skill, ClawHub shows VirusTotal status. Treat them as one signal.

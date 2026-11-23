@@ -650,7 +650,7 @@ final class SkillsSyncTest
         Assert::same($this->listTargetEntries(), ['llm-skills']);
         Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/SKILL.md'));
         Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/references/security.md'));
-        Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/scripts/validate-skill.php'));
+        Assert::true(\is_file(self::TARGET_DIR . '/llm-skills/scripts/check-project.php'));
     }
 
     // ── --discovery ─────────────────────────────────────────────────────────

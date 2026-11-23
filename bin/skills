@@ -49,6 +49,8 @@ if (!\in_array(PHP_SAPI, ['cli', 'micro'], true)) {
             'show' => static fn() => new \LLM\Skills\Console\Command\Show(),
             'init' => static fn() => new \LLM\Skills\Console\Command\Init(),
             'add' => static fn() => new \LLM\Skills\Console\Command\Add(),
+            'validate' => static fn() => new \LLM\Skills\Console\Command\Validate(),
+            'lint' => static fn() => new \LLM\Skills\Console\Command\Lint(),
         ]),
     );
     $application->setDefaultCommand('update', false);

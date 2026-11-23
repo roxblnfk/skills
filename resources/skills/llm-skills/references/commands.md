@@ -12,6 +12,8 @@ what the help text leaves out.
 | `skills:show [<packages>...]` | `skills:s` | Read-only report of donors, skills, trust and skips |
 | `skills:init` | `skills:i` | Write `skills.json` (wizard or flags), then sync |
 | `skills:add <input>` | `skills:a` | Add a `sources[]` entry, then sync it |
+| `skills:validate [--fetch]` | — | Validate the project's config, shipped skills and what a sync would install, for CI |
+| `skills:lint [<paths>...]` | — | Validate skill directories; output and fixes: [authoring.md](authoring.md#validation) |
 
 Package arguments and `--trust` take `vendor/package` or `vendor/*`
 ([security.md](security.md#granting-trust)).
@@ -56,6 +58,43 @@ Package arguments and `--trust` take `vendor/package` or `vendor/*`
   conflict restores the config file; other failures keep the entry.
 - Entry grammar and refs: [sources.md](sources.md).
 
+`skills:validate`
+
+- Checks, in order: `composer.json`; `skills.json`, `skills.local.json` and inline
+  `extra.skills` as `skills:update` reads them, target and alias paths included;
+  `extra.skills.source` and `extra.skills.sources` as a consumer reads them, and every
+  subdirectory of the declared source; the donors and skills `skills:update` would install,
+  read where they lie; the other skills in the target, such as ones put there by hand.
+- Donors: installed packages and `dir` sources always; remote `sources[]` entries and the
+  sources installed packages declare only with `--fetch`, which needs the network
+  ([config.md → CI](config.md#ci)). Without it an `INFO` line says what was left out.
+- `ERROR` for what breaks the sync and the project fixes: two trusted donors shipping one
+  skill name, an entry of its own `sources[]` that cannot be read, a skill in one of its
+  `dir` sources. Findings in other donors' skills, and sources an installed package declares
+  that cannot be read, are `WARN` at most; so are findings in a target skill matching no
+  donor while some donor was not fetched, since it may be that donor's copy.
+- Each skill directory is checked once: a shipped skill under its source path, a donor's
+  skill at its donor, so an installed copy is not checked again.
+- Deprecated or shadowed config keys are `WARN`; a malformed config skips the donor and
+  target checks, since the target is unknown.
+- Never writes, migrates or installs; `--fetch` fills the source cache only.
+- Output as for `skills:lint`. Exits `1` when any finding is an `ERROR`, else
+  `0`; warnings never fail it.
+
+`skills:lint`
+
+- Reads no configuration and ignores trust: it validates whatever paths it is given,
+  installed or not.
+- A path is a skill directory, a `SKILL.md`, or a directory searched for skills
+  (`vendor/`, `node_modules/`, `.git/` skipped). Without one it searches the current
+  directory, and finding no skill there is a warning rather than an error.
+- A search passes over hidden skill directories, which llm/skills never installs. Named
+  explicitly, a hidden skill is validated but fails on its hidden name.
+- Without a path in a consumer project, the search also covers the installed copies in the
+  target; name your own skill directories to leave those out.
+- Exits `1` when any finding is an `ERROR` and also on an unknown option, else `0`; it
+  never exits `2`.
+
 ## Exit codes
 
 `0` success — including nothing to sync, a declined `--clean` prompt, and a
@@ -80,4 +119,4 @@ Its failures never fail Composer. Only `post-update-cmd` migrates deprecated con
 ## Standalone binary
 
 A `skills` binary (release assets per OS/arch) exposes the same commands as `update`
-(default), `show`, `init`, `add`; there `-d` is short for `--discovery`.
+(default), `show`, `init`, `add`, `validate`, `lint`; there `-d` is short for `--discovery`.
