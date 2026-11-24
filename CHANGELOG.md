@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.0](https://github.com/roxblnfk/skills/compare/1.22.0...1.23.0) (2026-11-24)
+
+
+### Features
+
+* support PHP 8.1 ([#98](https://github.com/roxblnfk/skills/issues/98)) ([d157b51](https://github.com/roxblnfk/skills/commit/d157b514407b3a78c6246757d536d5d8151c9f1a))
+
+
+### Documentation
+
+* **skills:** point the llm-skills trust reference at trusted-composer.txt ([28f37c3](https://github.com/roxblnfk/skills/commit/28f37c335c97bebb6c2fc78f7eeeec143365ef99))
+
 ## [1.22.0](https://github.com/roxblnfk/skills/compare/1.21.0...1.22.0) (2026-11-23)
 
 
