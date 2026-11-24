@@ -16,15 +16,15 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class DirectoryIdentity
+final class DirectoryIdentity
 {
     /**
      * @psalm-mutation-free
      */
     private function __construct(
-        private Path $real,
-        private int $device,
-        private int $inode,
+        private readonly Path $real,
+        private readonly int $device,
+        private readonly int $inode,
     ) {}
 
     /**

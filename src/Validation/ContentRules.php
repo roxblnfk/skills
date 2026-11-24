@@ -13,7 +13,7 @@ use LLM\Skills\Filesystem\LinkGuard;
  *
  * @internal
  */
-final readonly class ContentRules
+final class ContentRules
 {
     private const MAX_BODY_LINES = 500;
     private const MAX_BODY_TOKENS = 5000;
@@ -23,8 +23,8 @@ final readonly class ContentRules
      * @psalm-mutation-free
      */
     public function __construct(
-        private FindingCollector $findings,
-        private PathDisplay $paths,
+        private readonly FindingCollector $findings,
+        private readonly PathDisplay $paths,
     ) {}
 
     /**

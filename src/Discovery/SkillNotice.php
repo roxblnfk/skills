@@ -10,7 +10,7 @@ namespace LLM\Skills\Discovery;
  *
  * @psalm-immutable
  */
-final readonly class SkillNotice
+final class SkillNotice
 {
     /**
      * @param non-empty-string $packageName donor the skill belongs to
@@ -19,8 +19,8 @@ final readonly class SkillNotice
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $packageName,
-        public string $message,
+        public readonly string $packageName,
+        public readonly string $message,
     ) {}
 
     /**

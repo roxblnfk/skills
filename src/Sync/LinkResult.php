@@ -27,7 +27,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class LinkResult
+final class LinkResult
 {
     /**
      * @param Path $alias the alias path the linker tried to create
@@ -40,11 +40,11 @@ final readonly class LinkResult
      * @psalm-mutation-free
      */
     private function __construct(
-        public Path $alias,
-        public Path $target,
-        public LinkStatus $status,
-        public ?string $reason = null,
-        public ?string $previous = null,
+        public readonly Path $alias,
+        public readonly Path $target,
+        public readonly LinkStatus $status,
+        public readonly ?string $reason = null,
+        public readonly ?string $previous = null,
     ) {}
 
     /**

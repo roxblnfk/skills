@@ -54,7 +54,7 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  *
  * @psalm-immutable
  */
-final readonly class ReportFormatter
+final class ReportFormatter
 {
     /**
      * Chip definitions: each code is wrapped in a Symfony OutputFormatter

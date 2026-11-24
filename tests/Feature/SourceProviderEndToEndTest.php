@@ -17,6 +17,7 @@ use LLM\Skills\Discovery\Provider\Source\RemoteFetcher;
 use LLM\Skills\Discovery\Provider\Source\SourceProvider;
 use LLM\Skills\Discovery\Provider\Source\SkillsJsonDonorRefSource;
 use LLM\Skills\Tests\Fixture\ZipFixtures;
+use LLM\Skills\Tests\Fixture\ZipMode;
 use LLM\Skills\Tests\Testo\Filesystem;
 use LLM\Skills\Unpacker\ArchiveUnpacker;
 use LLM\Skills\Unpacker\CliUnpacker;
@@ -846,7 +847,7 @@ final class SourceProviderEndToEndTest
             $entry = $topDir . '/' . $relPath;
             $zip->addFromString($entry, $content);
             if (\in_array($relPath, $symlinks, true)) {
-                $zip->setExternalAttributesName($entry, \ZipArchive::OPSYS_UNIX, self::ZIP_MODE_SYMLINK << 16);
+                $zip->setExternalAttributesName($entry, \ZipArchive::OPSYS_UNIX, ZipMode::SYMLINK << 16);
             }
         }
         $zip->close();

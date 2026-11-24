@@ -12,7 +12,7 @@ use LLM\Skills\Config\VendorConfig;
  *
  * @psalm-immutable
  */
-final readonly class DiscoveryResolution
+final class DiscoveryResolution
 {
     /**
      * @param list<VendorConfig> $included donors to merge into the planner's input list
@@ -22,7 +22,7 @@ final readonly class DiscoveryResolution
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $included,
-        public array $excluded,
+        public readonly array $included,
+        public readonly array $excluded,
     ) {}
 }

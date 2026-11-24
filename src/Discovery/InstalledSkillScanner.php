@@ -19,7 +19,7 @@ use Internal\Path;
  * (already installed) or `[ ]` (would be written on next sync), and by
  * `skills:update --clean` to decide what to delete.
  */
-final readonly class InstalledSkillScanner
+final class InstalledSkillScanner
 {
     /**
      * @return list<InstalledSkill>|null empty list when `$target` does not

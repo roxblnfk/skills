@@ -38,7 +38,7 @@ use LLM\Skills\Sync\SkillConflict;
  * leaves them out of the skill directories it finds; a declared `source` is
  * listed here, so a candidate within the target is dropped here too.
  */
-final readonly class SkillEnumerator
+final class SkillEnumerator
 {
     private const SAFE_SKILL_NAME = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/D';
 
@@ -60,8 +60,8 @@ final readonly class SkillEnumerator
      * @psalm-mutation-free
      */
     public function __construct(
-        private SkillFrontmatterReader $frontmatterReader = new SkillFrontmatterReader(),
-        private ?bool $foldsUnicode = null,
+        private readonly SkillFrontmatterReader $frontmatterReader = new SkillFrontmatterReader(),
+        private readonly ?bool $foldsUnicode = null,
     ) {}
 
     /**

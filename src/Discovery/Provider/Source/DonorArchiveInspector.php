@@ -42,7 +42,7 @@ use LLM\Skills\Sync\SkillConflict;
  *
  * Anything else is a {@see DonorArchiveRejection}.
  */
-final readonly class DonorArchiveInspector
+final class DonorArchiveInspector
 {
     /**
      * Deepest level below the archive root a skill directory may sit at and
@@ -55,8 +55,8 @@ final readonly class DonorArchiveInspector
      * @psalm-mutation-free
      */
     public function __construct(
-        private SkillTreeScanner $scanner = new SkillTreeScanner(),
-        private SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
+        private readonly SkillTreeScanner $scanner = new SkillTreeScanner(),
+        private readonly SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
     ) {}
 
     /**

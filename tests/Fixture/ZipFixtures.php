@@ -8,20 +8,9 @@ namespace LLM\Skills\Tests\Fixture;
  * Builders for `.zip` fixture archives, shared by every test that needs
  * one. All builders require `ext-zip` — callers self-skip when
  * `\ZipArchive` is unavailable.
- *
- * The Unix-mode constants encode the `external_attr` high half exactly
- * as `git archive` and GitHub's zipball endpoint store it, so archives
- * built here match the real-world donor shape byte-for-byte where the
- * extraction pipeline cares.
  */
 trait ZipFixtures
 {
-    /** Unix `st_mode` of a symlink entry: `S_IFLNK | 0777`. */
-    private const ZIP_MODE_SYMLINK = 0xA1FF;
-
-    /** Unix `st_mode` of a regular file entry: `S_IFREG | 0644`. */
-    private const ZIP_MODE_REGULAR = 0x81A4;
-
     /**
      * Fixture archive with default (MS-DOS-host) entries — no Unix
      * modes in `external_attr`.
@@ -45,8 +34,8 @@ trait ZipFixtures
 
     /**
      * Fixture archive whose entries carry Unix modes: `$symlinks` names
-     * get {@see self::ZIP_MODE_SYMLINK} in the high half of
-     * `external_attr`, everything else {@see self::ZIP_MODE_REGULAR}.
+     * get {@see ZipMode::SYMLINK} in the high half of
+     * `external_attr`, everything else {@see ZipMode::REGULAR}.
      * For a symlink entry the content is the link target, exactly as a
      * real archive stores it.
      *
@@ -66,7 +55,7 @@ trait ZipFixtures
             $zip->setExternalAttributesName(
                 $name,
                 \ZipArchive::OPSYS_UNIX,
-                (\in_array($name, $symlinks, true) ? self::ZIP_MODE_SYMLINK : self::ZIP_MODE_REGULAR) << 16,
+                (\in_array($name, $symlinks, true) ? ZipMode::SYMLINK : ZipMode::REGULAR) << 16,
             );
         }
         $zip->close();

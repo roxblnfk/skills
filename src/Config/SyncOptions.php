@@ -13,7 +13,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class SyncOptions
+final class SyncOptions
 {
     /**
      * @param list<VendorPattern> $packageFilters positional `<package>` args; empty list means "all donor packages"
@@ -43,16 +43,16 @@ final readonly class SyncOptions
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $packageFilters,
-        public array $extraTrusted,
-        public ?string $targetOverride,
-        public bool $interactive,
-        public bool $dryRun = false,
-        public ?bool $discovery = null,
-        public ?array $aliasOverrides = null,
-        public bool $autoMigrate = true,
-        public ?string $fromFilter = null,
-        public ?bool $clean = null,
+        public readonly array $packageFilters,
+        public readonly array $extraTrusted,
+        public readonly ?string $targetOverride,
+        public readonly bool $interactive,
+        public readonly bool $dryRun = false,
+        public readonly ?bool $discovery = null,
+        public readonly ?array $aliasOverrides = null,
+        public readonly bool $autoMigrate = true,
+        public readonly ?string $fromFilter = null,
+        public readonly ?bool $clean = null,
     ) {}
 
     /**

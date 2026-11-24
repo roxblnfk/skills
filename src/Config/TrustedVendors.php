@@ -18,7 +18,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class TrustedVendors
+final class TrustedVendors
 {
     /**
      * @param list<TrustPattern> $patterns
@@ -26,7 +26,7 @@ final readonly class TrustedVendors
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $patterns,
+        public readonly array $patterns,
     ) {}
 
     /**

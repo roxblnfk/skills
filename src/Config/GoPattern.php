@@ -27,7 +27,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class GoPattern implements TrustPattern
+final class GoPattern implements TrustPattern
 {
     /**
      * @param non-empty-string $raw   original textual pattern, kept for diagnostics
@@ -39,9 +39,9 @@ final readonly class GoPattern implements TrustPattern
      * @psalm-mutation-free
      */
     private function __construct(
-        public string $raw,
-        public string $base,
-        public bool $wildcard,
+        public readonly string $raw,
+        public readonly string $base,
+        public readonly bool $wildcard,
     ) {}
 
     /**

@@ -16,7 +16,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class NullDonorRefSource implements DonorRefSource
+final class NullDonorRefSource implements DonorRefSource
 {
     /**
      * @return iterable<RemoteDonorRef>

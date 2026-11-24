@@ -12,7 +12,7 @@ namespace LLM\Skills\Filesystem;
  * outside the tree the caller asked about, and a link cycle would recurse
  * until the stack or the path length gave out.
  */
-final readonly class TreeRemover
+final class TreeRemover
 {
     /**
      * Directory depth {@see self::remove()} descends before giving up. Skill

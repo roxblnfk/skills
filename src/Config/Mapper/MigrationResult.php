@@ -21,7 +21,7 @@ namespace LLM\Skills\Config\Mapper;
  *
  * @psalm-immutable
  */
-final readonly class MigrationResult
+final class MigrationResult
 {
     /**
      * @param list<non-empty-string> $migratedKeys names of project keys that moved
@@ -31,8 +31,8 @@ final readonly class MigrationResult
      * @psalm-mutation-free
      */
     public function __construct(
-        public MigrationStatus $status,
-        public array $migratedKeys = [],
+        public readonly MigrationStatus $status,
+        public readonly array $migratedKeys = [],
     ) {}
 
     /**

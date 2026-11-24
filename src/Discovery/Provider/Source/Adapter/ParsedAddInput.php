@@ -27,7 +27,7 @@ namespace LLM\Skills\Discovery\Provider\Source\Adapter;
  *
  * @psalm-immutable
  */
-final readonly class ParsedAddInput
+final class ParsedAddInput
 {
     /**
      * @param non-empty-string $from
@@ -39,10 +39,10 @@ final readonly class ParsedAddInput
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $from,
-        public ?string $package,
-        public ?string $url,
-        public ?string $host,
-        public ?string $ref,
+        public readonly string $from,
+        public readonly ?string $package,
+        public readonly ?string $url,
+        public readonly ?string $host,
+        public readonly ?string $ref,
     ) {}
 }

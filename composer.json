@@ -31,7 +31,7 @@
         }
     ],
     "require": {
-        "php": ">=8.2",
+        "php": ">=8.1",
         "composer-plugin-api": "^2.0",
         "internal/path": "^1.4"
     },
@@ -82,6 +82,8 @@
         "psalm": "psalm -c tools/psalm/psalm.xml",
         "psalm:baseline": "psalm -c tools/psalm/psalm.xml --set-baseline=tools/psalm/psalm-baseline.xml",
         "psalm:ci": "psalm -c tools/psalm/psalm.xml --output-format=github --shepherd --show-info=false --stats --threads=4",
+        "rector": "rector process --dry-run --config=tools/rector/rector.php",
+        "rector:fix": "rector process --config=tools/rector/rector.php",
         "test": [
             "@putenv XDEBUG_MODE=coverage",
             "testo"

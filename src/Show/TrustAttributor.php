@@ -39,10 +39,10 @@ use LLM\Skills\Config\TrustedVendors;
  *
  * @psalm-immutable
  */
-final readonly class TrustAttributor
+final class TrustAttributor
 {
     /** @var array<non-empty-string, true>|null */
-    private ?array $directDepSet;
+    private readonly ?array $directDepSet;
 
     /**
      * @param list<non-empty-string>|null $directDeps `null` when direct-dep trust is not in
@@ -51,9 +51,9 @@ final readonly class TrustAttributor
      * @psalm-mutation-free
      */
     public function __construct(
-        private ?TrustedVendors $builtin,
-        private TrustedVendors $project,
-        private TrustedVendors $cli,
+        private readonly ?TrustedVendors $builtin,
+        private readonly TrustedVendors $project,
+        private readonly TrustedVendors $cli,
         ?array $directDeps = null,
     ) {
         $this->directDepSet = $directDeps === null

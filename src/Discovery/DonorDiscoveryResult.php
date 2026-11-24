@@ -40,7 +40,7 @@ use LLM\Skills\Config\VendorConfig;
  *
  * @psalm-immutable
  */
-final readonly class DonorDiscoveryResult
+final class DonorDiscoveryResult
 {
     /**
      * @param list<VendorConfig> $donors
@@ -52,10 +52,10 @@ final readonly class DonorDiscoveryResult
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $donors,
-        public array $warnings,
-        public array $malformed = [],
-        public array $discoverable = [],
-        public array $failures = [],
+        public readonly array $donors,
+        public readonly array $warnings,
+        public readonly array $malformed = [],
+        public readonly array $discoverable = [],
+        public readonly array $failures = [],
     ) {}
 }

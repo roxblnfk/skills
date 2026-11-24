@@ -14,10 +14,10 @@ namespace LLM\Skills\Validation;
  *
  * @internal
  */
-final readonly class PathDisplay
+final class PathDisplay
 {
     /** Normalized absolute working directory. */
-    private string $cwd;
+    private readonly string $cwd;
 
     /**
      * @param string $cwd absolute working directory

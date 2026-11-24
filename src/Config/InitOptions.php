@@ -9,7 +9,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class InitOptions
+final class InitOptions
 {
     /**
      * @param non-empty-string $path destination for the external config, relative to
@@ -30,11 +30,11 @@ final readonly class InitOptions
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $path = 'skills.json',
-        public bool $force = false,
-        public bool $quick = false,
-        public bool $sync = true,
-        public InitPresets $presets = new InitPresets(),
+        public readonly string $path = 'skills.json',
+        public readonly bool $force = false,
+        public readonly bool $quick = false,
+        public readonly bool $sync = true,
+        public readonly InitPresets $presets = new InitPresets(),
     ) {}
 
     /**

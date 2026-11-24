@@ -14,7 +14,7 @@ namespace LLM\Skills\Show;
  *
  * @psalm-immutable
  */
-final readonly class SkippedDonor
+final class SkippedDonor
 {
     /**
      * @param non-empty-string $packageName Composer name
@@ -24,8 +24,8 @@ final readonly class SkippedDonor
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $packageName,
-        public SkipReason $reason,
-        public ?string $detail = null,
+        public readonly string $packageName,
+        public readonly SkipReason $reason,
+        public readonly ?string $detail = null,
     ) {}
 }

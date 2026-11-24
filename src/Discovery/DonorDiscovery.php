@@ -24,14 +24,14 @@ use LLM\Skills\Config\VendorConfig;
  * level. To then look inside each donor's source directory and find the
  * actual skill folders, hand the result to {@see SkillEnumerator}.
  */
-final readonly class DonorDiscovery
+final class DonorDiscovery
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
-        private SkillTreeScanner $scanner = new SkillTreeScanner(),
+        private readonly VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
+        private readonly SkillTreeScanner $scanner = new SkillTreeScanner(),
     ) {}
 
     /**

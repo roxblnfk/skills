@@ -24,7 +24,7 @@ use Internal\Path;
  *
  * @psalm-mutation-free
  */
-final readonly class DirDonorRef
+final class DirDonorRef
 {
     /**
      * @param Path $directory resolved absolute directory the donor lives in — relative
@@ -47,12 +47,12 @@ final readonly class DirDonorRef
      *        {@see \LLM\Skills\Config\VendorConfig::$sourceIdentity}.
      */
     public function __construct(
-        public Path $directory,
-        public string $spelling,
-        public ?string $provenance = null,
-        public ?array $skillFilter = null,
-        public ?string $packageHint = null,
-        public ?string $sourceIdentity = null,
+        public readonly Path $directory,
+        public readonly string $spelling,
+        public readonly ?string $provenance = null,
+        public readonly ?array $skillFilter = null,
+        public readonly ?string $packageHint = null,
+        public readonly ?string $sourceIdentity = null,
     ) {}
 
     /**

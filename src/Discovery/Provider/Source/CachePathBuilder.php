@@ -35,7 +35,7 @@ use LLM\Skills\Config\SourceEntry;
  *
  * @psalm-immutable
  */
-final readonly class CachePathBuilder
+final class CachePathBuilder
 {
     /**
      * Default cache dir relative to the project root, used when the
@@ -73,7 +73,7 @@ final readonly class CachePathBuilder
      * @psalm-mutation-free
      */
     public function __construct(
-        private ?Path $cacheRoot = null,
+        private readonly ?Path $cacheRoot = null,
     ) {}
 
     /**

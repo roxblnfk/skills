@@ -22,7 +22,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  *
  * @psalm-immutable
  */
-final readonly class DependencyConfig
+final class DependencyConfig
 {
     /**
      * @param bool|null $enabled resolved enable flag, or `null` when the user left
@@ -35,9 +35,9 @@ final readonly class DependencyConfig
      * @psalm-mutation-free
      */
     public function __construct(
-        public ?bool $enabled,
-        public array $trusted,
-        public bool $trustedReplace,
+        public readonly ?bool $enabled,
+        public readonly array $trusted,
+        public readonly bool $trustedReplace,
     ) {}
 
     /**

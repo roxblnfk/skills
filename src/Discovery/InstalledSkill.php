@@ -20,7 +20,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class InstalledSkill
+final class InstalledSkill
 {
     /**
      * @param non-empty-string $name skill directory name
@@ -29,7 +29,7 @@ final readonly class InstalledSkill
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $name,
-        public Path $dir,
+        public readonly string $name,
+        public readonly Path $dir,
     ) {}
 }

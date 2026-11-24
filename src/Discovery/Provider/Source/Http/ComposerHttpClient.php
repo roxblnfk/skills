@@ -31,13 +31,13 @@ use Composer\Util\HttpDownloader;
  * @psalm-suppress MissingImmutableAnnotation
  *         {@see HttpDownloader} is mutable Composer-internal state
  */
-final readonly class ComposerHttpClient implements HttpClient
+final class ComposerHttpClient implements HttpClient
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private HttpDownloader $downloader,
+        private readonly HttpDownloader $downloader,
     ) {}
 
     /**

@@ -40,13 +40,13 @@ use LLM\Skills\Filesystem\AtomicFileWriter;
  * (`local` / `trusted` / `trusted-replace`) has it folded into a
  * `dependencies` block, since the writer rewrites the whole file.
  */
-final readonly class SkillsJsonWriter
+final class SkillsJsonWriter
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private ExternalProjectConfigLoader $loader = new ExternalProjectConfigLoader(),
+        private readonly ExternalProjectConfigLoader $loader = new ExternalProjectConfigLoader(),
     ) {}
 
     /**

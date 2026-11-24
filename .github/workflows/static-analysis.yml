@@ -6,12 +6,16 @@ on:  # yamllint disable-line rule:truthy
       - 'src/**'
       - 'bin/skills'
       - 'tools/psalm/**'
+      - 'tools/rector/**'
+      - 'resources/skills/*/scripts/**'
       - 'composer.*'
   push:
     paths:
       - 'src/**'
       - 'bin/skills'
       - 'tools/psalm/**'
+      - 'tools/rector/**'
+      - 'resources/skills/*/scripts/**'
       - 'composer.*'
 
 name: 🔍 Static analysis
@@ -60,3 +64,30 @@ jobs:
 
       - name: 🔍 Run static analysis using vimeo/psalm
         run: composer psalm:ci
+
+  rector:
+    name: 🔙 PHP 8.1 compatibility (rector)
+    timeout-minutes: 4
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📦 Check out the codebase
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: 🛠️ Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: 📥 Install "locked" dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          dependency-versions: locked
+
+      - name: 📥 Install rector/rector
+        run: composer bin rector install --no-interaction --no-progress
+
+      - name: 🔍 Check for syntax newer than PHP 8.1
+        run: composer rector

@@ -18,7 +18,7 @@ use LLM\Skills\Validation\PathDisplay;
  *
  * @internal
  */
-final readonly class DistributionConfigStage implements Stage
+final class DistributionConfigStage implements Stage
 {
     /**
      * Stands in for the package name a consumer would see: the reason is reported against
@@ -30,7 +30,7 @@ final readonly class DistributionConfigStage implements Stage
      * @psalm-mutation-free
      */
     public function __construct(
-        private VendorConfigMapper $mapper = new VendorConfigMapper(),
+        private readonly VendorConfigMapper $mapper = new VendorConfigMapper(),
     ) {}
 
     #[\Override]

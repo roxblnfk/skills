@@ -28,7 +28,7 @@ use LLM\Skills\Filesystem\LinkGuard;
  *   real directory), so it is reported as a collision rather than
  *   proposed and left for the user to resolve.
  */
-final readonly class AgentWorkspaceProbe
+final class AgentWorkspaceProbe
 {
     /**
      * Directories worth probing for. Same set the wizard offers as

@@ -38,17 +38,17 @@ use LLM\Skills\Validation\SkillValidator;
  *
  * @internal
  */
-final readonly class DonorSkillsStage implements Stage
+final class DonorSkillsStage implements Stage
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private DonorProviderBuilder $providers = new DonorProviderBuilder(),
-        private SyncPlanner $planner = new SyncPlanner(),
-        private SkillEnumerator $enumerator = new SkillEnumerator(),
-        private SyncEngine $engine = new SyncEngine(),
-        private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
+        private readonly DonorProviderBuilder $providers = new DonorProviderBuilder(),
+        private readonly SyncPlanner $planner = new SyncPlanner(),
+        private readonly SkillEnumerator $enumerator = new SkillEnumerator(),
+        private readonly SyncEngine $engine = new SyncEngine(),
+        private readonly DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
     ) {}
 
     #[\Override]

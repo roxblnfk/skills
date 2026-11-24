@@ -14,7 +14,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class LayerChanges
+final class LayerChanges
 {
     /**
      * @param non-empty-string $name origin of the layer, e.g. `skills.local.json`
@@ -29,11 +29,11 @@ final readonly class LayerChanges
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $name,
-        public array $summary = [],
-        public array $changedKeys = [],
-        public array $addedAliases = [],
-        public array $sourceIdentities = [],
+        public readonly string $name,
+        public readonly array $summary = [],
+        public readonly array $changedKeys = [],
+        public readonly array $addedAliases = [],
+        public readonly array $sourceIdentities = [],
     ) {}
 
     /**

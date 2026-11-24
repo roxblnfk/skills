@@ -36,7 +36,7 @@ use LLM\Skills\Discovery\Provider\Source\RemoteDonorRef;
  * @psalm-suppress MissingImmutableAnnotation
  *         depends on an impure {@see HttpClient}; readonly-ness is local to this class
  */
-final readonly class GithubAdapter implements HostAdapter
+final class GithubAdapter implements HostAdapter
 {
     public const ID = ProviderId::GITHUB;
 
@@ -58,8 +58,8 @@ final readonly class GithubAdapter implements HostAdapter
      * @psalm-mutation-free
      */
     public function __construct(
-        private HttpClient $http,
-        private RefResolver $refResolver = new RefResolver(),
+        private readonly HttpClient $http,
+        private readonly RefResolver $refResolver = new RefResolver(),
     ) {}
 
     /**

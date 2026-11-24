@@ -16,7 +16,7 @@ namespace LLM\Skills\Discovery\Provider\Source\Http;
  *
  * @psalm-immutable
  */
-final readonly class HttpResponse
+final class HttpResponse
 {
     /**
      * @param int $statusCode HTTP status code, e.g. 200 / 404 / 503
@@ -26,9 +26,9 @@ final readonly class HttpResponse
      * @psalm-mutation-free
      */
     public function __construct(
-        public int $statusCode,
-        public string $body,
-        public array $headers = [],
+        public readonly int $statusCode,
+        public readonly string $body,
+        public readonly array $headers = [],
     ) {}
 
     /**

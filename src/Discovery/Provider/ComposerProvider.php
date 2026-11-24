@@ -26,7 +26,7 @@ use LLM\Skills\Discovery\DonorDiscoveryResult;
  * {@see \LLM\Skills\Console\Command\Sync}); this provider just
  * accepts whatever they pass in.
  */
-final readonly class ComposerProvider implements DonorProvider
+final class ComposerProvider implements DonorProvider
 {
     /**
      * @param bool $enabled honours the `dependencies.composer` toggle
@@ -40,9 +40,9 @@ final readonly class ComposerProvider implements DonorProvider
      * @psalm-mutation-free
      */
     public function __construct(
-        private ?Composer $composer = null,
-        private bool $enabled = true,
-        private DonorDiscovery $discovery = new DonorDiscovery(),
+        private readonly ?Composer $composer = null,
+        private readonly bool $enabled = true,
+        private readonly DonorDiscovery $discovery = new DonorDiscovery(),
     ) {}
 
     /**

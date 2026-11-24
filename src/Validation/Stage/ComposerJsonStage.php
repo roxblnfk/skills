@@ -14,7 +14,7 @@ use LLM\Skills\Validation\FindingCollector;
  *
  * @internal
  */
-final readonly class ComposerJsonStage implements Stage
+final class ComposerJsonStage implements Stage
 {
     public const FILE = 'composer.json';
 

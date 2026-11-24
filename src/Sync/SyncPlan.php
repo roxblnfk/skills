@@ -17,7 +17,7 @@ use LLM\Skills\Config\VendorConfig;
  *
  * @psalm-immutable
  */
-final readonly class SyncPlan
+final class SyncPlan
 {
     /**
      * @param list<VendorConfig> $approvedDonors donors that pass trust (or were explicitly named on
@@ -35,10 +35,10 @@ final readonly class SyncPlan
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $approvedDonors,
-        public array $skippedUntrustedNames,
-        public Path $target,
-        public array $aliases = [],
-        public array $filteredOutDonors = [],
+        public readonly array $approvedDonors,
+        public readonly array $skippedUntrustedNames,
+        public readonly Path $target,
+        public readonly array $aliases = [],
+        public readonly array $filteredOutDonors = [],
     ) {}
 }

@@ -45,7 +45,7 @@ use Internal\Path;
  * No "force" mode for real content: to replace a real directory with an
  * alias the user removes the directory themselves and re-runs.
  */
-final readonly class SymlinkLinker
+final class SymlinkLinker
 {
     /**
      * Try to make `$alias` point at `$target`.

@@ -31,10 +31,10 @@ use LLM\Skills\Discovery\MalformedDonor;
  *         the composite holds {@see DonorProvider} children which are deliberately not
  *         immutable; the composite itself is `final readonly` but inherits their impurity
  */
-final readonly class CompositeDonorProvider implements DonorProvider
+final class CompositeDonorProvider implements DonorProvider
 {
     /** @var list<DonorProvider> */
-    private array $children;
+    private readonly array $children;
 
     /**
      * @psalm-mutation-free

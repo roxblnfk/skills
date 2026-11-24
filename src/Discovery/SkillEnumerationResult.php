@@ -31,7 +31,7 @@ namespace LLM\Skills\Discovery;
  *
  * @psalm-immutable
  */
-final readonly class SkillEnumerationResult
+final class SkillEnumerationResult
 {
     /**
      * @param list<Skill> $skills
@@ -50,12 +50,12 @@ final readonly class SkillEnumerationResult
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $skills,
-        public array $warnings,
-        public array $droppedDonors = [],
-        public array $skipped = [],
-        public array $renamed = [],
-        public array $dropReasons = [],
-        public array $internal = [],
+        public readonly array $skills,
+        public readonly array $warnings,
+        public readonly array $droppedDonors = [],
+        public readonly array $skipped = [],
+        public readonly array $renamed = [],
+        public readonly array $dropReasons = [],
+        public readonly array $internal = [],
     ) {}
 }

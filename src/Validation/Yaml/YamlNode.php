@@ -10,7 +10,7 @@ namespace LLM\Skills\Validation\Yaml;
  *
  * @internal
  */
-final readonly class YamlNode
+final class YamlNode
 {
     /**
      * @param string $scalar the value of a scalar node; empty for collections
@@ -19,11 +19,11 @@ final readonly class YamlNode
      * @psalm-mutation-free
      */
     private function __construct(
-        public NodeKind $kind,
-        public string $scalar,
-        public array $items,
-        public int $line,
-        public NodeStyle $style,
+        public readonly NodeKind $kind,
+        public readonly string $scalar,
+        public readonly array $items,
+        public readonly int $line,
+        public readonly NodeStyle $style,
     ) {}
 
     /**

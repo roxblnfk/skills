@@ -22,7 +22,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  *
  * @psalm-immutable
  */
-final readonly class VendorConfig
+final class VendorConfig
 {
     /**
      * @param non-empty-string $packageName Composer name, e.g. `acme/skills-pro`
@@ -70,17 +70,17 @@ final readonly class VendorConfig
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $packageName,
-        public Path $packageRoot,
-        public string $source,
-        public bool $discovered = false,
-        public string $provenance = ProviderId::COMPOSER,
-        public bool $implicitTrust = false,
-        public ?array $skillFilter = null,
-        public ?array $discoveredSkillDirs = null,
-        public array $declaredBy = [],
-        public bool $rootSkill = false,
-        public ?string $sourceIdentity = null,
+        public readonly string $packageName,
+        public readonly Path $packageRoot,
+        public readonly string $source,
+        public readonly bool $discovered = false,
+        public readonly string $provenance = ProviderId::COMPOSER,
+        public readonly bool $implicitTrust = false,
+        public readonly ?array $skillFilter = null,
+        public readonly ?array $discoveredSkillDirs = null,
+        public readonly array $declaredBy = [],
+        public readonly bool $rootSkill = false,
+        public readonly ?string $sourceIdentity = null,
     ) {}
 
     /**

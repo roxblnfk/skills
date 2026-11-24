@@ -17,7 +17,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class AliasInspection
+final class AliasInspection
 {
     /**
      * @param Path $alias absolute alias path as configured
@@ -34,10 +34,10 @@ final readonly class AliasInspection
      * @psalm-mutation-free
      */
     public function __construct(
-        public Path $alias,
-        public ?string $driftResolvedTo = null,
-        public ?string $relinkFrom = null,
-        public bool $fromLayer = false,
+        public readonly Path $alias,
+        public readonly ?string $driftResolvedTo = null,
+        public readonly ?string $relinkFrom = null,
+        public readonly bool $fromLayer = false,
     ) {}
 
     /**

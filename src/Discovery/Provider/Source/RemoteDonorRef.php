@@ -23,7 +23,7 @@ namespace LLM\Skills\Discovery\Provider\Source;
  *
  * @psalm-immutable
  */
-final readonly class RemoteDonorRef
+final class RemoteDonorRef
 {
     /**
      * @param non-empty-string $url any URL Composer's VCS layer can resolve
@@ -57,13 +57,13 @@ final readonly class RemoteDonorRef
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $url,
-        public string $ref,
-        public ?string $provenance = null,
-        public ?array $skillFilter = null,
-        public ?string $packageHint = null,
-        public array $declaredBy = [],
-        public ?string $sourceIdentity = null,
+        public readonly string $url,
+        public readonly string $ref,
+        public readonly ?string $provenance = null,
+        public readonly ?array $skillFilter = null,
+        public readonly ?string $packageHint = null,
+        public readonly array $declaredBy = [],
+        public readonly ?string $sourceIdentity = null,
     ) {}
 
     /**

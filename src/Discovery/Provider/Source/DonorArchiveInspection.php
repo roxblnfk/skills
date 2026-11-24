@@ -27,7 +27,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class DonorArchiveInspection
+final class DonorArchiveInspection
 {
     /**
      * @param non-empty-string|null $packageName donor package name (accepted outcomes only)
@@ -42,14 +42,14 @@ final readonly class DonorArchiveInspection
      * @psalm-mutation-free
      */
     private function __construct(
-        public bool $isComposerShaped,
-        public ?string $packageName,
-        public mixed $extra,
-        public ?string $source,
-        public array $discoveredSkillDirs,
-        public ?DonorArchiveRejection $rejection,
-        public ?string $detail,
-        public bool $isRootSkill = false,
+        public readonly bool $isComposerShaped,
+        public readonly ?string $packageName,
+        public readonly mixed $extra,
+        public readonly ?string $source,
+        public readonly array $discoveredSkillDirs,
+        public readonly ?DonorArchiveRejection $rejection,
+        public readonly ?string $detail,
+        public readonly bool $isRootSkill = false,
     ) {}
 
     /**

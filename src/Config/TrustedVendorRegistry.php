@@ -28,7 +28,7 @@ use LLM\Skills\Info;
  * Not annotated `@psalm-immutable`: the loader does filesystem IO.
  * The class is otherwise stateless and safe to share.
  */
-final readonly class TrustedVendorRegistry
+final class TrustedVendorRegistry
 {
     /**
      * Mapping from provider id (e.g. `composer`, `npm`, `go`) to the

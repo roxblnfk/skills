@@ -65,21 +65,21 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * Returns {@see Command::SUCCESS} / {@see Command::FAILURE} /
  * {@see Command::INVALID} so both entrypoints can return it as-is.
  */
-final readonly class SyncRunner
+final class SyncRunner
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private SyncPlanner $planner = new SyncPlanner(),
-        private SyncEngine $engine = new SyncEngine(),
-        private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
-        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
-        private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
-        private SymlinkLinker $symlinkLinker = new SymlinkLinker(),
-        private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
-        private InstalledSkillScanner $installedScanner = new InstalledSkillScanner(),
-        private PurgePlanner $purgePlanner = new PurgePlanner(),
+        private readonly SyncPlanner $planner = new SyncPlanner(),
+        private readonly SyncEngine $engine = new SyncEngine(),
+        private readonly SkillEnumerator $skillEnumerator = new SkillEnumerator(),
+        private readonly ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private readonly DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
+        private readonly SymlinkLinker $symlinkLinker = new SymlinkLinker(),
+        private readonly ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
+        private readonly InstalledSkillScanner $installedScanner = new InstalledSkillScanner(),
+        private readonly PurgePlanner $purgePlanner = new PurgePlanner(),
     ) {}
 
     /**

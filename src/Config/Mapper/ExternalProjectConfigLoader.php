@@ -28,7 +28,7 @@ use LLM\Skills\Config\Exception\MalformedProjectConfig;
  * filesystem and is therefore impure. The class is otherwise
  * stateless and safe to share.
  */
-final readonly class ExternalProjectConfigLoader
+final class ExternalProjectConfigLoader
 {
     /**
      * Canonical filename. The loader looks for exactly this name at the

@@ -28,7 +28,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class Skill
+final class Skill
 {
     /**
      * @param non-empty-string $name directory name as it lives in the donor's source
@@ -42,9 +42,9 @@ final readonly class Skill
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $name,
-        public string $canonicalName,
-        public Path $sourceDir,
-        public string $packageName,
+        public readonly string $name,
+        public readonly string $canonicalName,
+        public readonly Path $sourceDir,
+        public readonly string $packageName,
     ) {}
 }

@@ -21,7 +21,7 @@ use LLM\Skills\Discovery\Skill;
  *
  * @psalm-immutable
  */
-final readonly class SkillInspection
+final class SkillInspection
 {
     /**
      * @param Skill $skill donor-side skill candidate
@@ -34,9 +34,9 @@ final readonly class SkillInspection
      * @psalm-mutation-free
      */
     public function __construct(
-        public Skill $skill,
-        public SyncStatus $status,
-        public ?string $conflictWith = null,
-        public ?string $description = null,
+        public readonly Skill $skill,
+        public readonly SyncStatus $status,
+        public readonly ?string $conflictWith = null,
+        public readonly ?string $description = null,
     ) {}
 }

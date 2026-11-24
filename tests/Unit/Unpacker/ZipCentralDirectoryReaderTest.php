@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Tests\Unit\Unpacker;
 
 use LLM\Skills\Tests\Fixture\ZipFixtures;
+use LLM\Skills\Tests\Fixture\ZipMode;
 use LLM\Skills\Unpacker\UnpackerException;
 use LLM\Skills\Unpacker\ZipCentralDirectoryReader;
 use Testo\Assert;
@@ -115,8 +116,8 @@ final class ZipCentralDirectoryReaderTest
         $zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
         $zip->addFromString('file.txt', 'x');
         $zip->addFromString('link', 'file.txt');
-        $zip->setExternalAttributesName('file.txt', 19, self::ZIP_MODE_REGULAR << 16);
-        $zip->setExternalAttributesName('link', 19, self::ZIP_MODE_SYMLINK << 16);
+        $zip->setExternalAttributesName('file.txt', 19, ZipMode::REGULAR << 16);
+        $zip->setExternalAttributesName('link', 19, ZipMode::SYMLINK << 16);
         $zip->close();
 
         $entries = (new ZipCentralDirectoryReader())->readEntries($zipPath);

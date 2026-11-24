@@ -25,7 +25,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  *
  * @psalm-immutable
  */
-final readonly class ConfigLayerMerger
+final class ConfigLayerMerger
 {
     /**
      * Merge rule of every top-level key a config file may carry, except

@@ -46,20 +46,20 @@ use LLM\Skills\Sync\SyncPlanner;
  * formatter can surface them uniformly — there is no separate IO
  * channel for `show`.
  */
-final readonly class InspectionBuilder
+final class InspectionBuilder
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private SyncPlanner $planner = new SyncPlanner(),
-        private SkillEnumerator $skillEnumerator = new SkillEnumerator(),
-        private InstalledSkillScanner $installedScanner = new InstalledSkillScanner(),
-        private SyncEngine $engine = new SyncEngine(),
-        private DriftDetector $drift = new DriftDetector(),
-        private SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
-        private DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
-        private SymlinkLinker $linker = new SymlinkLinker(),
+        private readonly SyncPlanner $planner = new SyncPlanner(),
+        private readonly SkillEnumerator $skillEnumerator = new SkillEnumerator(),
+        private readonly InstalledSkillScanner $installedScanner = new InstalledSkillScanner(),
+        private readonly SyncEngine $engine = new SyncEngine(),
+        private readonly DriftDetector $drift = new DriftDetector(),
+        private readonly SkillFrontmatterReader $frontmatter = new SkillFrontmatterReader(),
+        private readonly DiscoveryResolver $discoveryResolver = new DiscoveryResolver(),
+        private readonly SymlinkLinker $linker = new SymlinkLinker(),
     ) {}
 
     /**
