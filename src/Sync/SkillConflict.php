@@ -12,7 +12,7 @@ namespace LLM\Skills\Sync;
  *
  * @psalm-immutable
  */
-final readonly class SkillConflict
+final class SkillConflict
 {
     /**
      * @param non-empty-string $name conflicting skill directory name
@@ -25,9 +25,9 @@ final readonly class SkillConflict
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $name,
-        public array $packages,
-        public array $names = [],
+        public readonly string $name,
+        public readonly array $packages,
+        public readonly array $names = [],
     ) {}
 
     /**

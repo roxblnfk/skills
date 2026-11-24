@@ -11,14 +11,14 @@ namespace LLM\Skills\Validation;
  *
  * @psalm-immutable
  */
-final readonly class ParseNote
+final class ParseNote
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        public int $line,
-        public string $code,
-        public string $message,
+        public readonly int $line,
+        public readonly string $code,
+        public readonly string $message,
     ) {}
 }

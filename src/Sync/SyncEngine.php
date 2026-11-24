@@ -36,7 +36,7 @@ use LLM\Skills\Filesystem\TreeRemover;
  * **before** the engine. The engine is pure write logic plus conflict
  * detection — no knowledge of Composer, IO, or interactive prompts.
  */
-final readonly class SyncEngine
+final class SyncEngine
 {
     /**
      * Directory depth {@see self::copyTree()} descends into a single skill
@@ -51,8 +51,8 @@ final readonly class SyncEngine
      * @psalm-mutation-free
      */
     public function __construct(
-        private TreeRemover $remover = new TreeRemover(),
-        private PurgePlanner $purgePlanner = new PurgePlanner(),
+        private readonly TreeRemover $remover = new TreeRemover(),
+        private readonly PurgePlanner $purgePlanner = new PurgePlanner(),
     ) {}
 
     /**

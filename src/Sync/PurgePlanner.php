@@ -32,7 +32,7 @@ use LLM\Skills\Filesystem\PathContainment;
  *
  * @psalm-immutable
  */
-final readonly class PurgePlanner
+final class PurgePlanner
 {
     /**
      * @param list<InstalledSkill> $installed what currently sits in the target

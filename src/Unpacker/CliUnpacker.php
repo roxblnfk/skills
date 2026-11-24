@@ -38,7 +38,7 @@ use Symfony\Component\Process\Process;
  * @psalm-suppress MissingImmutableAnnotation
  *         stateless wrapper, but `listEntries`/`extractTo` perform I/O
  */
-final readonly class CliUnpacker implements ArchiveUnpacker
+final class CliUnpacker implements ArchiveUnpacker
 {
     /**
      * @param non-empty-string $id short identifier (`unzip`, `7z`, …) used in errors
@@ -54,12 +54,12 @@ final readonly class CliUnpacker implements ArchiveUnpacker
      * @psalm-mutation-free
      */
     public function __construct(
-        private string $id,
-        private string $executablePath,
-        private array $extractArgsTemplate,
-        private array $excludeArgsTemplate,
-        private string $excludePathTemplate,
-        private ZipCentralDirectoryReader $cdReader = new ZipCentralDirectoryReader(),
+        private readonly string $id,
+        private readonly string $executablePath,
+        private readonly array $extractArgsTemplate,
+        private readonly array $excludeArgsTemplate,
+        private readonly string $excludePathTemplate,
+        private readonly ZipCentralDirectoryReader $cdReader = new ZipCentralDirectoryReader(),
         /**
          * Hard cap on `Process::setTimeout()` — extraction of a typical
          * donor archive (tens of skill files, < 1 MiB unpacked) runs in
@@ -68,7 +68,7 @@ final readonly class CliUnpacker implements ArchiveUnpacker
          *
          * @var int<1, max>
          */
-        private int $timeout = 120,
+        private readonly int $timeout = 120,
     ) {}
 
     /**

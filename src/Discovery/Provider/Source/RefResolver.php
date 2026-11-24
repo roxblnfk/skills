@@ -39,7 +39,7 @@ namespace LLM\Skills\Discovery\Provider\Source;
  *
  * @psalm-immutable
  */
-final readonly class RefResolver
+final class RefResolver
 {
     /**
      * Tags shaped like `X.Y.Z` or `vX.Y.Z` with no suffix. The

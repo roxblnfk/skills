@@ -28,10 +28,10 @@ namespace LLM\Skills\Discovery\Provider\Source\Adapter;
  * @psalm-suppress MissingImmutableAnnotation
  *         the registry holds {@see HostAdapter} instances which are intentionally not pure
  */
-final readonly class HostAdapterRegistry
+final class HostAdapterRegistry
 {
     /** @var array<non-empty-string, HostAdapter> */
-    private array $adapters;
+    private readonly array $adapters;
 
     /**
      * @psalm-mutation-free

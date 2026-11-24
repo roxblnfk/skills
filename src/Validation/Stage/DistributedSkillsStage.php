@@ -15,7 +15,7 @@ use LLM\Skills\Validation\SkillValidator;
  *
  * @internal
  */
-final readonly class DistributedSkillsStage implements Stage
+final class DistributedSkillsStage implements Stage
 {
     #[\Override]
     public function run(ProjectContext $context, FindingCollector $findings): void

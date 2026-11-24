@@ -51,7 +51,7 @@ use LLM\Skills\Config\VendorConfig;
  *
  * @psalm-immutable
  */
-final readonly class SyncPlanner
+final class SyncPlanner
 {
     /**
      * @param list<VendorConfig> $donors all donor packages successfully mapped from Composer

@@ -29,7 +29,7 @@ use Internal\Path;
  * hook) do NOT need this — they already hold a live `Composer` instance
  * and pull extras directly from `$composer->getPackage()->getExtra()`.
  */
-final readonly class ComposerJsonExtraReader
+final class ComposerJsonExtraReader
 {
     /**
      * Read `<projectRoot>/composer.json` and return its top-level `extra`

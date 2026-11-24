@@ -11,7 +11,7 @@ namespace LLM\Skills\Init;
  *
  * @psalm-immutable
  */
-final readonly class WorkspaceLayout
+final class WorkspaceLayout
 {
     /**
      * @param non-empty-string $target directory skills are physically written to
@@ -28,9 +28,9 @@ final readonly class WorkspaceLayout
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $target,
-        public array $aliases = [],
-        public array $collisions = [],
-        public bool $detected = false,
+        public readonly string $target,
+        public readonly array $aliases = [],
+        public readonly array $collisions = [],
+        public readonly bool $detected = false,
     ) {}
 }

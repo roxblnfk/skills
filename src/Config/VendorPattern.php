@@ -16,7 +16,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class VendorPattern implements TrustPattern
+final class VendorPattern implements TrustPattern
 {
     /**
      * @param non-empty-string $raw      original textual pattern, kept for diagnostics
@@ -27,9 +27,9 @@ final readonly class VendorPattern implements TrustPattern
      * @psalm-mutation-free
      */
     private function __construct(
-        public string $raw,
-        public string $vendor,
-        public ?string $package,
+        public readonly string $raw,
+        public readonly string $vendor,
+        public readonly ?string $package,
     ) {}
 
     /**

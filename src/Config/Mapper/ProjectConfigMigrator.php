@@ -34,7 +34,7 @@ use LLM\Skills\Filesystem\AtomicFileWriter;
  * project keys are present, the migrator returns
  * {@see MigrationStatus::Skipped} without touching anything.
  */
-final readonly class ProjectConfigMigrator
+final class ProjectConfigMigrator
 {
     /**
      * URL of the published JSON schema. Emitted into the generated
@@ -47,7 +47,7 @@ final readonly class ProjectConfigMigrator
      * @psalm-mutation-free
      */
     public function __construct(
-        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private readonly ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
     ) {}
 
     /**

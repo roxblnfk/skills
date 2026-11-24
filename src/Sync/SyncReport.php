@@ -54,7 +54,7 @@ use LLM\Skills\Discovery\Skill;
  *
  * @psalm-immutable
  */
-final readonly class SyncReport
+final class SyncReport
 {
     /**
      * @param list<Skill> $copied
@@ -70,15 +70,15 @@ final readonly class SyncReport
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $copied,
-        public array $conflicts,
-        public array $skippedLinks = [],
-        public array $truncatedDirs = [],
-        public array $removed = [],
-        public array $removalFailures = [],
-        public array $keptSources = [],
-        public array $targetAsSource = [],
-        public array $linkedDestinations = [],
+        public readonly array $copied,
+        public readonly array $conflicts,
+        public readonly array $skippedLinks = [],
+        public readonly array $truncatedDirs = [],
+        public readonly array $removed = [],
+        public readonly array $removalFailures = [],
+        public readonly array $keptSources = [],
+        public readonly array $targetAsSource = [],
+        public readonly array $linkedDestinations = [],
     ) {}
 
     /**

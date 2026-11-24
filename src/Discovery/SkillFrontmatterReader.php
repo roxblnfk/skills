@@ -45,7 +45,7 @@ use Internal\Path;
  * Callers (currently `skills:show`) treat a `null` description as
  * "unknown" and render the row without a second column.
  */
-final readonly class SkillFrontmatterReader
+final class SkillFrontmatterReader
 {
     /**
      * Cap how many bytes we ever read from a `SKILL.md` just to look at

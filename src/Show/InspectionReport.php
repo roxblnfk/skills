@@ -19,7 +19,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class InspectionReport
+final class InspectionReport
 {
     /**
      * @param Path $target absolute destination directory used for sync-status checks
@@ -37,12 +37,12 @@ final readonly class InspectionReport
      * @psalm-mutation-free
      */
     public function __construct(
-        public Path $target,
-        public array $donors,
-        public array $skipped,
-        public bool $discoveryActive = false,
-        public int $undeclaredCandidatesCount = 0,
-        public array $aliases = [],
-        public bool $targetFromLayer = false,
+        public readonly Path $target,
+        public readonly array $donors,
+        public readonly array $skipped,
+        public readonly bool $discoveryActive = false,
+        public readonly int $undeclaredCandidatesCount = 0,
+        public readonly array $aliases = [],
+        public readonly bool $targetFromLayer = false,
     ) {}
 }

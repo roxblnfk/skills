@@ -11,7 +11,7 @@ namespace LLM\Skills\Validation;
  *
  * @psalm-immutable
  */
-final readonly class Finding
+final class Finding
 {
     /**
      * @param string $file path as shown to the user: relative to the working directory
@@ -23,11 +23,11 @@ final readonly class Finding
      * @psalm-mutation-free
      */
     public function __construct(
-        public Severity $severity,
-        public string $file,
-        public ?int $line,
-        public string $code,
-        public string $message,
+        public readonly Severity $severity,
+        public readonly string $file,
+        public readonly ?int $line,
+        public readonly string $code,
+        public readonly string $message,
     ) {}
 
     /**

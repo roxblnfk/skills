@@ -13,7 +13,7 @@ use LLM\Skills\Validation\Yaml\YamlNode;
  *
  * @internal
  */
-final readonly class FrontmatterRules
+final class FrontmatterRules
 {
     public const SPEC_KEYS = ['name', 'description', 'license', 'compatibility', 'metadata', 'allowed-tools'];
 
@@ -46,7 +46,7 @@ final readonly class FrontmatterRules
      * @psalm-mutation-free
      */
     public function __construct(
-        private FindingCollector $findings,
+        private readonly FindingCollector $findings,
     ) {}
 
     /**

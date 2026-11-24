@@ -20,7 +20,7 @@ use LLM\Skills\Validation\SkillValidator;
  *
  * @internal
  */
-final readonly class InstalledSkillsStage implements Stage
+final class InstalledSkillsStage implements Stage
 {
     #[\Override]
     public function run(ProjectContext $context, FindingCollector $findings): void

@@ -15,7 +15,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  *
  * @psalm-immutable
  */
-final readonly class ProjectConfig
+final class ProjectConfig
 {
     /**
      * Default destination directory, relative to the project root.
@@ -84,20 +84,20 @@ final readonly class ProjectConfig
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $target,
-        public TrustedVendors $trusted,
-        public bool $trustedReplace,
-        public bool $discovery = true,
-        public array $aliases = [],
-        public bool $autoSync = true,
-        public ?string $pathFromRoot = null,
-        public array $managerEnabled = [],
-        public array $sources = [],
-        public array $dependencies = [],
-        public bool $vendorSources = true,
-        public bool $clean = false,
-        public array $aliasOrigins = [],
-        public ?string $targetOrigin = null,
+        public readonly string $target,
+        public readonly TrustedVendors $trusted,
+        public readonly bool $trustedReplace,
+        public readonly bool $discovery = true,
+        public readonly array $aliases = [],
+        public readonly bool $autoSync = true,
+        public readonly ?string $pathFromRoot = null,
+        public readonly array $managerEnabled = [],
+        public readonly array $sources = [],
+        public readonly array $dependencies = [],
+        public readonly bool $vendorSources = true,
+        public readonly bool $clean = false,
+        public readonly array $aliasOrigins = [],
+        public readonly ?string $targetOrigin = null,
     ) {}
 
     /**

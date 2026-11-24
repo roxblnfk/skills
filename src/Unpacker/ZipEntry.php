@@ -10,7 +10,7 @@ namespace LLM\Skills\Unpacker;
  *
  * @psalm-immutable
  */
-final readonly class ZipEntry
+final class ZipEntry
 {
     /**
      * `version_made_by` high byte for the Unix host (APPNOTE.TXT
@@ -42,8 +42,8 @@ final readonly class ZipEntry
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $name,
-        public bool $isSymlink,
+        public readonly string $name,
+        public readonly bool $isSymlink,
     ) {}
 
     /**

@@ -23,7 +23,7 @@ use LLM\Skills\Sync\SyncEngine;
  * fails fast at the first differing file without a separate hashing
  * pass.
  */
-final readonly class DriftDetector
+final class DriftDetector
 {
     /**
      * @param bool $replaced whether the sync replaces the installed directory; `false` for one it

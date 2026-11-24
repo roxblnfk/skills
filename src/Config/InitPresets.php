@@ -22,7 +22,7 @@ use LLM\Skills\Config\Mapper\ProjectConfigMapper;
  *
  * @psalm-immutable
  */
-final readonly class InitPresets
+final class InitPresets
 {
     /**
      * @param non-empty-string|null $target `--target`
@@ -38,12 +38,12 @@ final readonly class InitPresets
      * @psalm-mutation-free
      */
     public function __construct(
-        public ?string $target = null,
-        public ?array $aliases = null,
-        public ?array $trusted = null,
-        public ?bool $autoSync = null,
-        public ?bool $discovery = null,
-        public ?bool $clean = null,
+        public readonly ?string $target = null,
+        public readonly ?array $aliases = null,
+        public readonly ?array $trusted = null,
+        public readonly ?bool $autoSync = null,
+        public readonly ?bool $discovery = null,
+        public readonly ?bool $clean = null,
     ) {}
 
     /**

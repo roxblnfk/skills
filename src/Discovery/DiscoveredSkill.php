@@ -19,7 +19,7 @@ use Internal\Path;
  *
  * @psalm-immutable
  */
-final readonly class DiscoveredSkill
+final class DiscoveredSkill
 {
     /**
      * @param Path $dir absolute path to the skill directory (the one holding `SKILL.md`)
@@ -33,8 +33,8 @@ final readonly class DiscoveredSkill
      * @psalm-mutation-free
      */
     public function __construct(
-        public Path $dir,
-        public string $name,
-        public string $container,
+        public readonly Path $dir,
+        public readonly string $name,
+        public readonly string $container,
     ) {}
 }

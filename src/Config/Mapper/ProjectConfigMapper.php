@@ -46,7 +46,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  * other methods stay `@psalm-mutation-free` / `@psalm-pure` and are
  * safe to call from inside pure contexts.
  */
-final readonly class ProjectConfigMapper
+final class ProjectConfigMapper
 {
     /**
      * Canonical key for the list of explicit donor sources.
@@ -135,8 +135,8 @@ final readonly class ProjectConfigMapper
      * @psalm-mutation-free
      */
     public function __construct(
-        private ExternalProjectConfigLoader $externalLoader = new ExternalProjectConfigLoader(),
-        private ConfigLayerMerger $merger = new ConfigLayerMerger(),
+        private readonly ExternalProjectConfigLoader $externalLoader = new ExternalProjectConfigLoader(),
+        private readonly ConfigLayerMerger $merger = new ConfigLayerMerger(),
     ) {}
 
     /**

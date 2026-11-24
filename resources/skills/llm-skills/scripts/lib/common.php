@@ -3,7 +3,7 @@
 /**
  * Shared code for the llm-skills helper scripts: findings report, CLI parsing,
  * path helpers and a YAML-subset parser for SKILL.md frontmatter. Dependency-free;
- * PHP 8.2+. Skill validation itself is the plugin's `skills:lint` command.
+ * PHP 8.1+. Skill validation itself is the plugin's `skills:lint` command.
  */
 
 declare(strict_types=1);

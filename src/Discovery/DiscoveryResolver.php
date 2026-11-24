@@ -26,7 +26,7 @@ use LLM\Skills\Config\VendorConfig;
  *
  * @psalm-immutable
  */
-final readonly class DiscoveryResolver
+final class DiscoveryResolver
 {
     /**
      * @param list<VendorConfig> $discoverable

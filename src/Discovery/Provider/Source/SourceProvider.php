@@ -56,16 +56,16 @@ use LLM\Skills\Discovery\SourceFailure;
  * One bad ref never blocks the rest — same contract as the Composer
  * provider, expressed against a different ecosystem.
  */
-final readonly class SourceProvider implements DonorProvider
+final class SourceProvider implements DonorProvider
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private DonorRefSource $source = new NullDonorRefSource(),
-        private ?RemoteFetcher $fetcher = null,
-        private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
-        private DonorArchiveInspector $inspector = new DonorArchiveInspector(),
+        private readonly DonorRefSource $source = new NullDonorRefSource(),
+        private readonly ?RemoteFetcher $fetcher = null,
+        private readonly VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
+        private readonly DonorArchiveInspector $inspector = new DonorArchiveInspector(),
     ) {}
 
     #[\Override]

@@ -36,7 +36,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  * caller emits a `-v` warning and moves on. One bad vendor never blocks
  * the rest of the sync.
  */
-final readonly class VendorConfigMapper
+final class VendorConfigMapper
 {
     /**
      * Quick predicate: does the package opt in to being a donor?

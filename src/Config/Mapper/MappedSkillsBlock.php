@@ -20,7 +20,7 @@ use LLM\Skills\Config\ProjectConfig;
  *
  * @psalm-immutable
  */
-final readonly class MappedSkillsBlock
+final class MappedSkillsBlock
 {
     /**
      * @param bool $usedDeprecatedSourcesKey true when the block used `remote`
@@ -33,8 +33,8 @@ final readonly class MappedSkillsBlock
      * @psalm-mutation-free
      */
     public function __construct(
-        public ProjectConfig $config,
-        public bool $usedDeprecatedSourcesKey,
-        public array $usedDeprecatedDependencyKeys = [],
+        public readonly ProjectConfig $config,
+        public readonly bool $usedDeprecatedSourcesKey,
+        public readonly array $usedDeprecatedDependencyKeys = [],
     ) {}
 }

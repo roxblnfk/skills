@@ -64,13 +64,13 @@ use LLM\Skills\Discovery\Provider\Source\VendorDeclaredRefSource;
  * error. Trying to handle the error twice would only produce duplicate
  * messages.
  */
-final readonly class DonorProviderBuilder
+final class DonorProviderBuilder
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private ProjectConfigMapper $mapper = new ProjectConfigMapper(),
+        private readonly ProjectConfigMapper $mapper = new ProjectConfigMapper(),
     ) {}
 
     /**

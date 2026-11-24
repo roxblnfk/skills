@@ -57,9 +57,9 @@ use LLM\Skills\Unpacker\UnpackerFactory;
  * @psalm-suppress MissingImmutableAnnotation
  *         depends on an impure {@see HttpClient}; filesystem effects are intentional
  */
-final readonly class HttpArchiveFetcher implements RemoteFetcher
+final class HttpArchiveFetcher implements RemoteFetcher
 {
-    private ?ArchiveUnpacker $unpacker;
+    private readonly ?ArchiveUnpacker $unpacker;
 
     /**
      * @param ArchiveUnpacker|null $unpacker when null, the fetcher autodetects
@@ -71,11 +71,11 @@ final readonly class HttpArchiveFetcher implements RemoteFetcher
      * @psalm-suppress ImpureMethodCall the default factory only stores environment probes; nothing runs until detect()
      */
     public function __construct(
-        private HttpClient $http,
-        private Path $projectRoot,
-        private CachePathBuilder $cacheBuilder = new CachePathBuilder(),
+        private readonly HttpClient $http,
+        private readonly Path $projectRoot,
+        private readonly CachePathBuilder $cacheBuilder = new CachePathBuilder(),
         ?ArchiveUnpacker $unpacker = null,
-        private UnpackerFactory $unpackerFactory = new UnpackerFactory(),
+        private readonly UnpackerFactory $unpackerFactory = new UnpackerFactory(),
     ) {
         $this->unpacker = $unpacker;
     }

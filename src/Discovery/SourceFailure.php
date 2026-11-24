@@ -24,7 +24,7 @@ namespace LLM\Skills\Discovery;
  *
  * @psalm-immutable
  */
-final readonly class SourceFailure
+final class SourceFailure
 {
     /**
      * @param non-empty-string $label donor identity to print as the row header —
@@ -43,10 +43,10 @@ final readonly class SourceFailure
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $label,
-        public string $summary,
-        public ?string $detail = null,
-        public bool $declaredByPackage = false,
+        public readonly string $label,
+        public readonly string $summary,
+        public readonly ?string $detail = null,
+        public readonly bool $declaredByPackage = false,
     ) {}
 
     /**

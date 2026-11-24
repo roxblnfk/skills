@@ -21,7 +21,7 @@ use LLM\Skills\Config\VendorConfig;
  *
  * @psalm-immutable
  */
-final readonly class DonorInspection
+final class DonorInspection
 {
     /**
      * @param VendorConfig $donor package metadata + source dir
@@ -34,9 +34,9 @@ final readonly class DonorInspection
      * @psalm-mutation-free
      */
     public function __construct(
-        public VendorConfig $donor,
-        public ?TrustSource $trustSource,
-        public array $skills,
-        public ?string $declaredIn = null,
+        public readonly VendorConfig $donor,
+        public readonly ?TrustSource $trustSource,
+        public readonly array $skills,
+        public readonly ?string $declaredIn = null,
     ) {}
 }

@@ -20,7 +20,7 @@ namespace LLM\Skills\Unpacker;
  * @psalm-suppress MissingImmutableAnnotation
  *         stateless wrapper, but `listEntries`/`extractTo` perform I/O
  */
-final readonly class ZipArchiveUnpacker implements ArchiveUnpacker
+final class ZipArchiveUnpacker implements ArchiveUnpacker
 {
     /**
      * @psalm-pure

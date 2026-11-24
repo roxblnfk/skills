@@ -29,7 +29,7 @@ use LLM\Skills\Discovery\Provider\Source\RefResolver;
  *
  * @psalm-immutable
  */
-final readonly class SourceEntryMapper
+final class SourceEntryMapper
 {
     /**
      * Identity of a raw `sources[]` entry. Mirrors

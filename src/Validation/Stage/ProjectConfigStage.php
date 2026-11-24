@@ -21,14 +21,14 @@ use LLM\Skills\Validation\FindingCollector;
  *
  * @internal
  */
-final readonly class ProjectConfigStage implements Stage
+final class ProjectConfigStage implements Stage
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private ProjectConfigMapper $mapper = new ProjectConfigMapper(),
-        private SyncPlanner $planner = new SyncPlanner(),
+        private readonly ProjectConfigMapper $mapper = new ProjectConfigMapper(),
+        private readonly SyncPlanner $planner = new SyncPlanner(),
     ) {}
 
     #[\Override]

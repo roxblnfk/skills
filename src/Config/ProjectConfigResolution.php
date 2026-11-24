@@ -19,7 +19,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class ProjectConfigResolution
+final class ProjectConfigResolution
 {
     /**
      * @param list<non-empty-string> $ignoredInlineKeys names of project-level keys
@@ -45,11 +45,11 @@ final readonly class ProjectConfigResolution
      * @psalm-mutation-free
      */
     public function __construct(
-        public ProjectConfig $config,
-        public array $ignoredInlineKeys = [],
-        public bool $usedDeprecatedSourcesKey = false,
-        public array $usedDeprecatedDependencyKeys = [],
-        public array $layers = [],
-        public bool $deprecatedSourcesKeyInline = false,
+        public readonly ProjectConfig $config,
+        public readonly array $ignoredInlineKeys = [],
+        public readonly bool $usedDeprecatedSourcesKey = false,
+        public readonly array $usedDeprecatedDependencyKeys = [],
+        public readonly array $layers = [],
+        public readonly bool $deprecatedSourcesKeyInline = false,
     ) {}
 }

@@ -20,10 +20,10 @@ namespace LLM\Skills\Sync;
  *
  * @psalm-immutable
  */
-final readonly class CleanPolicy
+final class CleanPolicy
 {
     private function __construct(
-        private bool $requested,
+        private readonly bool $requested,
     ) {}
 
     /**

@@ -39,7 +39,7 @@ use LLM\Skills\Config\ProjectConfig;
  * written as `skills.json`; the caller (InitRunner) handles the
  * actual file writes and the composer.json strip.
  */
-final readonly class InteractiveInitWizard
+final class InteractiveInitWizard
 {
     /**
      * Well-known alias paths offered as numbered options. Keeps the

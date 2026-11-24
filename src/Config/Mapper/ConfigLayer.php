@@ -15,7 +15,7 @@ namespace LLM\Skills\Config\Mapper;
  *
  * @psalm-immutable
  */
-final readonly class ConfigLayer
+final class ConfigLayer
 {
     /**
      * @param non-empty-string $name origin of the layer, used as the error prefix and in the
@@ -25,7 +25,7 @@ final readonly class ConfigLayer
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $name,
-        public array $values,
+        public readonly string $name,
+        public readonly array $values,
     ) {}
 }

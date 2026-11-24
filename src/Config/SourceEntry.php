@@ -32,7 +32,7 @@ use LLM\Skills\Discovery\Provider\ProviderId;
  *
  * @psalm-immutable
  */
-final readonly class SourceEntry
+final class SourceEntry
 {
     /**
      * Ref alias that binds the entry to the installed version of the
@@ -84,14 +84,14 @@ final readonly class SourceEntry
      * @psalm-pure
      */
     public function __construct(
-        public string $from,
-        public ?string $package,
-        public ?string $url,
-        public ?string $host,
-        public ?string $ref,
-        public array $extras = [],
-        public ?array $skills = null,
-        public ?string $path = null,
+        public readonly string $from,
+        public readonly ?string $package,
+        public readonly ?string $url,
+        public readonly ?string $host,
+        public readonly ?string $ref,
+        public readonly array $extras = [],
+        public readonly ?array $skills = null,
+        public readonly ?string $path = null,
     ) {
         // The identifier-shape invariant is the contract every
         // downstream method relies on (identifier(), compositeKey(),

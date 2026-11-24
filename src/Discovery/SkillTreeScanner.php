@@ -44,7 +44,7 @@ use LLM\Skills\Filesystem\PathContainment;
  * links to it. One that is the package root or holds it is ignored: every skill
  * would lie within it.
  */
-final readonly class SkillTreeScanner
+final class SkillTreeScanner
 {
     /**
      * Conventional skill-root directories, relative to the package install

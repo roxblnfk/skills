@@ -11,7 +11,7 @@ use LLM\Skills\Validation\FindingCollector;
  *
  * @internal
  */
-final readonly class Pipeline
+final class Pipeline
 {
     /**
      * @param list<Stage> $stages
@@ -19,7 +19,7 @@ final readonly class Pipeline
      * @psalm-mutation-free
      */
     public function __construct(
-        private array $stages,
+        private readonly array $stages,
     ) {}
 
     public function run(ProjectContext $context): FindingCollector

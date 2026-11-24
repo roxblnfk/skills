@@ -50,7 +50,7 @@ use Symfony\Component\Console\Command\Command;
  * own after `composer install` — worth confirming in one keystroke
  * instead of answering a questionnaire.
  */
-final readonly class InitRunner
+final class InitRunner
 {
     /**
      * URL of the published JSON schema. Kept as a class constant for
@@ -63,9 +63,9 @@ final readonly class InitRunner
      * @psalm-mutation-free
      */
     public function __construct(
-        private ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
-        private InteractiveInitWizard $wizard = new InteractiveInitWizard(),
-        private AgentWorkspaceProbe $probe = new AgentWorkspaceProbe(),
+        private readonly ProjectConfigMigrator $migrator = new ProjectConfigMigrator(),
+        private readonly InteractiveInitWizard $wizard = new InteractiveInitWizard(),
+        private readonly AgentWorkspaceProbe $probe = new AgentWorkspaceProbe(),
     ) {}
 
     /**

@@ -14,7 +14,7 @@ namespace LLM\Skills\Config;
  *
  * @psalm-immutable
  */
-final readonly class AddOptions
+final class AddOptions
 {
     /**
      * @param non-empty-string $input adapter-specific argument: `owner/repo`,
@@ -39,13 +39,13 @@ final readonly class AddOptions
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $input,
-        public ?string $from = null,
-        public ?string $host = null,
-        public ?string $ref = null,
-        public bool $sync = true,
-        public ?array $skills = null,
-        public bool $local = false,
+        public readonly string $input,
+        public readonly ?string $from = null,
+        public readonly ?string $host = null,
+        public readonly ?string $ref = null,
+        public readonly bool $sync = true,
+        public readonly ?array $skills = null,
+        public readonly bool $local = false,
     ) {}
 
     /**

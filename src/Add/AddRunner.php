@@ -71,21 +71,21 @@ use Symfony\Component\Console\Command\Command;
  * refuses an unusable archive), upsert the entry, and hand the
  * inspected donor name to `$onRegistered` for the scoped sync.
  */
-final readonly class AddRunner
+final class AddRunner
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private HostAdapterRegistry $registry,
-        private RemoteFetcher $fetcher,
-        private SkillsJsonWriter $writer = new SkillsJsonWriter(),
-        private RefResolver $refResolver = new RefResolver(),
-        private DonorArchiveInspector $inspector = new DonorArchiveInspector(),
-        private SkillEnumerator $enumerator = new SkillEnumerator(),
-        private VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
-        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
-        private SyncPlanner $planner = new SyncPlanner(),
+        private readonly HostAdapterRegistry $registry,
+        private readonly RemoteFetcher $fetcher,
+        private readonly SkillsJsonWriter $writer = new SkillsJsonWriter(),
+        private readonly RefResolver $refResolver = new RefResolver(),
+        private readonly DonorArchiveInspector $inspector = new DonorArchiveInspector(),
+        private readonly SkillEnumerator $enumerator = new SkillEnumerator(),
+        private readonly VendorConfigMapper $vendorMapper = new VendorConfigMapper(),
+        private readonly ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private readonly SyncPlanner $planner = new SyncPlanner(),
     ) {}
 
     /**

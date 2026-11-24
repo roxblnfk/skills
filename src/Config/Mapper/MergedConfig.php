@@ -12,7 +12,7 @@ use LLM\Skills\Config\LayerChanges;
  *
  * @psalm-immutable
  */
-final readonly class MergedConfig
+final class MergedConfig
 {
     /**
      * @param array<array-key, mixed> $values raw config after all layers were folded
@@ -21,7 +21,7 @@ final readonly class MergedConfig
      * @psalm-mutation-free
      */
     public function __construct(
-        public array $values,
-        public array $changes,
+        public readonly array $values,
+        public readonly array $changes,
     ) {}
 }

@@ -20,7 +20,7 @@ namespace LLM\Skills\Discovery;
  *
  * @psalm-immutable
  */
-final readonly class MalformedDonor
+final class MalformedDonor
 {
     /**
      * @param non-empty-string $packageName Composer name of the offending donor
@@ -31,8 +31,8 @@ final readonly class MalformedDonor
      * @psalm-mutation-free
      */
     public function __construct(
-        public string $packageName,
-        public string $reason,
-        public bool $declared = false,
+        public readonly string $packageName,
+        public readonly string $reason,
+        public readonly bool $declared = false,
     ) {}
 }

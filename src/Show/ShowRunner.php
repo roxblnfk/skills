@@ -24,15 +24,15 @@ use Symfony\Component\Console\Formatter\OutputFormatter;
  * and the standalone `no donor providers are active` notice) stay
  * here so the builder remains IO-free.
  */
-final readonly class ShowRunner
+final class ShowRunner
 {
     /**
      * @psalm-mutation-free
      */
     public function __construct(
-        private InspectionBuilder $builder = new InspectionBuilder(),
-        private ReportFormatter $formatter = new ReportFormatter(),
-        private ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
+        private readonly InspectionBuilder $builder = new InspectionBuilder(),
+        private readonly ReportFormatter $formatter = new ReportFormatter(),
+        private readonly ProjectConfigMapper $projectMapper = new ProjectConfigMapper(),
     ) {}
 
     /**
