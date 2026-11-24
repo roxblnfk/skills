@@ -18,9 +18,9 @@ trusted skills is never inspected.
 A Composer package is copied when any of these hold:
 
 1. It is a **direct dependency** — listed in the root `require` or `require-dev`.
-2. It matches the **built-in list**: `cycle/*`, `doctrine/*`, `internal/*`, `laravel/*`,
-   `llm/skills`, `moonshine/*`, `phpstan/*`, `spiral/*`, `symfony/*`, `tempest/*`, `temporal/*`,
-   `testo/*`, `yiisoft/*`.
+2. It matches the **built-in list** — well-known vendors such as `symfony/*`, `laravel/*`,
+   `spiral/*`, `phpstan/*`, etc. The full list is in
+   `vendor/llm/skills/resources/trusted-composer.txt`.
 3. It matches the project's `dependencies.composer.trusted`.
 4. It matches a `--trust` pattern of the current run, or is named as a positional
    argument of the current run.
