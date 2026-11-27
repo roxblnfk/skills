@@ -9,7 +9,9 @@ on:  # yamllint disable-line rule:truthy
       - 'vendor-bin/rector/**'
       - 'resources/skills/*/scripts/**'
       - 'composer.*'
+      - '.github/workflows/static-analysis.yml'
   push:
+    branches: [master]
     paths:
       - 'src/**'
       - 'bin/skills'
@@ -17,19 +19,21 @@ on:  # yamllint disable-line rule:truthy
       - 'vendor-bin/rector/**'
       - 'resources/skills/*/scripts/**'
       - 'composer.*'
+      - '.github/workflows/static-analysis.yml'
 
 name: 🔍 Static analysis
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   psalm:
     timeout-minutes: 4
     runs-on: ${{ matrix.os }}
-    concurrency:
-      cancel-in-progress: true
-      group: psalm-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
     strategy:
       fail-fast: true
       matrix:
@@ -41,7 +45,7 @@ jobs:
           - locked
     steps:
       - name: 📦 Check out the codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -55,7 +59,7 @@ jobs:
         run: composer validate --ansi --strict
 
       - name: 📥 Install "${{ matrix.dependencies }}" dependencies
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           dependency-versions: ${{ matrix.dependencies }}
 
@@ -71,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📦 Check out the codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -82,7 +86,7 @@ jobs:
           coverage: none
 
       - name: 📥 Install "locked" dependencies
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           dependency-versions: locked
 
