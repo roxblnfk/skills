@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.1](https://github.com/roxblnfk/skills/compare/1.23.0...1.23.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **validate:** stop requiring a table of contents in reference files ([#102](https://github.com/roxblnfk/skills/issues/102)) ([13e9966](https://github.com/roxblnfk/skills/commit/13e996618289b15f5119057a7d81787ce209f9af))
+
+
+### Documentation
+
+* **skills:** add a README section template for packages that ship skills ([#100](https://github.com/roxblnfk/skills/issues/100)) ([4a1343b](https://github.com/roxblnfk/skills/commit/4a1343bc619f258df6e086fd5249786750c0d7a1))
+
 ## [1.23.0](https://github.com/roxblnfk/skills/compare/1.22.0...1.23.0) (2026-11-24)
 
 
