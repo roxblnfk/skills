@@ -27,7 +27,8 @@ repository.
 
 A consumer installs your skills only when it trusts your package: as a direct
 dependency, through its `trusted` list, or through the built-in list
-([security.md](security.md)). Tell users which pattern to trust in your README.
+([security.md](security.md)). The README tells users how to install the skills and what
+to trust: [readme.md](readme.md) has the section to add.
 
 ## Layout rules
 
@@ -129,9 +130,11 @@ Consumers can switch this off with `"vendor-sources": false`.
 
 ## Release checklist
 
-The release is ready when all four hold:
+The release is ready when all five hold:
 
 1. `php <this-skill>/scripts/check-project.php` — no errors.
 2. `composer skills:validate` — no errors.
 3. The dist archive holds every shipped skill and no dev skill.
 4. In a consumer project, `composer skills:show acme/orm` lists every shipped skill.
+5. The README's "Agent skills" section covers every shipped skill and names none that is
+   gone ([readme.md](readme.md)).

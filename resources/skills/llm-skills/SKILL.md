@@ -44,6 +44,7 @@ Read only the file for the branch at hand.
 | What a command does beyond `--help`; exit codes; output tags; auto-sync | [references/commands.md](references/commands.md) |
 | Pull skills from a GitHub/GitLab repository or a local directory; update, remove or customise an installed skill | [references/sources.md](references/sources.md) |
 | Ship skills from your own Composer package; keep dev-only skills private | [references/publishing.md](references/publishing.md) |
+| README "Agent skills" section for a package that ships skills — yours or another's | [references/readme.md](references/readme.md) |
 | Why a donor is or is not trusted; trust a vendor, package or source; lock trust down | [references/security.md](references/security.md) |
 | Review a third-party skill before trusting it; security scanners | [references/audit.md](references/audit.md) |
 | Find a skill for a need | [references/discovery.md](references/discovery.md) |
