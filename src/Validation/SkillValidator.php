@@ -275,7 +275,6 @@ final class SkillValidator
             $this->frontmatter->check($doc->frontmatter, $dir, $file);
         }
         $this->content->checkBody($doc, $dir, "$dir/$fileName", $file);
-        $this->content->checkReferenceFiles($dir);
     }
 
     /**
