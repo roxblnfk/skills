@@ -1,12 +1,11 @@
 /.*/
-!/.phive/
 !/.github/
-!/.phar/
+!/.phive/
 /runtime/
 /vendor/
 /.env
 *.log
-*.exe
+/composer.lock
 
 # Root-level Markdown holds local-only planning notes; whitelist tracked docs.
 /*.md
