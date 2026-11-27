@@ -5,16 +5,16 @@ on:  # yamllint disable-line rule:truthy
     paths:
       - 'src/**'
       - 'bin/skills'
-      - 'tools/psalm/**'
-      - 'tools/rector/**'
+      - 'vendor-bin/psalm/**'
+      - 'vendor-bin/rector/**'
       - 'resources/skills/*/scripts/**'
       - 'composer.*'
   push:
     paths:
       - 'src/**'
       - 'bin/skills'
-      - 'tools/psalm/**'
-      - 'tools/rector/**'
+      - 'vendor-bin/psalm/**'
+      - 'vendor-bin/rector/**'
       - 'resources/skills/*/scripts/**'
       - 'composer.*'
 

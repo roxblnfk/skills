@@ -4,14 +4,14 @@
 installs them into the consumer project (default `.agents/skills/`, configurable per project).
 
 - Package type: `composer-plugin`
-- Minimum PHP: **8.1** (the dev toolchain — testo, psalm — needs 8.2; `tools/rector` keeps the code 8.1-compatible)
+- Minimum PHP: **8.1** (the dev toolchain — testo, psalm — needs 8.2; `vendor-bin/rector` keeps the code 8.1-compatible)
 - Root namespace: `LLM\Skills\` (PSR-4 → `src/`)
 - Test namespace: `LLM\Skills\Tests\` (PSR-4 → `tests/`)
 - Test framework: **testo** (not PHPUnit) — config in `testo.php`
-- Mutation testing: **infection** with the `testo` test framework — config in `infection.json5`, installed in `tools/infection/`
-- Static analysis: **psalm** — config in `tools/psalm/psalm.xml`
-- Code style: **php-cs-fixer** with the `spiral/code-style` ruleset — config in `tools/code-style/.php-cs-fixer.dist.php`
-- PHP 8.1 compatibility: **rector** downgrade sets — config in `tools/rector/rector.php`
+- Mutation testing: **infection** with the `testo` test framework — config in `infection.json5`, installed in `vendor-bin/infection/`
+- Static analysis: **psalm** — config in `vendor-bin/psalm/psalm.xml`
+- Code style: **php-cs-fixer** with the `spiral/code-style` ruleset — config in `vendor-bin/code-style/.php-cs-fixer.dist.php`
+- PHP 8.1 compatibility: **rector** downgrade sets — config in `vendor-bin/rector/rector.php`
 
 ## Common Tasks (composer scripts)
 
