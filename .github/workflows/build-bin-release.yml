@@ -21,6 +21,13 @@ env:
   MICRO_BASE_URL: 'https://dl.static-php.dev/static-php-cli'
   PHAR_PATH: '.build/phar/skills.phar'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   phar:
     name: 📦 Build PHAR
@@ -29,9 +36,10 @@ jobs:
     steps:
       # box.json sets `git`, so box runs `git describe --tags` and needs the tags.
       - name: 📦 Check out the codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🛠️ Setup PHP
         uses: shivammathur/setup-php@v2
@@ -60,7 +68,7 @@ jobs:
         run: php ${{ env.PHAR_PATH }} --version
 
       - name: 📤 Upload PHAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: phar
           path: ${{ env.PHAR_PATH }}
@@ -102,7 +110,7 @@ jobs:
         shell: bash
     steps:
       - name: 📥 Download PHAR artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: phar
           path: .build/phar
@@ -139,7 +147,7 @@ jobs:
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: 📤 Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bin-${{ matrix.os }}-${{ matrix.arch }}
           path: ${{ steps.pack.outputs.archive }}
@@ -160,7 +168,7 @@ jobs:
       contents: write
     steps:
       - name: 📥 Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bin-*
           path: dist

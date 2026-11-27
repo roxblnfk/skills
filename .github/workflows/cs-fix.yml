@@ -8,6 +8,10 @@ name: Fix Code Style
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cs-fix:
     uses: spiral/gh-actions/.github/workflows/cs-fix.yml@master

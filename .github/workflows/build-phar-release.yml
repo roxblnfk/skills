@@ -7,6 +7,10 @@ on:  # yamllint disable-line rule:truthy
 
 name: 📦 Build PHAR release
 
+# Release assets are uploaded with RELEASE_TOKEN, so GITHUB_TOKEN stays read-only.
+permissions:
+  contents: read
+
 jobs:
   build-release:
     runs-on: ubuntu-latest
@@ -24,7 +28,9 @@ jobs:
       GPG_KEYS_ENCRYPTED: ".github/phar/keys.asc.gpg"
     steps:
       - name: 📦 Check out the codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: 🛠️ Setup PHP
         uses: shivammathur/setup-php@v2
@@ -83,7 +89,7 @@ jobs:
         run: rm ${{ env.GPG_KEYS }}
 
       - name: 📤 Upload release assets
-        uses: softprops/action-gh-release@v2.0.5
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           token: "${{ secrets.RELEASE_TOKEN }}"

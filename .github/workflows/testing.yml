@@ -2,11 +2,16 @@ name: 🧪 Tests
 
 on:
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   testing:
@@ -27,7 +32,9 @@ jobs:
         dependencies: [ highest ]
     steps:
       - name: 📦 Check out the codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: 🛠️ Setup PHP
         uses: shivammathur/setup-php@v2
@@ -37,7 +44,7 @@ jobs:
 
       - name: 📥 Install Composer dependencies
         if: matrix.php-version != '8.1'
-        uses: ramsey/composer-install@v3
+        uses: ramsey/composer-install@v4
         with:
           dependency-versions: ${{ matrix.dependencies }}
 
@@ -57,7 +64,7 @@ jobs:
 
       - name: 📤 Upload coverage to Codecov
         if: matrix.php-version == '8.2' && matrix.dependencies == 'highest'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: runtime/clover.xml
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -71,9 +78,10 @@ jobs:
       PHAR_PATH: ".build/phar/skills.phar"
     steps:
       - name: 📦 Check out the codebase
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: 🛠️ Setup PHP
         uses: shivammathur/setup-php@v2
