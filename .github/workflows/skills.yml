@@ -1,0 +1,57 @@
+---
+
+name: 🧠 Skills
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+      - 'resources/skills/**'
+      - 'src/**'
+      - 'bin/skills'
+      - 'skills.json'
+      - 'composer.*'
+      - '.github/workflows/skills.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'resources/skills/**'
+      - 'src/**'
+      - 'bin/skills'
+      - 'skills.json'
+      - 'composer.*'
+      - '.github/workflows/skills.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    timeout-minutes: 4
+    runs-on: ubuntu-latest
+    name: Validate skills
+    steps:
+      - name: 📦 Check out the codebase
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: 🛠️ Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          coverage: none
+
+      - name: 📥 Install dependencies with composer
+        uses: ramsey/composer-install@v4
+        with:
+          dependency-versions: locked
+
+      # The plugin does not activate itself as a Composer plugin in its own repository,
+      # so the validator runs through its CLI entry point.
+      # Fails on errors only; warnings are reported without failing the run.
+      - name: 🧠 Validate skills
+        run: php bin/skills validate --ansi
