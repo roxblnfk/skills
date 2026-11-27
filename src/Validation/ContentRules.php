@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace LLM\Skills\Validation;
 
-use LLM\Skills\Filesystem\LinkGuard;
-
 /**
- * Checks the Markdown of a skill: body size, links and paths to bundled files, how deep
- * references nest, and whether long reference files open with a table of contents.
+ * Checks the Markdown of a skill: body size, links and paths to bundled files, and how deep
+ * references nest.
  * Paths are absolute, normalized forward-slash strings, see {@see PathDisplay}.
  *
  * @internal
@@ -17,7 +15,6 @@ final class ContentRules
 {
     private const MAX_BODY_LINES = 500;
     private const MAX_BODY_TOKENS = 5000;
-    private const TOC_THRESHOLD_LINES = 100;
 
     /**
      * @psalm-mutation-free
@@ -66,39 +63,6 @@ final class ContentRules
                     $this->paths->show($deeper['path']),
                 ));
             }
-        }
-    }
-
-    public function checkReferenceFiles(string $skillDir): void
-    {
-        $files = [];
-        $walk = static function (string $dir, int $depth) use (&$walk, &$files): void {
-            foreach (SkillFiles::entries($dir) as $entry) {
-                $path = "$dir/$entry";
-                if (\is_dir($path)) {
-                    if ($depth < 4 && $entry[0] !== '.'
-                        && !\in_array($entry, ['assets', 'scripts', ...SkillFiles::SKIP_DIRS], true)
-                        && !LinkGuard::isLink($path)) {
-                        /** @var \Closure(string, int): void $walk */
-                        $walk($path, $depth + 1);
-                    }
-                } elseif (\str_ends_with(\strtolower($entry), '.md') && ($depth > 0 || \strcasecmp($entry, 'SKILL.md') !== 0)) {
-                    $files[] = $path;
-                }
-            }
-        };
-        $walk($skillDir, 0);
-
-        /** @var list<string> $files */
-        foreach ($files as $file) {
-            $lines = \preg_split('/\r\n|\n|\r/', \rtrim((string) @\file_get_contents($file))) ?: [];
-            if (\count($lines) <= self::TOC_THRESHOLD_LINES || Markdown::hasTableOfContents($lines)) {
-                continue;
-            }
-            $this->findings->warn($this->paths->show($file), null, 'reference-no-toc', \sprintf(
-                'reference file has %d lines but no table of contents near the top; add a short "Contents" list of its sections so agents see the whole scope from a partial read',
-                \count($lines),
-            ));
         }
     }
 

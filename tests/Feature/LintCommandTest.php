@@ -130,6 +130,18 @@ final class LintCommandTest
         Assert::same($run->findings(), [], $run->dump());
     }
 
+    public function acceptsALongReferenceFileWithoutContentsList(): void
+    {
+        $this->writeSkill('long-reference', "---\nname: long-reference\ndescription: Fixture with a long reference file.\n---\n\nSee [the guide](references/guide.md).\n");
+        \mkdir("$this->tmp/long-reference/references");
+        \file_put_contents("$this->tmp/long-reference/references/guide.md", "# Guide\n" . \str_repeat("Line.\n", 300));
+
+        $run = SkillValidation::run(['long-reference'], $this->tmp);
+
+        Assert::same($run->exitCode, 0, $run->dump());
+        Assert::same($run->findings(), [], $run->dump());
+    }
+
     public function reportsDirectoriesCollidingByCase(): void
     {
         $run = SkillValidation::run(['collision'], self::FIXTURES);

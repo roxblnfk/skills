@@ -71,7 +71,6 @@ Mechanical limits; the writing itself is `writing-for-agents` territory.
 
 - `SKILL.md` under 500 lines and about 5000 tokens; push detail into `references/`.
 - Link files with relative forward-slash paths, one level deep from `SKILL.md`.
-- Reference files over 100 lines open with a table of contents.
 - Frontmatter fits in the first 4 KiB: llm/skills reads `name` and `metadata.internal`
   only from there.
 - Scripts: deterministic, documented `--help`, clear exit codes; state the interpreter.

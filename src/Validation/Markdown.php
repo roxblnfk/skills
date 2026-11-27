@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace LLM\Skills\Validation;
 
 /**
- * The bits of Markdown the validator reads: prose lines, link targets and contents lists.
+ * The bits of Markdown the validator reads: prose lines and link targets.
  *
  * @internal
  *
@@ -121,66 +121,5 @@ final class Markdown
         }
 
         return $links;
-    }
-
-    /**
-     * Whether the head of a document lists its contents: a "Contents" heading, three anchor
-     * links, or an early list naming at least three of its headings.
-     *
-     * @param list<string> $lines
-     *
-     * @psalm-pure
-     */
-    public static function hasTableOfContents(array $lines): bool
-    {
-        $anchorItems = 0;
-        $listItems = [];
-        foreach (\array_slice($lines, 0, 50) as $line) {
-            if (\preg_match(
-                '/^\s*(?:#{1,6}\s*|\*\*|__)?(?:table of contents|contents|toc|on this page'
-                . '|in this (?:file|document|reference)|sections|index)\b/i',
-                $line,
-            ) === 1) {
-                return true;
-            }
-            if (\preg_match('/^\s*(?:[-*+]|\d+\.)\s+(.*)$/', $line, $m) === 1) {
-                if (\str_contains($m[1], '](#')) {
-                    $anchorItems++;
-                }
-                $listItems[] = self::plainText($m[1]);
-            }
-        }
-        if ($anchorItems >= 3) {
-            return true;
-        }
-        $headings = [];
-        foreach ($lines as $line) {
-            if (\preg_match('/^#{2,6}\s+(.*)$/', $line, $m) === 1) {
-                $headings[self::plainText($m[1])] = true;
-            }
-        }
-        $hits = 0;
-        foreach ($listItems as $item) {
-            if ($item !== '' && isset($headings[$item])) {
-                $hits++;
-            }
-        }
-
-        return $hits >= 3;
-    }
-
-    /**
-     * A list item or heading reduced to comparable text: no link syntax, emphasis or
-     * trailing " — description".
-     *
-     * @psalm-pure
-     */
-    private static function plainText(string $s): string
-    {
-        $s = (string) \preg_replace('/\[([^\]]*)\]\([^)]*\)/', '$1', $s);
-        $s = (string) \preg_replace('/[`*_]/', '', $s);
-        $s = (string) \preg_replace('/\s+[—–-]\s+.*$/u', '', $s);
-
-        return \strtolower(\trim($s, " \t:."));
     }
 }
